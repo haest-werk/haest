@@ -30,8 +30,8 @@ async fn call(
 
 #[tokio::test]
 async fn each_event_is_a_post_of_json_with_the_headers_set() {
-    let server = Server::start([Respond::With(200, r#"{"deny":"no"}"#.into())]).await;
-    let hook = HttpHook::new(server.url())
+    let server = Server::start([Respond::With(200, r#"{"deny":"no"}"#.into())]);
+    let hook = HttpHook::new(server.url("/hook"))
         .with_header("Authorization", "Bearer old")
         .with_header("authorization", "Bearer t0k3n")
         .with_header("x-team", "core");
@@ -61,9 +61,9 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
         ),
     ] {
         // tool.before's default is block: the call is refused.
-        let server = Server::start([respond.clone()]).await;
+        let server = Server::start([respond.clone()]);
         let ui = TestUi::new();
-        let hook = HttpHook::new(server.url());
+        let hook = HttpHook::new(server.url("/hook"));
         let (refused, ran) = call(
             Hooks::new().on_tool_before(hook.clone()),
             ui.clone(),
@@ -75,10 +75,10 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
         assert_eq!(ran, 0);
 
         // `continue`: the human sees it, the call runs.
-        let server = Server::start([respond]).await;
+        let server = Server::start([respond]);
         let ui = TestUi::new();
         let hooks = Hooks::new().on_tool_before(
-            Binding::<ToolBeforePayload>::new(HttpHook::new(server.url()))
+            Binding::<ToolBeforePayload>::new(HttpHook::new(server.url("/hook")))
                 .with_on_error(OnError::Continue),
         );
         let (ok, ran) = call(hooks, ui.clone(), &ctx()).await;
@@ -94,19 +94,19 @@ async fn a_status_that_is_not_2xx_or_an_answer_that_is_no_decision_follows_on_er
 
 #[tokio::test]
 async fn a_server_that_never_answers_is_given_up_on_at_the_timeout_and_on_an_interrupt() {
-    let server = Server::start([Respond::Never]).await;
+    let server = Server::start([Respond::Never]);
     let hooks = Hooks::new().on_tool_before(
-        Binding::<ToolBeforePayload>::new(HttpHook::new(server.url()))
+        Binding::<ToolBeforePayload>::new(HttpHook::new(server.url("/hook")))
             .with_timeout(Duration::from_millis(300)),
     );
     let (refused, ran) = call(hooks, TestUi::new(), &ctx()).await;
     assert!(refused.unwrap_err().to_string().contains("did not answer"));
     assert_eq!(ran, 0);
 
-    let server = Server::start([Respond::Never]).await;
+    let server = Server::start([Respond::Never]);
     let cancel = CancellationToken::new();
     let ctx = ToolContext::new(CWD, ShutWorkspace).with_cancel(cancel.clone());
-    let url = server.url().to_string();
+    let url = server.url("/hook");
     let seen = tokio::spawn(async move {
         eventually("the request arrived", || !server.seen().is_empty()).await;
         cancel.cancel();

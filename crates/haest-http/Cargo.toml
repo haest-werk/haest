@@ -25,6 +25,10 @@ reqwest = ["dep:reqwest", "dep:rustls"]
 # `http::Request<Bytes>`, an `http::Response<B>` into a `Response`. reqwest
 # builds on the same `http` and `http-body`, so with it this adds no crate.
 http = ["dep:http", "dep:http-body"]
+# The `testing` module: `testing::Server`, an HTTP server on 127.0.0.1 for a
+# test, on threads of its own (std only). Turn it on in `dev-dependencies`
+# only: like every `testing` feature in haest, it is outside semver.
+testing = []
 
 [dependencies]
 async-trait = { workspace = true }
@@ -42,6 +46,8 @@ http-body = { version = "1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+# This crate's own `testing`, for its tests: the redirect tests' servers.
+haest-http = { path = ".", default-features = false, features = ["testing"] }
 
 [package.metadata.docs.rs]
 all-features = true

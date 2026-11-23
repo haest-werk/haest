@@ -3,51 +3,38 @@
 //! request breaks. The server is a few lines of streamable HTTP on a local
 //! port (JSON answers, no SSE stream), no network beyond it.
 
-use std::{
-    io::{Read, Write},
-    net::{TcpListener, TcpStream},
-};
+use std::net::TcpListener;
+
+use haest_http::testing::{Respond, Seen, Server};
 
 use super::*;
 
 const KEY: &str = "tok-SECRET-123";
 
-/// Serve MCP at `/mcp?api_key=<KEY>` on a local port, dropping the
-/// connection without an answer on a request for `drop_on` (`tools/list`,
-/// `tools/call`). Returns the URL, key included.
-fn serve(drop_on: &'static str) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!(
-        "http://{}/mcp?api_key={KEY}",
-        listener.local_addr().unwrap()
-    );
-    std::thread::spawn(move || {
-        for conn in listener.incoming().flatten() {
-            std::thread::spawn(move || answer(conn, drop_on));
-        }
-    });
-    url
+/// MCP on a local port, closing the connection without an answer on a
+/// request for `drop_on` (`tools/list`, `tools/call`).
+fn serve(drop_on: &'static str) -> Server {
+    Server::answering(move |seen| answer(seen, drop_on))
 }
 
-/// One request, one answer, then the connection closes.
-fn answer(mut conn: TcpStream, drop_on: &str) {
-    let (head, body) = read_request(&mut conn);
-    if !head.starts_with("POST") {
+/// Where `server` serves MCP: `/mcp?api_key=<KEY>`, key included.
+fn keyed_url(server: &Server) -> String {
+    server.url(&format!("/mcp?api_key={KEY}"))
+}
+
+/// One request's answer, as an MCP server with no SSE stream gives it.
+fn answer(seen: &Seen, drop_on: &str) -> Respond {
+    if !seen.line.starts_with("POST ") {
         // No SSE stream, no session to delete.
-        let _ = conn.write_all(
-            b"HTTP/1.1 405 Method Not Allowed\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-        );
-        return;
+        return Respond::WithHeaders(405, Vec::new(), String::new());
     }
-    let msg: Value = serde_json::from_slice(&body).unwrap_or_default();
+    let msg: Value = serde_json::from_slice(&seen.body).unwrap_or_default();
     let method = msg["method"].as_str().unwrap_or_default();
     if method == drop_on {
-        return;
+        return Respond::Close;
     }
     let Some(id) = msg.get("id") else {
-        let _ = conn
-            .write_all(b"HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
-        return;
+        return Respond::WithHeaders(202, Vec::new(), String::new());
     };
     let result = match method {
         "initialize" => json!({
@@ -59,35 +46,11 @@ fn answer(mut conn: TcpStream, drop_on: &str) {
         _ => json!({"content": [{"type": "text", "text": "ok"}]}),
     };
     let reply = json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string();
-    let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nmcp-session-id: s1\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        reply.len()
-    );
-    let _ = conn.write_all(head.as_bytes());
-    let _ = conn.write_all(reply.as_bytes());
-}
-
-/// A request's head and body.
-fn read_request(conn: &mut impl Read) -> (String, Vec<u8>) {
-    let mut buf = Vec::new();
-    let mut byte = [0u8; 1];
-    while !buf.ends_with(b"\r\n\r\n") && conn.read(&mut byte).unwrap_or(0) == 1 {
-        buf.push(byte[0]);
-    }
-    let head = String::from_utf8_lossy(&buf).into_owned();
-    let len = head
-        .to_lowercase()
-        .lines()
-        .find_map(|l| {
-            l.strip_prefix("content-length:")
-                .map(str::trim)
-                .map(str::to_string)
-        })
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(0);
-    let mut body = vec![0; len];
-    let _ = conn.read_exact(&mut body);
-    (head, body)
+    let headers = vec![
+        ("content-type".into(), "application/json".into()),
+        ("mcp-session-id".into(), "s1".into()),
+    ];
+    Respond::WithHeaders(200, headers, reply)
 }
 
 /// Connect `url` as the server `keyed`, keeping the log.
@@ -132,17 +95,11 @@ async fn a_server_that_cannot_be_reached_fails_without_showing_its_urls_key() {
 /// the server's headers with it. The server fails before anything is sent.
 #[tokio::test]
 async fn a_url_a_parser_misreads_fails_its_server_before_anything_is_sent() {
-    let misread_host = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = misread_host.local_addr().unwrap().port();
-    let (heard, requests) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        for mut conn in misread_host.incoming().flatten() {
-            let _ = heard.send(read_request(&mut conn).0);
-        }
-    });
+    let misread_host = Server::start([]);
+    let port = misread_host.addr().port();
     let (hub, logs) = connect(format!("http://127.0.0.1:{port}/s3cret@mcp.example/mcp")).await;
-    let sent = requests.try_recv().ok();
-    assert_eq!(sent, None, "the misread host was sent a request");
+    let sent = misread_host.seen();
+    assert!(sent.is_empty(), "the misread host was sent {sent:?}");
     let failures = hub.failures();
     assert!(
         matches!(
@@ -161,7 +118,8 @@ async fn a_url_a_parser_misreads_fails_its_server_before_anything_is_sent() {
 
 #[tokio::test]
 async fn a_server_that_breaks_off_listing_its_tools_fails_without_showing_its_urls_key() {
-    let (hub, logs) = connect(serve("tools/list")).await;
+    let server = serve("tools/list");
+    let (hub, logs) = connect(keyed_url(&server)).await;
     let failures = hub.failures();
     assert!(
         matches!(failures[0].error(), McpStartError::ListTools(_)),
@@ -173,7 +131,8 @@ async fn a_server_that_breaks_off_listing_its_tools_fails_without_showing_its_ur
 
 #[tokio::test]
 async fn a_call_that_breaks_off_tells_the_model_without_the_urls_key() {
-    let (hub, _logs) = connect(serve("tools/call")).await;
+    let server = serve("tools/call");
+    let (hub, _logs) = connect(keyed_url(&server)).await;
     assert!(hub.failures().is_empty(), "{:?}", hub.failures());
     let echo = hub.tools().into_iter().next().unwrap();
     let err = echo.execute(JsonMap::new(), &ctx()).await.unwrap_err();

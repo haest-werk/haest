@@ -7,28 +7,9 @@
 
 #![cfg(feature = "reqwest")]
 
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-    thread,
-    time::Duration,
-};
+use std::time::Duration;
 
-use haest_http::{Request, ReqwestClient, build_reqwest, reqwest_builder};
-
-/// A local server answering every connection with an empty 200.
-fn server() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
-    thread::spawn(move || {
-        for mut conn in listener.incoming().flatten() {
-            let _ = conn.read(&mut [0u8; 4096]);
-            let _ = conn
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
-        }
-    });
-    url
-}
+use haest_http::{Request, ReqwestClient, build_reqwest, reqwest_builder, testing::Server};
 
 #[tokio::test]
 async fn a_host_configured_client_builds_and_sends_with_no_provider_installed_first() {
@@ -36,7 +17,9 @@ async fn a_host_configured_client_builds_and_sends_with_no_provider_installed_fi
         rustls::crypto::CryptoProvider::get_default().is_none(),
         "this binary must start with no TLS provider installed"
     );
-    let url = server();
+    // An empty 200 to every request.
+    let server = Server::start([]);
+    let url = server.url("/");
 
     let own = ReqwestClient::configured(|b| b.connect_timeout(Duration::from_secs(5)));
     let sent = tokio::spawn(async move { own.send(Request::get(url)).await });

@@ -39,6 +39,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
 # testing: the scripted provider, for tests that run a whole agent turn.
 haest-core = { workspace = true, features = ["testing"] }
+# testing: the HTTP clients' tests send to `testing::Server` on 127.0.0.1.
+haest-http = { workspace = true, features = ["reqwest", "testing"] }
 # Background jobs are tested over the real workspace: real processes, a real process group.
 haest-workspace = { workspace = true }
 tempfile = "3"

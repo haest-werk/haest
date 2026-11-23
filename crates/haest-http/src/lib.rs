@@ -95,6 +95,10 @@
 //!   host on the facade turns it on with a direct `haest-http` dependency
 //!   (`features = ["http"]`), and imports the facade's module under another
 //!   name (`use haest::http as haest_http;`) beside the `http` crate.
+//! - `testing`: `testing::Server`, an HTTP server on 127.0.0.1 that writes
+//!   down each request and answers it as a test says. For
+//!   `dev-dependencies` only: like every `testing` module and feature in
+//!   haest, outside semver.
 //!
 //! ```
 //! # #[cfg(feature = "http")]
@@ -126,6 +130,9 @@ mod request;
 #[cfg(feature = "reqwest")]
 mod reqwest_client;
 mod response;
+#[cfg(feature = "testing")]
+#[cfg_attr(docsrs, doc(cfg(feature = "testing")))]
+pub mod testing;
 
 /// Shared by haest's crates, not part of the API: the Debug redaction their
 /// option and tracker types use, a URL as an error message shows it, the

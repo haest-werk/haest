@@ -21,7 +21,7 @@ mod claude;
 mod every;
 
 #[cfg(feature = "http")]
-pub(crate) use crate::testing::{Respond, Server};
+pub(crate) use haest_http::testing::{Respond, Server};
 
 /// A hook bound to `event`, in [`Hooks`] of its own. Every event of
 /// haest-mods is here: a new one panics, so the tests that drive every
@@ -125,9 +125,9 @@ if [ ! -e answered ]; then : > answered; cat answer; fi
 
 impl Remote {
     /// A hook over `via` that answers `answer` the first time.
-    #[cfg_attr(
-        not(feature = "http"),
-        expect(clippy::unused_async, reason = "the HTTP one starts its server")
+    #[expect(
+        clippy::unused_async,
+        reason = "every bridge's tests await it (the config tests too); the HTTP server starts at once"
     )]
     pub(crate) async fn answering(via: Via, answer: &str) -> Self {
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -147,7 +147,7 @@ impl Remote {
             Via::Http => Self {
                 via,
                 dir,
-                server: Some(Server::start([Respond::With(200, answer.into())]).await),
+                server: Some(Server::start([Respond::With(200, answer.into())])),
             },
         }
     }
@@ -188,7 +188,7 @@ impl Remote {
             #[cfg(feature = "shell")]
             Via::Shell => serde_json::json!({ "command": "sh hook.sh" }),
             #[cfg(feature = "http")]
-            Via::Http => serde_json::json!({ "url": self.server().url() }),
+            Via::Http => serde_json::json!({ "url": self.server().url("/hook") }),
         }
     }
 
@@ -219,7 +219,7 @@ impl Remote {
 
     #[cfg(feature = "http")]
     fn http(&self) -> crate::HttpHook {
-        crate::HttpHook::new(self.server().url()).with_cwd(self.dir())
+        crate::HttpHook::new(self.server().url("/hook")).with_cwd(self.dir())
     }
 }
 

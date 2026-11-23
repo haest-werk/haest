@@ -79,9 +79,11 @@ transport-broker = ["transport", "haest-transport/broker"]
 # templates. With `runtime`, `RuntimeInputs::with_prompt_template` renders it
 # before every model call.
 prompt = ["dep:haest-prompt", "haest-runtime?/prompt"]
-# Fakes for a host's tests: a scripted model that records every request, and
-# (with the providers) a fake HTTP client and the providers' SSE bodies.
-testing = ["haest-core/testing", "haest-providers?/testing"]
+# Fakes for a host's tests: a scripted model that records every request,
+# (with the providers) a fake HTTP client and the providers' SSE bodies, and
+# (with `http`) an HTTP server on 127.0.0.1. For `dev-dependencies` only:
+# like every `testing` module and feature in haest, outside semver.
+testing = ["haest-core/testing", "haest-providers?/testing", "haest-http?/testing"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -196,7 +198,9 @@ required-features = ["tools", "workspace"]
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
 haest-core = { workspace = true, features = ["testing"] }
-# net and io-util: the external_hooks example's stand-in for a service.
+# testing: the external_hooks example's stand-in for a service, `haest::http::testing::Server`.
+haest-http = { workspace = true, features = ["testing"] }
+# net and io-util: the broker example's socket, the stdio example's pipes.
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 futures = { workspace = true }
 serde = { workspace = true }

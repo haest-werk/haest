@@ -5,31 +5,8 @@
 
 #![cfg(feature = "reqwest")]
 
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
-
-use haest_http::{Request, ReqwestClient};
+use haest_http::{Request, ReqwestClient, testing::Server};
 use serde_json::json;
-
-/// Answers every connection with an empty 200, and says each time it was reached.
-fn serve(listener: TcpListener) -> mpsc::Receiver<()> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        for conn in listener.incoming() {
-            let Ok(mut conn) = conn else { break };
-            let _ = tx.send(());
-            let _ = conn.read(&mut [0u8; 4096]);
-            let _ = conn
-                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
-        }
-    });
-    rx
-}
 
 #[tokio::test]
 #[expect(
@@ -37,10 +14,10 @@ fn serve(listener: TcpListener) -> mpsc::Receiver<()> {
     reason = "setting the environment is unsafe, and the test sets a proxy"
 )]
 async fn the_default_client_goes_direct_whatever_the_proxy_variables_say() {
-    let server = TcpListener::bind("127.0.0.1:0").unwrap();
-    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
-    let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
-    let url = format!("http://{}/v1/messages", server.local_addr().unwrap());
+    // Each answers an empty 200.
+    let (server, proxy) = (Server::start([]), Server::start([]));
+    let proxy_url = proxy.url("");
+    let url = server.url("/v1/messages");
     for name in ["NO_PROXY", "no_proxy", "REQUEST_METHOD"] {
         // SAFETY: the only test in this binary, and no thread of it reads the
         // environment while these are set.
@@ -51,16 +28,12 @@ async fn the_default_client_goes_direct_whatever_the_proxy_variables_say() {
         // SAFETY: as above: the only test, and nothing reads the environment yet.
         unsafe { std::env::set_var(name, &proxy_url) };
     }
-    let (reached, proxied) = (serve(server), serve(proxy));
 
     let req = Request::post(url)
         .with_header("x-api-key", "secret")
         .with_json(&json!({}));
     let resp = ReqwestClient::new().send(req).await.unwrap();
     assert_eq!(resp.status, 200);
-    assert!(
-        reached.recv_timeout(Duration::from_secs(2)).is_ok(),
-        "the request reached its server"
-    );
-    assert!(proxied.try_recv().is_err(), "and never the proxy");
+    assert_eq!(server.seen().len(), 1, "the request reached its server");
+    assert!(proxy.seen().is_empty(), "and never the proxy");
 }

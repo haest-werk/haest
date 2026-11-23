@@ -42,8 +42,6 @@ never links an engine.
   event: the event as JSON on its stdin, the decision on its stdout.
 - `http`: `HttpHook`, a hook behind a URL: each event is a POST of its JSON,
   and the response's body is the decision.
-- `testing`: `testing::Server`, an HTTP server on 127.0.0.1 that a test of
-  HTTP hooks posts to. For `dev-dependencies` only.
 
 ```rust
 use haest_bridges::{ModFileOptions, ModFiles, ModReload};
@@ -129,6 +127,9 @@ host's own with `with_client`), with `content-type: application/json` and the
 headers set with `with_header`. A hook runs with the host's full trust: load a
 project's hooks only from a directory the human trusts, and an HTTP hook only
 from the human's own configuration, since it receives every tool input.
+
+A test of an HTTP hook posts to haest-http's `testing::Server` (its
+`testing` feature, for `dev-dependencies` only and outside semver).
 
 ### From a config file
 

@@ -8,7 +8,8 @@
 //!   run as it is (`ShellHook` in the Claude dialect), guards Bash;
 //! - a reviewer service on `turn.end` (`HttpHook`, haest's dialect) sends
 //!   the turn back once with "run the tests": the turn's `continued` tells it
-//!   whether it already did.
+//!   whether it already did. haest-http's test server (`testing::Server`)
+//!   stands in for the service.
 //!
 //! The model tries `rm -rf build` (refused), says it is done (sent back),
 //! runs the tests and is done.
@@ -31,12 +32,9 @@ use haest::{
         testing::{ScriptedProvider, text_answer, tool_answer},
         workspace::WorkspaceMode,
     },
+    http::testing::{Respond, Server},
     mods::{ApprovalRequest, Binding, Decision, Hooks, ModEnv, ModHooks, ModTools, ModUi, Mods},
     serde_json::{Value, json},
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
 };
 
 /// The Claude Code hook script, from the repository's docs.
@@ -86,57 +84,19 @@ impl ModUi for Terminal {
     }
 }
 
-/// The reviewer: each finished turn is POSTed here as haest's `turn.end`
-/// JSON. A turn nobody sent back yet goes back once; then it may end.
-async fn review(mut stream: TcpStream) -> std::io::Result<()> {
-    let mut request = Vec::new();
-    let mut chunk = [0u8; 4096];
-    let body = loop {
-        let n = stream.read(&mut chunk).await?;
-        if n == 0 {
-            return Ok(());
-        }
-        request.extend_from_slice(&chunk[..n]);
-        let text = String::from_utf8_lossy(&request);
-        if let Some((head, body)) = text.split_once("\r\n\r\n") {
-            let length = head
-                .lines()
-                .find_map(|l| {
-                    l.to_ascii_lowercase()
-                        .strip_prefix("content-length:")
-                        .map(|v| v.trim().to_string())
-                })
-                .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(0);
-            if body.len() >= length {
-                break body.to_string();
-            }
-        }
-    };
-    let turn: Value = serde_json::from_str(&body).unwrap_or_default();
-    let decision = if turn["continued"] == true {
-        String::new()
-    } else {
-        json!({ "continue": "Run the tests before you stop." }).to_string()
-    };
-    let response = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{decision}",
-        decision.len()
-    );
-    stream.write_all(response.as_bytes()).await?;
-    stream.shutdown().await
-}
-
-/// The reviewer service on a free port of 127.0.0.1: its URL.
-async fn reviewer() -> Result<String, BoxError> {
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
-    let url = format!("http://{}/turn-end", listener.local_addr()?);
-    tokio::spawn(async move {
-        while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(review(stream));
-        }
-    });
-    Ok(url)
+/// The reviewer service, on a free port of 127.0.0.1: each finished turn is
+/// POSTed here as haest's `turn.end` JSON. A turn nobody sent back yet goes
+/// back once (an empty answer lets a turn end).
+fn reviewer() -> Server {
+    Server::answering(|post| {
+        let turn: Value = serde_json::from_slice(&post.body).unwrap_or_default();
+        let decision = if turn["continued"] == true {
+            String::new()
+        } else {
+            json!({ "continue": "Run the tests before you stop." }).to_string()
+        };
+        Respond::With(200, decision)
+    })
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -157,7 +117,8 @@ async fn run() -> Result<(), BoxError> {
         .with_cwd(project)
         .with_dialect(Claude::new().with_session_id("example"));
     // A service on every finished turn.
-    let review = HttpHook::new(reviewer().await?);
+    let reviewer = reviewer();
+    let review = HttpHook::new(reviewer.url("/turn-end"));
     let hooks = Hooks::new()
         .on_tool_before(Binding::new(guard).with_matcher("Bash"))
         .on_turn_end(review);

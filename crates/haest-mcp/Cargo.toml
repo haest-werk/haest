@@ -43,6 +43,8 @@ sse-stream = "0.2"
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
+# testing: the hub's HTTP tests serve MCP from `testing::Server` on 127.0.0.1.
+haest-http = { workspace = true, features = ["testing"] }
 # server: the tests run a real MCP server over an in-memory duplex, never the network.
 rmcp = { version = "3.9", default-features = false, features = ["client", "server"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "io-util"] }

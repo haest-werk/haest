@@ -41,3 +41,5 @@ libc = "0.2"
 [dev-dependencies]
 # tests/broker.rs: a broker the run links to (tungstenite's blocking server).
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+# testing: the tests' model is `testing::Server` on 127.0.0.1, streaming its script.
+haest-http = { workspace = true, features = ["testing"] }

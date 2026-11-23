@@ -36,6 +36,11 @@ an `HttpClient`).
   crate: a `Request` into an `http::Request<Bytes>`, an
   `http::Response<B>` into a `Response`, for a client that is an axum
   router or a hyper client underneath.
+- The `testing` feature (off by default) is `testing::Server`, an HTTP
+  server on 127.0.0.1 for a test: it writes down each request and answers
+  from a script, or as a closure that reads the request decides
+  (`Server::answering`). For `dev-dependencies` only: like every `testing`
+  module and feature in haest, it is outside semver.
 
 ```rust
 use haest_http::{HttpClient, HttpError, Request, Response, async_trait};

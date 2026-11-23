@@ -5,13 +5,12 @@
 
 #![cfg(feature = "reqwest")]
 
-use std::{
-    error::Error,
-    io::{Read, Write},
-    net::TcpListener,
-};
+use std::{error::Error, net::TcpListener};
 
-use haest_http::{HttpError, Request, ReqwestClient};
+use haest_http::{
+    HttpError, Request, ReqwestClient,
+    testing::{Respond, Server},
+};
 
 /// The error's text with every cause under it, and its Debug output: all a
 /// log or a model could be shown of it.
@@ -76,19 +75,12 @@ async fn a_password_the_parser_took_for_a_path_is_not_in_the_error() {
 
 #[tokio::test]
 async fn a_redirect_loop_is_reported_without_the_urls_credentials() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    std::thread::spawn(move || {
-        for mut conn in listener.incoming().flatten() {
-            let mut buf = [0u8; 4096];
-            let _ = conn.read(&mut buf);
-            // Back to itself, the key still in the query.
-            let answer = "HTTP/1.1 307 Temporary Redirect\r\nlocation: /v1/messages?api_key=k3y-SECRET\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
-            let _ = conn.write_all(answer.as_bytes());
-        }
-    });
+    // Back to itself, the key still in the query.
+    let back = ("location".into(), "/v1/messages?api_key=k3y-SECRET".into());
+    let server =
+        Server::answering(move |_| Respond::WithHeaders(307, vec![back.clone()], String::new()));
     let e = ReqwestClient::new()
-        .send(Request::get(with_credentials(&base)))
+        .send(Request::get(with_credentials(&server.url(""))))
         .await
         .unwrap_err();
     assert!(matches!(e, HttpError::Request(_)), "{e:?}");

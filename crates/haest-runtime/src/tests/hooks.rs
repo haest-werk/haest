@@ -9,16 +9,14 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_bridges::{
-    HookSettings,
-    testing::{Respond, Server},
-};
+use haest_bridges::HookSettings;
 use haest_core::{
     ChildEnv, LoopEvent, WorkspaceMode,
     fs::MemFs,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::ToolContext,
 };
+use haest_http::testing::{Respond, Server};
 use haest_mods::{Before, Mod, ModEnv, ModToolCall};
 use haest_providers::http::{HttpClient, HttpError, Request, Response};
 use haest_settings::{BuiltinTools, Settings};
@@ -178,9 +176,9 @@ async fn a_turn_end_command_from_the_config_keeps_the_turn_going_once() {
 /// haest's dialect with its header.
 #[tokio::test]
 async fn a_url_hook_from_the_config_is_posted_the_event() {
-    let server = Server::start([Respond::With(200, String::new())]).await;
+    let server = Server::start([Respond::With(200, String::new())]);
     let hooks = setting(json!({ "turn.end": [{
-        "url": server.url(),
+        "url": server.url("/hook"),
         "headers": { "x-review": "on" },
     }] }));
     let model = ScriptedProvider::new([text_answer("done")]);

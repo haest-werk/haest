@@ -59,7 +59,7 @@ haest-providers = { workspace = true, features = ["testing"] }
 # The session lock tests fail a lock with a real errno (EIO).
 libc = "0.2"
 # testing: the `hooks` tests post a URL hook to its server.
-haest-bridges = { workspace = true, features = ["testing"] }
+haest-http = { workspace = true, features = ["testing"] }
 # The `hooks` tests run a command hook in a directory of their own.
 tempfile = "3"
 

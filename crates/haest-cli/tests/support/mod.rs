@@ -10,14 +10,14 @@ pub(crate) mod pty;
 
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
+    io::{BufRead, BufReader, Write},
     path::PathBuf,
     process::{Child, ChildStdin, Command, Output, Stdio},
-    sync::{Arc, Mutex, mpsc},
+    sync::mpsc,
     time::Duration,
 };
 
+use haest_http::testing::{Respond, Server};
 use serde_json::{Value, json};
 
 /// A home of its own (haest's files and data under it) with a project dir in
@@ -70,7 +70,7 @@ impl Home {
         std::fs::create_dir_all(&dir).unwrap();
         let providers = json!({"local": {
             "type": "openai",
-            "baseURL": format!("{}/v1", model.url),
+            "baseURL": format!("{}/v1", model.url()),
             "apiKeyEnv": "LOCAL_KEY",
         }});
         std::fs::write(dir.join("providers.json"), providers.to_string()).unwrap();
@@ -102,71 +102,30 @@ pub(crate) enum Reply {
 /// An OpenAI-compatible model on a local socket: each request gets the next
 /// reply of its script, streamed; with the script used up, "out of script".
 pub(crate) struct FakeModel {
-    pub url: String,
-    script: Arc<Mutex<VecDeque<Reply>>>,
-    /// Every request's body, in order.
-    pub requests: Arc<Mutex<Vec<Value>>>,
+    server: Server,
 }
 
 impl FakeModel {
     pub(crate) fn new(script: impl IntoIterator<Item = Reply>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let script = Arc::new(Mutex::new(script.into_iter().collect::<VecDeque<_>>()));
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let (s, r) = (script.clone(), requests.clone());
-        std::thread::spawn(move || {
-            for conn in listener.incoming() {
-                let Ok(conn) = conn else { return };
-                let (s, r) = (s.clone(), r.clone());
-                std::thread::spawn(move || answer(conn, &s, &r));
-            }
+        let mut script: VecDeque<Reply> = script.into_iter().collect();
+        let server = Server::answering(move |_| {
+            let stream = vec![("content-type".into(), "text/event-stream".into())];
+            Respond::WithHeaders(200, stream, sse(script.pop_front()))
         });
-        Self {
-            url,
-            script,
-            requests,
-        }
+        Self { server }
+    }
+
+    /// Its base URL.
+    pub(crate) fn url(&self) -> String {
+        self.server.url("")
     }
 
     /// The bodies of the requests so far.
     pub(crate) fn requests(&self) -> Vec<Value> {
-        self.requests.lock().unwrap().clone()
+        let seen = self.server.seen();
+        let bodies = seen.iter().map(|s| serde_json::from_slice(&s.body));
+        bodies.map(|body| body.unwrap_or(Value::Null)).collect()
     }
-}
-
-fn answer(conn: TcpStream, script: &Mutex<VecDeque<Reply>>, requests: &Mutex<Vec<Value>>) {
-    let mut reader = BufReader::new(conn.try_clone().unwrap());
-    let mut length = 0;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return;
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            length = value.trim().parse().unwrap_or(0);
-        }
-    }
-    let mut body = vec![0; length];
-    if reader.read_exact(&mut body).is_err() {
-        return;
-    }
-    requests
-        .lock()
-        .unwrap()
-        .push(serde_json::from_slice(&body).unwrap_or(Value::Null));
-    let reply = script.lock().unwrap().pop_front();
-    let mut conn = conn;
-    let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
-    let _ = conn.write_all(head.as_bytes());
-    let _ = conn.write_all(sse(reply).as_bytes());
-    let _ = conn.flush();
 }
 
 /// A reply as a chat completions stream.
