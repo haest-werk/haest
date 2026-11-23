@@ -68,7 +68,10 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `ModelPricing` has the 1h write price, and the catalog carries cache
   prices and `CacheFacts` (minimum cacheable length, 1h TTL, pre-warm,
   mid-conversation tool changes) for the models it lists, overridable in
-  `providers.json`. Direct Anthropic and OpenAI calls are priced too.
+  `providers.json`. Direct Anthropic and OpenAI calls are priced too, and
+  OpenRouter's Anthropic rows carry OpenRouter's prices, so `keep_warm`
+  works on them (the CLI's default model is one); a cost OpenRouter
+  reports still wins over the price.
 - haest-providers: OpenAI's own API gets no cache key by default (on
   GPT-5.6 and later a key partitions the cache instead of routing to it);
   OpenRouter gets the session id as its sticky-routing key.

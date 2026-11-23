@@ -234,9 +234,6 @@ mod tests {
         assert_eq!(c.model("openrouter:nobody/nothing"), None);
         assert_eq!(c.input_modalities("openrouter:nobody/nothing"), None);
         assert_eq!(c.reasoning("openrouter:nobody/nothing"), None);
-        assert!(
-            c.provider_pricing("openrouter").is_empty(),
-            "OpenRouter reports its own cost"
-        );
+        assert_eq!(c.pricing("openrouter:nobody/nothing"), None);
     }
 }

@@ -82,6 +82,36 @@ fn every_anthropic_row_knows_its_minimum_and_only_the_direct_api_takes_tool_chan
     }
 }
 
+/// Keep-warm pings only a priced model ([`ping_pays`](haest_core::cache::ping_pays)),
+/// so a row that takes a pre-warm without a price could never be kept warm:
+/// the CLI's default model, an OpenRouter row, was such a row.
+#[test]
+fn every_row_that_takes_a_pre_warm_has_the_prices_keep_warm_needs() {
+    use std::time::Duration;
+
+    use haest_core::cache::ping_pays;
+
+    let warmable: Vec<_> = Catalog::builtin()
+        .models()
+        .filter(|m| {
+            m.cache
+                .as_ref()
+                .is_some_and(|c| c.prewarm_max_tokens.is_some())
+        })
+        .collect();
+    assert!(warmable.iter().any(|m| m.spec.starts_with("openrouter:")));
+    for m in warmable {
+        let pricing = m.pricing.as_ref();
+        for ttl in [CacheTtl::FiveMinutes, CacheTtl::OneHour] {
+            assert!(
+                ping_pays(pricing, ttl, Duration::from_secs(5 * 60)),
+                "{}: a ping at {ttl:?} never pays: {pricing:?}",
+                m.spec
+            );
+        }
+    }
+}
+
 #[test]
 fn a_providers_json_entry_states_cache_facts_in_place_of_the_catalogs() {
     let file = entries(json!({
