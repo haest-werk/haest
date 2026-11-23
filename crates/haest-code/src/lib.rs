@@ -13,6 +13,8 @@
 //! `rquickjs`) on a thread of its own per run, with a memory limit, a
 //! wall-clock deadline that stops even a CPU loop, and no reach of its own --
 //! no file system, network, process or timer except what haest hands the run.
+//! haest-bridges' mod files run on this engine too, each on its own, held to
+//! the same caps type, [`VmCaps`] ([`VmCaps::mod_file`]).
 //!
 //! | Piece | What | Ported from |
 //! |---|---|---|

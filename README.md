@@ -31,7 +31,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-workspace` | the real disk and bash, or a bashkit sandbox over a copy-on-write overlay (or over any `Fs`) whose edits are a change set the human reviews and applies |
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent / SendMessage / StopAgent, GenerateImage |
 | `haest-mcp` | MCP client: stdio and streamable HTTP servers, their tools as haest tools |
-| `haest-code` | embedded QuickJS: the Code tool and the sandbox `js` command |
+| `haest-code` | embedded QuickJS, the one engine all of haest's JavaScript runs on: the Code tool, the sandbox `js` command, and (through `haest-bridges`) mod files |
 | `haest-mods` | mods: change how haest behaves without forking it, in Rust: native mods, hooks bound per event, the events' protocol (payloads and decisions, typed once), approvals and plan mode. Links no script engine |
 | `haest-bridges` | mods and hooks written outside Rust, speaking haest-mods' protocol, one feature per bridge: `js` runs `.js`/`.ts` mod files in embedded QuickJS and reloads a conversation's mod files as they change (`mod_reload`); `shell` runs a command per event (`ShellHook`), `http` POSTs each event to a URL (`HttpHook`), both in haest's JSON or Claude Code's hook JSON, so Claude Code hook scripts run as they are |
 | `haest-ts` | the one TypeScript stripper Code, `js` and mod files share |

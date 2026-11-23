@@ -181,7 +181,9 @@ haest-session's driver calls `Agent::next_cache_tick` and `Agent::cache_tick`.
 A `.js`, `.mjs` or `.ts` file whose default export receives the `haest` API, run in embedded
 QuickJS (TypeScript types are stripped in Rust; no node, no bun). Mod files are the first
 bridge: they live in haest-bridges behind its `js` feature (the facade's `bridge-js`, on by
-default), so haest-mods and a Rust-only host link no QuickJS.
+default), so haest-mods and a Rust-only host link no QuickJS. Each file runs on an engine of
+its own, haest-code's, the one the Code tool runs on, held to the same caps type, `VmCaps`
+(`VmCaps::mod_file()`: 128 MiB, 30 s to load, 10 s of code without a pause).
 
 [`ModFiles`](../crates/haest-bridges/src/js/files.rs) is a conversation's mod files as ONE
 mod, added after the built-ins and before the host's own mods. haest-runtime loads:

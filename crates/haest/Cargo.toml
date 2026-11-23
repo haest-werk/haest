@@ -41,7 +41,9 @@ code = ["dep:haest-code"]
 # over the session.
 mods = ["dep:haest-mods", "haest-session?/approvals"]
 # The JS bridge: `.js` / `.ts` mod files in embedded QuickJS, a conversation's
-# mod files reloaded as they change. Turns on `mods`.
+# mod files reloaded as they change. Turns on `mods`. The engine is haest-code's
+# (the Code tool's), linked without `code`'s `haest::code` module; its caps type
+# is `haest::bridges::VmCaps`.
 bridge-js = ["dep:haest-bridges", "haest-bridges/js", "mods"]
 # The shell bridge: a hook that is a command run on the host per event (JSON on
 # stdin and stdout), in haest's dialect or Claude Code's. Turns on `mods`.
