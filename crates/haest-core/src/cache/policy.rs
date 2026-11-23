@@ -141,6 +141,9 @@ pub struct IdleState<'a> {
     /// The tokens the next turn would write again if the cache expired: the
     /// last request's prompt and its answer.
     pub prefix_tokens: u64,
+    /// The conversation's history, oldest first: what a compaction would cut
+    /// ([`compaction_pays`](Self::compaction_pays)).
+    pub messages: &'a [Message],
     /// The model's context window, when known.
     pub context_window: Option<u64>,
     /// The model's price, when known: without it nothing that weighs a cost
@@ -152,8 +155,8 @@ pub struct IdleState<'a> {
 
 impl<'a> IdleState<'a> {
     /// A conversation on `model_spec`, idle for `idle`, its cache living
-    /// `ttl` and holding `prefix_tokens`; its window, price and cache facts
-    /// unknown.
+    /// `ttl` and holding `prefix_tokens`; no history, its window, price and
+    /// cache facts unknown.
     ///
     /// ```
     /// use std::time::Duration;
@@ -172,10 +175,18 @@ impl<'a> IdleState<'a> {
             idle,
             ttl,
             prefix_tokens,
+            messages: &[],
             context_window: None,
             pricing: None,
             facts: None,
         }
+    }
+
+    /// With the conversation's history.
+    #[must_use]
+    pub fn with_messages(mut self, messages: &'a [Message]) -> Self {
+        self.messages = messages;
+        self
     }
 
     /// With the model's context window.
@@ -213,7 +224,8 @@ pub enum IdleAction {
     /// Compact with these options while the cache is still warm, so the
     /// next turn writes a small prefix instead of the whole one
     /// ([`compact`](crate::compaction::compact)). haest compacts only when
-    /// the cache is warm and that costs less than writing the prefix again;
-    /// the ticks end either way.
+    /// the cache is warm and that costs less than writing the prefix again
+    /// ([`IdleState::compaction_pays`], which a policy can ask first and
+    /// ping instead); the ticks end either way.
     Compact(CompactionOptions),
 }

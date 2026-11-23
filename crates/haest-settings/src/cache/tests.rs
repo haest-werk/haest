@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use haest_core::{
+    Message,
     cache::{CachePlan, CachePolicy, CacheTtl, IdleAction, IdleState, RequestShape},
     catalog::ModelPricing,
 };
@@ -142,6 +143,13 @@ fn idle<'a>(price: &'a ModelPricing, away: Duration, tokens: u64) -> IdleState<'
     .with_pricing(price)
 }
 
+/// A long first message, then the 13 short ones a compaction keeps.
+fn long_history() -> Vec<Message> {
+    let mut messages = vec![Message::user("x".repeat(400_000))];
+    messages.extend((0..13).map(|_| Message::user("ok")));
+    messages
+}
+
 #[test]
 fn keep_warm_pings_while_it_pays_and_not_past_keep_warm_for() {
     let price = priced();
@@ -174,19 +182,23 @@ fn keep_warm_pings_while_it_pays_and_not_past_keep_warm_for() {
 
 #[test]
 fn compaction_comes_first_once_the_conversation_holds_min_context() {
-    let price = priced();
+    let (price, history) = (priced(), long_history());
     let cache = read(
         "keep_warm = true\ncompact_before_expire = { min_context = \"50%\", instructions = \"Keep the TODOs.\" }",
     )
     .unwrap();
-    let IdleAction::Compact(options) = cache.on_idle(&idle(&price, minutes(4), 120_000)) else {
+    let past_half = idle(&price, minutes(4), 120_000).with_messages(&history);
+    let IdleAction::Compact(options) = cache.on_idle(&past_half) else {
         panic!("a compaction past half the window");
     };
     assert_eq!(options.instructions.as_deref(), Some("Keep the TODOs."));
+    let below = idle(&price, minutes(4), 90_000).with_messages(&history);
+    assert_eq!(cache.on_idle(&below), IdleAction::Ping, "below it");
+    let nothing_to_cut = idle(&price, minutes(4), 120_000).with_messages(&history[..1]);
     assert_eq!(
-        cache.on_idle(&idle(&price, minutes(4), 90_000)),
+        cache.on_idle(&nothing_to_cut),
         IdleAction::Ping,
-        "below it"
+        "a compaction that does not pay"
     );
     let no_window = IdleState::new("m", minutes(4), CacheTtl::FiveMinutes, 900_000);
     assert_eq!(
@@ -195,6 +207,8 @@ fn compaction_comes_first_once_the_conversation_holds_min_context() {
         "no window, no share, no price"
     );
     let tokens = read("compact_before_expire = { min_context = 100000 }").unwrap();
-    let no_window = IdleState::new("m", minutes(4), CacheTtl::FiveMinutes, 100_000);
+    let no_window = IdleState::new("m", minutes(4), CacheTtl::FiveMinutes, 100_000)
+        .with_pricing(&price)
+        .with_messages(&history);
     assert!(matches!(tokens.on_idle(&no_window), IdleAction::Compact(_)));
 }

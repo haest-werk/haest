@@ -64,6 +64,31 @@ pub fn compact_pays(
     prefix * p.cached_input + summary * p.output + next * write < prefix * write
 }
 
+impl IdleState<'_> {
+    /// Whether compacting this conversation with `options` now pays
+    /// ([`compact_pays`]): what it would cut
+    /// ([`CompactionOptions::keep_recent`] decides) is estimated as the loop
+    /// estimates a request, and the summary weighed is [`SUMMARY_TOKENS`].
+    /// False when there is nothing to cut or no price. [`Agent::cache_tick`]
+    /// asks the same before it runs a [`IdleAction::Compact`]; a policy asks
+    /// first to ping instead when it does not pay.
+    pub fn compaction_pays(&self, options: &CompactionOptions) -> bool {
+        let cut = cut_index(self.messages, options.keep_recent);
+        if cut == 0 {
+            return false;
+        }
+        let head = estimate_request_tokens("", &self.messages[..cut], &[]);
+        let next = (self.prefix_tokens.saturating_sub(head)).saturating_add(SUMMARY_TOKENS);
+        compact_pays(
+            self.pricing,
+            self.ttl,
+            self.prefix_tokens,
+            next,
+            SUMMARY_TOKENS,
+        )
+    }
+}
+
 /// What one [`Agent::cache_tick`] did. Only a ping that read the cache
 /// leaves it warm and the ticks going ([`keeps_going`](Self::keeps_going));
 /// after any other the ticks end until the next turn.
@@ -155,16 +180,22 @@ impl Agent {
             .map(|c| c.context_window)
             .filter(|w| *w > 0);
         let prefix = last_context_tokens(self.history());
-        let mut idle = IdleState::new(&spec, since(now, call), ttl, prefix);
+        let mut idle =
+            IdleState::new(&spec, since(now, call), ttl, prefix).with_messages(self.history());
         idle.context_window = window;
         idle.pricing = pricing.as_ref();
         idle.facts = facts.as_ref();
-        let action = self.cache.policy.on_idle(&idle);
-        match action {
+        match self.cache.policy.on_idle(&idle) {
             IdleAction::Ping => self.ping(&spec, cancel).await,
-            IdleAction::Compact(options) => {
-                self.compact_idle(&spec, ttl, prefix, &options, cancel)
-                    .await
+            IdleAction::Compact(options) if idle.compaction_pays(&options) => {
+                self.compact_idle(&options, cancel).await
+            }
+            IdleAction::Compact(_) => {
+                let text = format!(
+                    "No compaction before {spec}'s prompt cache expires: nothing to cut, or it would not cost less than writing the cache again."
+                );
+                self.note(&text, false);
+                CacheTick::Nothing
             }
             _ => CacheTick::Nothing,
         }
@@ -188,6 +219,8 @@ impl Agent {
                     WarmError::Refused { source, .. } => {
                         self.note(&format!("Keep-warm is off for {spec}: {source}."), true);
                     }
+                    // A host that stopped it knows; nothing to tell.
+                    _ if cancel.is_cancelled() => {}
                     other => {
                         let report = crate::error::report(other);
                         self.say(&format!("Keep-warm stopped: {report}."), true);
@@ -200,34 +233,20 @@ impl Agent {
 
     async fn compact_idle(
         &mut self,
-        spec: &str,
-        ttl: CacheTtl,
-        prefix: u64,
         options: &CompactionOptions,
         cancel: &CancellationToken,
     ) -> CacheTick {
-        let cut = cut_index(self.history(), options.keep_recent);
-        if cut == 0 {
-            return CacheTick::Nothing;
-        }
-        let head = estimate_request_tokens("", &self.history()[..cut], &[]);
-        let next = prefix.saturating_sub(head).saturating_add(SUMMARY_TOKENS);
-        let pricing = self.deps().shared().facts().pricing(spec);
-        if !compact_pays(pricing.as_ref(), ttl, prefix, next, SUMMARY_TOKENS) {
-            let text = format!(
-                "No compaction before {spec}'s prompt cache expires: it would not cost less than writing the cache again."
-            );
-            self.note(&text, false);
-            return CacheTick::Nothing;
-        }
         match compact(self, cancel, options).await {
             Ok(done) => CacheTick::Compacted(done),
             Err(e) => {
-                let text = format!(
-                    "Compaction before the prompt cache expired failed: {}.",
-                    crate::error::report(&e)
-                );
-                self.say(&text, true);
+                // A host that stopped it knows; nothing to tell.
+                if !cancel.is_cancelled() {
+                    let text = format!(
+                        "Compaction before the prompt cache expired failed: {}.",
+                        crate::error::report(&e)
+                    );
+                    self.say(&text, true);
+                }
                 CacheTick::CompactFailed(e)
             }
         }

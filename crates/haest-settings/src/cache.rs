@@ -229,8 +229,9 @@ impl CacheSettings {
 }
 
 /// The settings' plan for each request, and at an idle tick: compact when
-/// `compact_before_expire` is on and the conversation holds `min_context`;
-/// else ping when `keep_warm` is on, the human has been away for less than
+/// `compact_before_expire` is on, the conversation holds `min_context` and
+/// compacting pays ([`IdleState::compaction_pays`]); else ping when
+/// `keep_warm` is on, the human has been away for less than
 /// `keep_warm_for`, and [`ping_pays`]; else nothing. haest's own checks
 /// (the cache still warm, a compaction that pays) come after.
 impl CachePolicy for CacheSettings {
@@ -253,7 +254,9 @@ impl CachePolicy for CacheSettings {
         {
             let mut options = CompactionOptions::new(idle.context_window.unwrap_or(0));
             options.instructions = instructions;
-            return IdleAction::Compact(options);
+            if idle.compaction_pays(&options) {
+                return IdleAction::Compact(options);
+            }
         }
         if s.keep_warm
             && idle.idle < s.keep_warm_for
