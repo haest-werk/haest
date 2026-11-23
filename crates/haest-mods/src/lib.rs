@@ -389,6 +389,9 @@ mod plan;
 #[cfg(test)]
 mod protocol_tests;
 mod registry;
+#[cfg(any(test, feature = "testing"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "testing")))]
+pub mod testing;
 #[cfg(test)]
 mod testkit;
 

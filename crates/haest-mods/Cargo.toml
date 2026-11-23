@@ -13,6 +13,11 @@ categories.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The `testing` module: fakes for tests of mods and the decision cases a
+# bridge answers the way `Hooks` does. Turn it on in `dev-dependencies` only.
+testing = ["haest-core/testing"]
+
 [dependencies]
 haest-core = { workspace = true }
 async-trait = { workspace = true }
