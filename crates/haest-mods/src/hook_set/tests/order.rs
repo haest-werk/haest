@@ -15,8 +15,8 @@ use crate::{
     decision::{Compact, ModelBeforeDecision, TurnEndDecision},
     hook::{Binding, OnError},
     payload::{
-        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, ToolAfterPayload,
-        ToolBeforePayload, TurnEndPayload,
+        ModelBeforePayload, PromptSubmitPayload, ToolAfterPayload, ToolBeforePayload,
+        TurnEndPayload,
     },
 };
 
@@ -147,8 +147,8 @@ async fn in_a_loop_event_steers_are_kept_and_the_first_stop_or_continue_wins() {
         }
     };
     let hooks = HookSet::new()
-        .on_model_after(once::<ModelAfterPayload>(json!({ "steer": "one" })))
-        .on_model_after(once::<ModelAfterPayload>(json!({ "steer": "two" })))
+        .on_model_after(once(json!({ "steer": "one" })))
+        .on_model_after(once(json!({ "steer": "two" })))
         .on_turn_end(asked(&log, "first"))
         .on_turn_end(asked(&log, "second"));
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks]);

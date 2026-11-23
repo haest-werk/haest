@@ -204,7 +204,7 @@ async fn a_failed_turn_end_hook_ends_the_turn_or_lets_the_next_keep_it_going() {
     for (fails, on) in variants() {
         let hooks = HookSet::new()
             .on_turn_end(failing::<TurnEndPayload>(fails, on))
-            .on_turn_end(once::<TurnEndPayload>(json!({ "continue": "go on" })));
+            .on_turn_end(once(json!({ "continue": "go on" })));
         let (stop, error, calls, errors) = turn(hooks).await;
         assert_eq!(
             (stop, error),

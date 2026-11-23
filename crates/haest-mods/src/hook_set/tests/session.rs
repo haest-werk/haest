@@ -1,6 +1,7 @@
-//! The session a hook is handed: the one the conversation's env names as of
-//! each event, on every event, through a nested [`Mods`] too, and left out
-//! of the JSON when none is named.
+//! The session a hook is handed: the one the conversation's env names as
+//! each event begins, on every event, the same to every mod of that event,
+//! through a nested [`Mods`] too, and left out of the JSON when none is
+//! named.
 
 use std::sync::Mutex;
 
@@ -39,18 +40,9 @@ impl Noting {
     }
 }
 
-/// `hook` bound to `event`.
-fn bound(event: ModEvent, hook: Noting) -> HookSet {
-    let hooks = HookSet::new();
-    match event {
-        ModEvent::ToolBefore => hooks.on_tool_before(hook),
-        ModEvent::ToolAfter => hooks.on_tool_after(hook),
-        ModEvent::PromptSubmit => hooks.on_prompt_submit(hook),
-        ModEvent::SystemPrompt => hooks.on_system_prompt(hook),
-        ModEvent::ModelBefore => hooks.on_model_before(hook),
-        ModEvent::ModelAfter => hooks.on_model_after(hook),
-        ModEvent::TurnEnd => hooks.on_turn_end(hook),
-    }
+/// `hook` bound to `event`, in a [`HookSet`] of its own.
+fn bound(event: ModEvent, hook: impl AnyHook) -> HookSet {
+    bind(HookSet::new(), event, hook)
 }
 
 fn session(n: u8) -> SessionView {
@@ -151,23 +143,69 @@ async fn a_nested_mods_two_conversations_take_turns_with_tells_the_second_none_o
     assert_eq!(noting.ids(), [Some("s-1".into()), None]);
 }
 
+/// One binding's session, `s-<n>`, as [`Noting::ids`] lists it.
+fn ids(n: u8) -> [Option<String>; 1] {
+    [Some(format!("s-{n}"))]
+}
+
+/// The host names a new session while an event's first binding runs: the
+/// binding after it, in the same `HookSet`, still gets the one the event
+/// began on, on every event, whether a `Mods` runs the hooks or a host
+/// fires their `Mod` event itself. The next event gets the new one.
 #[tokio::test]
 async fn every_binding_of_one_event_gets_the_session_named_as_that_event_began() {
-    let noting = Noting::default();
-    let haest = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
-    let host = haest.clone();
-    // The host names a new session while the event's first hook runs.
-    let clears = move |_: SystemPromptPayload, _: CancellationToken| {
-        host.set_session(session(2));
-        async { Ok::<Option<String>, BoxError>(None) }
-    };
-    let hooks = HookSet::new()
-        .on_system_prompt(clears)
-        .on_system_prompt(noting.clone());
-    let mods = Mods::new(haest, [hooks]);
-    mods.system_append().await;
-    assert_eq!(noting.ids(), [Some("s-1".into())]);
-    // The next event is on the new one.
-    mods.system_append().await;
-    assert_eq!(noting.ids(), [Some("s-2".into())]);
+    for event in ModEvent::ALL {
+        let noting = Noting::default();
+        let haest = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
+        let hooks = bind(
+            bound(*event, naming(&haest, session(2))),
+            *event,
+            noting.clone(),
+        );
+
+        effect(*event, Mods::new(haest.clone(), [hooks.clone()]), "hooks").await;
+        assert_eq!(noting.ids(), ids(1), "{event}, in a Mods");
+        fire(&hooks, *event, &haest).await.unwrap();
+        assert_eq!(noting.ids(), ids(2), "{event}, in a Mods: the next event");
+
+        haest.set_session(session(1));
+        fire(&hooks, *event, &haest).await.unwrap();
+        assert_eq!(noting.ids(), ids(1), "{event}, fired on its own");
+        fire(&hooks, *event, &haest).await.unwrap();
+        assert_eq!(
+            noting.ids(),
+            ids(2),
+            "{event}, fired on its own: the next event"
+        );
+    }
+}
+
+/// The host names a new session while one mod of an event runs: every mod
+/// after it gets the one the event began on, a mod of a nested `Mods` on
+/// an env of its own too, on every event. The next event gets the new one.
+#[tokio::test]
+async fn every_mod_of_one_event_gets_the_session_named_as_that_event_began() {
+    for event in ModEvent::ALL {
+        let [first, nested, last] = [(); 3].map(|()| Noting::default());
+        let haest = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
+        let inner = Mods::new(
+            env(TestUi::new(), WorkspaceMode::Sandbox),
+            [bound(*event, nested.clone())],
+        );
+        let mods = Mods::new(
+            haest.clone(),
+            [
+                ModRef::new(bound(*event, first.clone())),
+                ModRef::new(bound(*event, naming(&haest, session(2)))),
+                ModRef::new(inner),
+                ModRef::new(bound(*event, last.clone())),
+            ],
+        );
+        for n in [1, 2] {
+            effect(*event, mods.clone(), "hooks").await;
+            for (which, noting) in [("first", &first), ("nested", &nested), ("last", &last)] {
+                assert_eq!(noting.ids(), ids(n), "{event}, event {n}: the {which} mod");
+            }
+        }
+    }
 }

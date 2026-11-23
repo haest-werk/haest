@@ -10,8 +10,8 @@ use std::{
 
 pub(crate) use haest_mods::testing::*;
 use haest_mods::{
-    Binding, Hook, HookSet, ModEvent, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload,
-    SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
+    Binding, Hook, HookSet, ModEvent, PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload,
+    ToolBeforePayload, TurnEndPayload,
 };
 use serde_json::Value;
 
@@ -23,30 +23,12 @@ mod every;
 #[cfg(feature = "http")]
 pub(crate) use haest_http::testing::{Respond, Server};
 
-/// A hook bound to `event`, in a [`HookSet`] of its own. Every event of
-/// haest-mods is here: a new one panics, so the tests that drive every
-/// event through a shell and an HTTP hook fail until it is added.
-pub(crate) fn bound<H>(event: ModEvent, hook: H) -> HookSet
-where
-    H: Hook<ToolBeforePayload>
-        + Hook<ToolAfterPayload>
-        + Hook<PromptSubmitPayload>
-        + Hook<SystemPromptPayload>
-        + Hook<ModelBeforePayload>
-        + Hook<ModelAfterPayload>
-        + Hook<TurnEndPayload>,
-{
-    let hooks = HookSet::new();
-    match event {
-        ModEvent::ToolBefore => hooks.on_tool_before(Binding::<ToolBeforePayload>::new(hook)),
-        ModEvent::ToolAfter => hooks.on_tool_after(Binding::<ToolAfterPayload>::new(hook)),
-        ModEvent::PromptSubmit => hooks.on_prompt_submit(Binding::<PromptSubmitPayload>::new(hook)),
-        ModEvent::SystemPrompt => hooks.on_system_prompt(Binding::<SystemPromptPayload>::new(hook)),
-        ModEvent::ModelBefore => hooks.on_model_before(Binding::<ModelBeforePayload>::new(hook)),
-        ModEvent::ModelAfter => hooks.on_model_after(Binding::<ModelAfterPayload>::new(hook)),
-        ModEvent::TurnEnd => hooks.on_turn_end(Binding::<TurnEndPayload>::new(hook)),
-        other => panic!("{other} has no shell and HTTP coverage: bind it here"),
-    }
+/// A hook bound to `event`, in a [`HookSet`] of its own: haest-mods'
+/// `testing::bind`, which binds every event (a new one fails to compile
+/// there), so the tests that drive every event through a shell and an HTTP
+/// hook drive the new one too.
+pub(crate) fn bound(event: ModEvent, hook: impl AnyHook) -> HookSet {
+    bind(HookSet::new(), event, hook)
 }
 
 /// The Claude Code event `event` is, or none, as D42 writes it: the tests'

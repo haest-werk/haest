@@ -99,9 +99,7 @@ async fn a_later_handler_that_throws_drops_its_files_event_where_a_failed_bindin
     let asked = Arc::new(AtomicBool::new(false));
     let seen = asked.clone();
     let hooks = HookSet::new()
-        .on_model_before(once::<ModelBeforePayload>(
-            json!({ "steer": "from the first" }),
-        ))
+        .on_model_before(once(json!({ "steer": "from the first" })))
         .on_model_before(|_: ModelBeforePayload, _: CancellationToken| async {
             Err::<ModelBeforeDecision, BoxError>("boom".into())
         })

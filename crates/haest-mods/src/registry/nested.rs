@@ -3,7 +3,8 @@
 //! wins), in its place. A bridge whose mods change while a conversation
 //! runs (mod files that reload) holds them in a `Mods` it swaps whole, and
 //! the conversation's own `Mods` never changes. At each event the inner
-//! env takes the outer one's state whole ([`ModEnv::follow`]).
+//! env takes the outer one's state whole, and the session the outer event
+//! began on ([`ModEnv::for_event`]).
 
 use std::{error::Error, fmt};
 
@@ -54,10 +55,11 @@ impl Error for Reported {
 /// reported once, under its own name; one that stops the turn ends it in
 /// its own name. Inside, its mods get the [`ModEnv`] it was built with,
 /// holding at each event what the outer one's does: whether a turn was
-/// kept going, and the session the conversation is on (none when the outer
-/// env names none). That env is shared, so the inner `Mods` belongs to one
-/// conversation at a time ([`Mods`]). It goes by `mods` in a report, and is
-/// no gate: its own gates judge last among its mods.
+/// kept going, the session the conversation is on (none when the outer
+/// env names none), and the session the outer event began on, which its
+/// mods' handlers are handed. That env is shared, so the inner `Mods`
+/// belongs to one conversation at a time ([`Mods`]). It goes by `mods` in
+/// a report, and is no gate: its own gates judge last among its mods.
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
 impl Mod for Mods {
@@ -75,8 +77,7 @@ impl Mod for Mods {
         ctx: &ToolContext,
         haest: &ModEnv,
     ) -> Result<Before, BoxError> {
-        self.env().follow(haest);
-        match self.judge(call.clone(), ctx).await {
+        match self.judge(call.clone(), ctx, haest).await {
             Judged::Run(run) if run.input == call.input => Ok(Before::Pass),
             Judged::Run(run) => Ok(Before::Input(run.input)),
             Judged::Refused(reason) => Ok(Before::Deny(reason)),
@@ -93,18 +94,16 @@ impl Mod for Mods {
         ctx: &ToolContext,
         haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
-        self.env().follow(haest);
-        Ok(Some(self.after(call, output.clone(), ctx).await))
+        let output = output.clone();
+        Ok(Some(self.after_for(call, output, ctx, haest).await))
     }
 
     async fn prompt_submit(&self, text: &str, haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        self.env().follow(haest);
-        Ok(Some(self.rewrite_prompt(text).await))
+        Ok(Some(self.rewrite_prompt_for(text, haest).await))
     }
 
     async fn system_prompt(&self, haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        self.env().follow(haest);
-        let added = self.system_append().await;
+        let added = self.system_append_for(haest).await;
         Ok((!added.is_empty()).then_some(added))
     }
 
@@ -114,8 +113,7 @@ impl Mod for Mods {
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        self.env().follow(haest);
-        Mods::model_before(self, agent, cancel).await?;
+        self.model_before_for(agent, cancel, haest).await?;
         Ok(Step::Pass)
     }
 
@@ -126,8 +124,7 @@ impl Mod for Mods {
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        self.env().follow(haest);
-        Mods::model_after(self, agent, answer, cancel).await?;
+        self.model_after_for(agent, answer, cancel, haest).await?;
         Ok(Step::Pass)
     }
 
@@ -139,8 +136,7 @@ impl Mod for Mods {
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<TurnEnd, BoxError> {
-        self.env().follow(haest);
-        let goes_on = Mods::turn_end(self, agent, outcome, cancel).await;
+        let goes_on = self.turn_end_for(agent, outcome, cancel, haest).await;
         Ok(goes_on.map_or(TurnEnd::Pass, TurnEnd::Continue))
     }
 

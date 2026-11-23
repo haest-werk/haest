@@ -72,6 +72,17 @@ pub struct ModEnv {
     ui: ModUiRef,
     /// What the conversation's turns and its host left here, for every clone.
     shared: Arc<Mutex<Shared>>,
+    /// The event under way, on the clone a [`Mods`](crate::Mods) hands its
+    /// mods for one ([`for_event`](Self::for_event)); never on the host's.
+    event: Option<Began>,
+}
+
+/// One event under way, as it began.
+#[derive(Debug, Clone)]
+struct Began {
+    /// The session the conversation was on: what every handler of the
+    /// event is handed.
+    session: Option<SessionView>,
 }
 
 /// What every clone of one [`ModEnv`] shares.
@@ -95,6 +106,7 @@ impl ModEnv {
             workspace,
             ui: ui.into(),
             shared: Arc::default(),
+            event: None,
         }
     }
 
@@ -114,13 +126,45 @@ impl ModEnv {
         self.held().kept_going.as_ref() == Some(turn)
     }
 
+    /// This env for one event of its [`Mods`](crate::Mods), which hands it
+    /// to every mod of that event. `came_with` is the env the event came
+    /// with: the `Mods`' own when its host fires the event, an outer
+    /// `Mods`' when this one is a mod of that one. It takes what
+    /// `came_with` holds ([`follow`](Self::follow)), and the session the
+    /// event began on: read here, once, when the event begins with this
+    /// `Mods`, and the outer event's when it began there. Every handler of
+    /// the event is handed that one ([`event_session`](Self::event_session)),
+    /// whatever the host names meanwhile.
+    pub(crate) fn for_event(&self, came_with: &ModEnv) -> ModEnv {
+        self.follow(came_with);
+        ModEnv {
+            event: Some(Began {
+                session: came_with.event_session(),
+            }),
+            ..self.clone()
+        }
+    }
+
+    /// The session every handler of the event under way is handed: the one
+    /// it began on, which its [`Mods`](crate::Mods) read once
+    /// ([`for_event`](Self::for_event)). On an env no `Mods` began an event
+    /// on (a host fires one mod's event itself), the event begins with the
+    /// fold (fold.rs), which reads it here once: the one the conversation
+    /// is on now.
+    pub(crate) fn event_session(&self) -> Option<SessionView> {
+        match &self.event {
+            Some(began) => began.session.clone(),
+            None => self.session(),
+        }
+    }
+
     /// Take what `outer` holds, all of it: a [`Mods`](crate::Mods) inside
     /// another runs on its own env, and its mods must see what the outer
     /// one's decided (a `turn.end` there kept the turn going) and the
     /// session the conversation is on, none when the outer env names none.
     /// Never what an earlier event left: an inner `Mods` that another
     /// conversation ran before must not tell this one's hooks its session.
-    pub(crate) fn follow(&self, outer: &ModEnv) {
+    fn follow(&self, outer: &ModEnv) {
         if Arc::ptr_eq(&self.shared, &outer.shared) {
             return;
         }

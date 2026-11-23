@@ -88,7 +88,9 @@ pub trait Event:
     /// named one: a [`HookSet`] hands every binding its payload, and a mod
     /// file every handler, with the session the conversation's
     /// [`ModEnv`](crate::ModEnv) names as the event begins
-    /// ([`ModEnv::set_session`](crate::ModEnv::set_session)).
+    /// ([`ModEnv::set_session`](crate::ModEnv::set_session)). It is read
+    /// once per event, so every handler of the event, in every mod of its
+    /// [`Mods`](crate::Mods), gets the same one.
     fn session(&self) -> Option<&SessionView>;
 }
 

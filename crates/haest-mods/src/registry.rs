@@ -68,9 +68,15 @@ pub enum CommandOutcome {
 /// its [`ModEnv`] and what its turns left there (a `turn.end` that kept a
 /// turn going, the session the host named). Give each conversation its own.
 ///
+/// It reads the session the host named once per event, as the event
+/// begins, and every mod of that event gets that one, whatever the host
+/// or a mod names meanwhile: what a [`HookSet`](crate::HookSet) binding or
+/// a mod file's handler is handed ([`Event::session`](crate::Event::session)).
+///
 /// A `Mods` is a [`Mod`] itself: inside another, its mods run in its place
-/// by these same rules, and at each event its env takes what the outer
-/// env holds. What changes while a conversation runs lives inside
+/// by these same rules, at each event its env takes what the outer env
+/// holds, and its mods get the session the outer event began on, never a
+/// read of their own. What changes while a conversation runs lives inside
 /// one mod that way (mod files that reload are a `Mods` their bridge swaps
 /// whole), and the conversation's own list stays as it was built. An inner
 /// `Mods` is one conversation's too: two that take turns with it hand its
@@ -160,9 +166,16 @@ impl Mods {
     /// seeing the text the one before left. A mod that fails leaves the text
     /// as it was. Call it on the human's text before it goes to the agent.
     pub async fn rewrite_prompt(&self, text: &str) -> String {
+        self.rewrite_prompt_for(text, self.env()).await
+    }
+
+    /// [`rewrite_prompt`](Self::rewrite_prompt), in the event `came_with`
+    /// brought ([`ModEnv::for_event`]).
+    pub(super) async fn rewrite_prompt_for(&self, text: &str, came_with: &ModEnv) -> String {
+        let haest = self.env().for_event(came_with);
         let mut text = text.to_string();
         for m in self.list() {
-            match m.prompt_submit(&text, self.env()).await {
+            match m.prompt_submit(&text, &haest).await {
                 Ok(Some(rewritten)) => text = rewritten,
                 Ok(None) => {}
                 Err(e) => self.report(m.as_ref(), ModEvent::PromptSubmit.as_str(), &e),
@@ -175,9 +188,16 @@ impl Mods {
     /// blank line; empty when none adds anything. [`ModSystemPrompt`](crate::ModSystemPrompt)
     /// puts it after the host's prompt.
     pub async fn system_append(&self) -> String {
+        self.system_append_for(self.env()).await
+    }
+
+    /// [`system_append`](Self::system_append), in the event `came_with`
+    /// brought ([`ModEnv::for_event`]).
+    pub(super) async fn system_append_for(&self, came_with: &ModEnv) -> String {
+        let haest = self.env().for_event(came_with);
         let mut parts = Vec::new();
         for m in self.list() {
-            match m.system_prompt(self.env()).await {
+            match m.system_prompt(&haest).await {
                 Ok(text) => parts.extend(text),
                 Err(e) => self.report(m.as_ref(), ModEvent::SystemPrompt.as_str(), &e),
             }

@@ -7,6 +7,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use async_trait::async_trait;
 use haest_core::{
     Message, NoHooks, Tools,
     error::BoxError,
@@ -18,39 +19,109 @@ use tokio_util::sync::CancellationToken;
 
 use super::{Probe, ctx, looped, wrapped};
 use crate::{
+    env::ModEnv,
     events::{Event, ModEvent},
-    hook::Hook,
+    hook::{Binding, Hook},
     hook_set::HookSet,
+    payload::{
+        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SessionView,
+        SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
+    },
     registry::Mods,
 };
 
+/// A hook every event takes: one value that is a [`Hook`] of each event's
+/// payload, as a type with `impl<E: Event> Hook<E>` is.
+pub trait AnyHook:
+    Hook<ToolBeforePayload>
+    + Hook<ToolAfterPayload>
+    + Hook<PromptSubmitPayload>
+    + Hook<SystemPromptPayload>
+    + Hook<ModelBeforePayload>
+    + Hook<ModelAfterPayload>
+    + Hook<TurnEndPayload>
+{
+}
+
+impl<H> AnyHook for H where
+    H: Hook<ToolBeforePayload>
+        + Hook<ToolAfterPayload>
+        + Hook<PromptSubmitPayload>
+        + Hook<SystemPromptPayload>
+        + Hook<ModelBeforePayload>
+        + Hook<ModelAfterPayload>
+        + Hook<TurnEndPayload>
+{
+}
+
+/// `hooks` with `hook` bound to `event` too, through the event's own method.
+pub fn bind(hooks: HookSet, event: ModEvent, hook: impl AnyHook) -> HookSet {
+    match event {
+        ModEvent::ToolBefore => hooks.on_tool_before(Binding::<ToolBeforePayload>::new(hook)),
+        ModEvent::ToolAfter => hooks.on_tool_after(Binding::<ToolAfterPayload>::new(hook)),
+        ModEvent::PromptSubmit => hooks.on_prompt_submit(Binding::<PromptSubmitPayload>::new(hook)),
+        ModEvent::SystemPrompt => hooks.on_system_prompt(Binding::<SystemPromptPayload>::new(hook)),
+        ModEvent::ModelBefore => hooks.on_model_before(Binding::<ModelBeforePayload>::new(hook)),
+        ModEvent::ModelAfter => hooks.on_model_after(Binding::<ModelAfterPayload>::new(hook)),
+        ModEvent::TurnEnd => hooks.on_turn_end(Binding::<TurnEndPayload>::new(hook)),
+    }
+}
+
+/// A hook of any event that answers `answer` (read as its event's
+/// decision) the first time it is asked, and passes after ([`once`]).
+#[derive(Debug, Clone)]
+pub struct Once {
+    answer: Value,
+    first: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl<E: Event> Hook<E> for Once {
+    async fn run(&self, _: E, _: &CancellationToken) -> Result<E::Decision, BoxError> {
+        if self.first.swap(false, Ordering::SeqCst) {
+            Ok(E::read_decision(self.answer.clone())?)
+        } else {
+            Ok(E::Decision::default())
+        }
+    }
+}
+
 /// A hook that answers `answer` (read as its event's decision) the first
 /// time its event fires, and passes after.
-pub fn once<E: Event>(answer: Value) -> impl Hook<E> {
-    let first = Arc::new(AtomicBool::new(true));
-    move |_: E, _: CancellationToken| {
-        let given = first.swap(false, Ordering::SeqCst).then(|| answer.clone());
-        async move {
-            Ok::<_, BoxError>(match given {
-                Some(v) => E::read_decision(v)?,
-                None => E::Decision::default(),
-            })
-        }
+pub fn once(answer: Value) -> Once {
+    Once {
+        answer,
+        first: Arc::new(AtomicBool::new(true)),
     }
 }
 
 /// A [`HookSet`] answering `answer` once to `event`, bound through the
 /// event's own method. Named `hooks` in reports.
 pub fn hooks_answering(event: ModEvent, answer: Value) -> HookSet {
-    let hooks = HookSet::new();
-    match event {
-        ModEvent::ToolBefore => hooks.on_tool_before(once(answer)),
-        ModEvent::ToolAfter => hooks.on_tool_after(once(answer)),
-        ModEvent::PromptSubmit => hooks.on_prompt_submit(once(answer)),
-        ModEvent::SystemPrompt => hooks.on_system_prompt(once(answer)),
-        ModEvent::ModelBefore => hooks.on_model_before(once(answer)),
-        ModEvent::ModelAfter => hooks.on_model_after(once(answer)),
-        ModEvent::TurnEnd => hooks.on_turn_end(once(answer)),
+    bind(HookSet::new(), event, once(answer))
+}
+
+/// A hook of any event that names `session` on `env` as it runs, as a
+/// host's /clear may while an event is under way, and passes.
+#[derive(Debug, Clone)]
+pub struct Naming {
+    env: ModEnv,
+    session: SessionView,
+}
+
+#[async_trait]
+impl<E: Event> Hook<E> for Naming {
+    async fn run(&self, _: E, _: &CancellationToken) -> Result<E::Decision, BoxError> {
+        self.env.set_session(self.session.clone());
+        Ok(E::Decision::default())
+    }
+}
+
+/// A hook of any event that names `session` on `env` as it runs ([`Naming`]).
+pub fn naming(env: &ModEnv, session: SessionView) -> Naming {
+    Naming {
+        env: env.clone(),
+        session,
     }
 }
 

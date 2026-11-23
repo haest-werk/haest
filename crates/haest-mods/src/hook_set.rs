@@ -50,8 +50,10 @@ mod tests;
 /// as of that event, when its host named one on the [`ModEnv`]
 /// ([`ModEnv::set_session`]): a hook never keeps a session of its own, so
 /// after the human's /clear it reads the new one. It is read once as the
-/// event begins, so every binding of one event gets the same session, and
-/// a mod file's handler on the same event gets it too: both are folded by
+/// event begins, by [`Mods`](crate::Mods) for every mod of that event (by
+/// the `HookSet` itself when a host fires its event outside a `Mods`), so
+/// every binding of one event gets the same session, and so does every
+/// other mod's handler on that event, a mod file's too: they are folded by
 /// the same code. A host that runs a [`Hook`](crate::Hook) itself, outside
 /// `HookSet`, sets the payload's `session` itself (from [`ModEnv::session`]).
 ///

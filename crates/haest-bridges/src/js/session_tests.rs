@@ -171,3 +171,31 @@ async fn every_event_hands_a_ts_handler_the_session_the_env_names_as_of_that_eve
         );
     }
 }
+
+/// A `.ts` file, then a `HookSet` whose hook names a new session (the
+/// host's /clear while the event runs), then a `HookSet` binding: on every
+/// event, the file's handler and the binding after the /clear are both
+/// handed the session the event began on.
+#[tokio::test]
+async fn every_mod_of_one_event_gets_the_session_named_as_that_event_began() {
+    for event in ModEvent::ALL {
+        let ui = TestUi::new();
+        let haest = env(ui.clone(), WorkspaceMode::Sandbox).with_session(session(1));
+        let file = js("session.ts", &noticing(&[*event]), &haest)
+            .await
+            .expect("the mod loads");
+        let rust = Noting::default();
+        let mods = Mods::new(
+            haest.clone(),
+            [
+                ModRef::new(file),
+                ModRef::new(bind(HookSet::new(), *event, naming(&haest, session(2)))),
+                ModRef::new(bind(HookSet::new(), *event, rust.clone())),
+            ],
+        );
+        effect(*event, mods, "session.ts").await;
+        let seen = [json!({ "event": event.as_str(), "session": session_json(1) })];
+        assert_eq!(noticed(&ui), seen, "{event}: the .ts handler");
+        assert_eq!(*rust.0.lock().unwrap(), seen, "{event}: the binding");
+    }
+}

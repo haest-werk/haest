@@ -15,12 +15,17 @@
 //! (decision/json.rs) wherever it came from; what the decisions do is
 //! decision.rs.
 //!
-//! Every payload a handler gets carries the session the conversation is on
-//! ([`Event::session`]): each fold reads it from the env once, as the event
-//! begins, so every handler of one event gets the same session whatever the
-//! host names meanwhile, and a binding and a mod file's handler get the same.
+//! Every payload a handler gets carries the session the conversation was on
+//! as the event began ([`Event::session`]): a [`Mods`] reads it once per
+//! event and hands every mod of that event the env that holds it, a nested
+//! `Mods`' mods too ([`ModEnv::for_event`]), so every handler of one event,
+//! in every mod, gets the same session whatever the host names meanwhile,
+//! and a binding and a mod file's handler get the same. Each fold takes it
+//! from the env once ([`ModEnv::event_session`]); on an env no `Mods` began
+//! the event on (a host fires one mod's event itself), that is the read.
 //!
 //! [`HookSet`]: crate::HookSet
+//! [`Mods`]: crate::Mods
 
 use std::ops::ControlFlow;
 
@@ -44,7 +49,8 @@ use crate::{
 };
 
 /// `payload` as of `session`, the session the conversation was on as the
-/// event began: the one place a handler's payload gets it.
+/// event began ([`ModEnv::event_session`]): the one place a handler's
+/// payload gets it.
 fn as_of<E: Event>(mut payload: E, session: Option<&SessionView>) -> E {
     payload.set_session(session.cloned());
     payload
@@ -78,7 +84,7 @@ pub async fn tool_before<H: Handlers<ToolBeforePayload>>(
     ctx: &ToolContext,
     haest: &ModEnv,
 ) -> Result<Before, H::Error> {
-    let session = haest.session();
+    let session = haest.event_session();
     let mut call = call.clone();
     let mut rewritten = false;
     for nth in 1..=handlers.count() {
@@ -111,7 +117,7 @@ pub async fn tool_after<H: Handlers<ToolAfterPayload>>(
     ctx: &ToolContext,
     haest: &ModEnv,
 ) -> Result<Option<ToolOutput>, H::Error> {
-    let session = haest.session();
+    let session = haest.event_session();
     let mut replaced = None;
     for nth in 1..=handlers.count() {
         let payload = ToolAfterPayload::new(call, replaced.as_ref().unwrap_or(output), ctx);
@@ -134,7 +140,7 @@ pub async fn prompt_submit<H: Handlers<PromptSubmitPayload>>(
     text: &str,
     haest: &ModEnv,
 ) -> Result<Option<String>, H::Error> {
-    let session = haest.session();
+    let session = haest.event_session();
     let mut rewritten: Option<String> = None;
     for nth in 1..=handlers.count() {
         let payload = PromptSubmitPayload::new(rewritten.as_deref().unwrap_or(text));
@@ -155,7 +161,7 @@ pub async fn system_prompt<H: Handlers<SystemPromptPayload>>(
     handlers: &H,
     haest: &ModEnv,
 ) -> Result<Option<String>, H::Error> {
-    let session = haest.session();
+    let session = haest.event_session();
     let mut parts = Vec::new();
     for nth in 1..=handlers.count() {
         let payload = as_of(SystemPromptPayload::new(), session.as_ref());
@@ -183,7 +189,10 @@ pub async fn model_before<H: Handlers<ModelBeforePayload>>(
     if handlers.count() == 0 {
         return Ok(Ok(Step::Pass));
     }
-    let payload = as_of(ModelBeforePayload::new(agent), haest.session().as_ref());
+    let payload = as_of(
+        ModelBeforePayload::new(agent),
+        haest.event_session().as_ref(),
+    );
     let decided = decide(handlers, &payload, |d| d.stop.is_some()).await?;
     Ok(ModelBeforeDecision::apply(decided, agent, cancel).await)
 }
@@ -205,7 +214,7 @@ pub async fn model_after<H: Handlers<ModelAfterPayload>>(
     }
     let payload = as_of(
         ModelAfterPayload::new(agent, answer),
-        haest.session().as_ref(),
+        haest.event_session().as_ref(),
     );
     let decided = decide(handlers, &payload, |d| d.stop.is_some()).await?;
     Ok(ModelAfterDecision::apply(decided, agent))
@@ -229,7 +238,7 @@ pub async fn turn_end<H: Handlers<TurnEndPayload>>(
         return Ok(Ok(TurnEnd::Pass));
     }
     let payload = TurnEndPayload::new(agent, outcome, cancel, haest);
-    let payload = as_of(payload, haest.session().as_ref());
+    let payload = as_of(payload, haest.event_session().as_ref());
     let decided = decide(handlers, &payload, |d| d.r#continue.is_some()).await?;
     Ok(TurnEndDecision::apply(decided, agent, cancel).await)
 }

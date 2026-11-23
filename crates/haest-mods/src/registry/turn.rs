@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use super::Mods;
 use crate::{
     api::{Mod, Step, TurnEnd},
+    env::ModEnv,
     events::ModEvent,
 };
 
@@ -61,11 +62,23 @@ impl Mods {
         agent: &mut Agent,
         cancel: &CancellationToken,
     ) -> Result<(), BoxError> {
+        self.model_before_for(agent, cancel, self.env()).await
+    }
+
+    /// [`model_before`](Self::model_before), in the event `came_with`
+    /// brought ([`ModEnv::for_event`]).
+    pub(super) async fn model_before_for(
+        &self,
+        agent: &mut Agent,
+        cancel: &CancellationToken,
+        came_with: &ModEnv,
+    ) -> Result<(), BoxError> {
+        let haest = self.env().for_event(came_with);
         for m in self.list() {
             if cancel.is_cancelled() {
                 break;
             }
-            let ran = m.model_before(agent, cancel, self.env()).await;
+            let ran = m.model_before(agent, cancel, &haest).await;
             self.step(m.as_ref(), ModEvent::ModelBefore, ran, cancel)?;
         }
         Ok(())
@@ -78,11 +91,25 @@ impl Mods {
         answer: &AssistantMessage,
         cancel: &CancellationToken,
     ) -> Result<(), BoxError> {
+        self.model_after_for(agent, answer, cancel, self.env())
+            .await
+    }
+
+    /// [`model_after`](Self::model_after), in the event `came_with` brought
+    /// ([`ModEnv::for_event`]).
+    pub(super) async fn model_after_for(
+        &self,
+        agent: &mut Agent,
+        answer: &AssistantMessage,
+        cancel: &CancellationToken,
+        came_with: &ModEnv,
+    ) -> Result<(), BoxError> {
+        let haest = self.env().for_event(came_with);
         for m in self.list() {
             if cancel.is_cancelled() {
                 break;
             }
-            let ran = m.model_after(agent, answer, cancel, self.env()).await;
+            let ran = m.model_after(agent, answer, cancel, &haest).await;
             self.step(m.as_ref(), ModEvent::ModelAfter, ran, cancel)?;
         }
         Ok(())
@@ -97,14 +124,27 @@ impl Mods {
         outcome: &TurnOutcome,
         cancel: &CancellationToken,
     ) -> Option<String> {
+        self.turn_end_for(agent, outcome, cancel, self.env()).await
+    }
+
+    /// [`turn_end`](Self::turn_end), in the event `came_with` brought
+    /// ([`ModEnv::for_event`]).
+    pub(super) async fn turn_end_for(
+        &self,
+        agent: &mut Agent,
+        outcome: &TurnOutcome,
+        cancel: &CancellationToken,
+        came_with: &ModEnv,
+    ) -> Option<String> {
+        let haest = self.env().for_event(came_with);
         for m in self.list() {
             if cancel.is_cancelled() {
                 break;
             }
-            match m.turn_end(agent, outcome, cancel, self.env()).await {
+            match m.turn_end(agent, outcome, cancel, &haest).await {
                 Ok(TurnEnd::Pass) => {}
                 Ok(TurnEnd::Continue(text)) => {
-                    self.env().kept_going(cancel);
+                    haest.kept_going(cancel);
                     return Some(text);
                 }
                 Err(e) => self.failed(m.as_ref(), ModEvent::TurnEnd, &e, cancel),

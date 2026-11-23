@@ -10,7 +10,7 @@ use haest_core::{
 };
 
 use super::{Mods, nested::Reported};
-use crate::{api::ModToolCall, events::ModEvent};
+use crate::{api::ModToolCall, env::ModEnv, events::ModEvent};
 
 /// What the model reads for a call the human interrupted while a mod was deciding.
 pub(super) const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
@@ -36,7 +36,7 @@ impl Mods {
         call: ModToolCall,
         ctx: &ToolContext,
     ) -> Result<ModToolCall, ToolError> {
-        match self.judge(call, ctx).await {
+        match self.judge(call, ctx, self.env()).await {
             Judged::Run(call) => Ok(call),
             Judged::Refused(reason) => Err(ToolError::Input(format!("Refused: {reason}"))),
             Judged::Interrupted => Err(ToolError::Input(INTERRUPTED.into())),
@@ -48,12 +48,19 @@ impl Mods {
         }
     }
 
-    /// What every mod's `tool.before` decided about `call`, gates last; a
-    /// failure is reported here, once.
-    pub(super) async fn judge(&self, mut call: ModToolCall, ctx: &ToolContext) -> Judged {
+    /// What every mod's `tool.before` decided about `call`, gates last, in
+    /// the event `came_with` brought ([`ModEnv::for_event`]); a failure is
+    /// reported here, once.
+    pub(super) async fn judge(
+        &self,
+        mut call: ModToolCall,
+        ctx: &ToolContext,
+        came_with: &ModEnv,
+    ) -> Judged {
+        let haest = self.env().for_event(came_with);
         let (gates, rest): (Vec<_>, Vec<_>) = self.list().iter().partition(|m| m.is_gate());
         for m in rest.into_iter().chain(gates) {
-            match m.tool_before(&call, ctx, self.env()).await {
+            match m.tool_before(&call, ctx, &haest).await {
                 Ok(decision) => {
                     if let ControlFlow::Break(reason) = decision.apply_to(&mut call) {
                         return Judged::Refused(reason);
@@ -82,11 +89,24 @@ impl Mods {
     pub(crate) async fn after(
         &self,
         call: &ModToolCall,
-        mut output: ToolOutput,
+        output: ToolOutput,
         ctx: &ToolContext,
     ) -> ToolOutput {
+        self.after_for(call, output, ctx, self.env()).await
+    }
+
+    /// [`after`](Self::after), in the event `came_with` brought
+    /// ([`ModEnv::for_event`]).
+    pub(super) async fn after_for(
+        &self,
+        call: &ModToolCall,
+        mut output: ToolOutput,
+        ctx: &ToolContext,
+        came_with: &ModEnv,
+    ) -> ToolOutput {
+        let haest = self.env().for_event(came_with);
         for m in self.list() {
-            match m.tool_after(call, &output, ctx, self.env()).await {
+            match m.tool_after(call, &output, ctx, &haest).await {
                 Ok(Some(replaced)) => {
                     output = ToolOutput {
                         cost_usd: output.cost_usd,
