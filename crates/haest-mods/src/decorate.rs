@@ -1,7 +1,9 @@
 //! The decorators a host composes to put mods in the loop -- no haest-core change:
 //!   - [`ModTools`]: a [`ToolSource`] whose every tool (the host's and the mods'
-//!     own) runs inside `tool.before` / `tool.after`;
+//!     own) runs inside `tool.before` / `tool.after`, less those a mod hides;
 //!   - [`ModSystemPrompt`]: a [`SystemPrompt`] with what `system.prompt` appends;
+//!   - [`ModHooks`](crate::ModHooks) (hooks.rs): the host's `AgentHooks` with
+//!     `model.before`, `model.after` and `turn.end` after them;
 //!   - `prompt.submit` is [`Mods::rewrite_prompt`], called on the human's text
 //!     before it goes to `Agent::run`; commands are [`Mods::command`].
 
@@ -22,6 +24,10 @@ use crate::{api::ModToolCall, registry::Mods};
 /// (`AgentDeps::new(shared, ModTools::new(tools, mods.clone()), ...)`). The
 /// list is built again each time the loop asks, so a mod that registers a
 /// tool later is offered from the next model call.
+///
+/// A tool a mod hides ([`Mod::disabled_tools`](crate::Mod::disabled_tools))
+/// is neither advertised nor callable, whoever added it; once no mod hides
+/// it, it is back as it was, where it was.
 ///
 /// A wrapped call goes: every mod's `tool.before` (gates last), then the tool
 /// with the input they left, then every mod's `tool.after`. A refusal comes
@@ -49,12 +55,15 @@ impl ModTools {
     /// (Code) should be handed these wrapped siblings, so every call it makes
     /// passes the hooks too.
     ///
-    /// The mods' tools come after `tools`, in load order. A wrapped tool keeps
+    /// The mods' tools come after `tools`, in load order, and every tool a
+    /// mod hides ([`Mods::disabled_tools`]) is left out. A wrapped tool keeps
     /// its name, description, schema, kind and `read_only`.
     pub fn wrap(mods: &Mods, tools: Tools) -> Tools {
+        let hidden = mods.disabled_tools();
         tools
             .into_iter()
             .chain(mods.tools())
+            .filter(|tool| !hidden.iter().any(|name| name == tool.name()))
             .map(|tool| {
                 ToolRef::new(ModTool {
                     tool,

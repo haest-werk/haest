@@ -19,7 +19,7 @@ use super::{
     channel::{JsMeta, Reply, ToJs},
     load::{ModCaps, ModLoadError},
 };
-use crate::api::ModUiRef;
+use crate::env::ModUiRef;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
 const STACK_BYTES: usize = 4 << 20;

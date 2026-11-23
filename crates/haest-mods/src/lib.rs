@@ -1,7 +1,7 @@
 //! Mods: code that changes how a haest agent behaves, without a change to haest itself.
 //!
 //! A mod is plain Rust (a [`Mod`]) or a `.js` / `.ts` file run in embedded
-//! QuickJS (a [`JsMod`]). Both kinds hook the same four events of the agent
+//! QuickJS (a [`JsMod`]). Both kinds hook the same events of the agent
 //! loop --
 //!
 //! | Event | When | May |
@@ -10,12 +10,17 @@
 //! | `tool.after` | after the call ran | replace its output |
 //! | `prompt.submit` | a human message, before the model sees it | rewrite it |
 //! | `system.prompt` | before every model call | append text to the system prompt |
+//! | `model.before` | before every model call, after the host's own hook | stop the turn, steer it, compact it |
+//! | `model.after` | an answer landed, its tool calls have not run | stop the turn (its calls do not run), steer it |
+//! | `turn.end` | a turn is about to end on its own | keep it going with a message (the first wins), compact it |
 //!
-//! -- add tools and slash commands, and reach the human through the host:
-//! `ask` puts an Allow / Deny prompt in front of them, `notice` (a native
-//! mod's [`ModEnv::info`]) writes a line they see. Two mods are built in: [`ApprovalMod`] (in the real workspace, a
-//! Bash command that destroys work waits for the human's Allow) and
-//! [`PlanMod`] (`/plan`: read-only until `/plan off`).
+//! -- add, replace and remove their own tools, hide any tool (the host's,
+//! an MCP server's, another mod's) and show it again, add slash commands,
+//! and reach the human through the host: `ask` puts an Allow / Deny prompt
+//! in front of them, `notice` (a native mod's [`ModEnv::info`]) writes a
+//! line they see. Two mods are built in: [`ApprovalMod`] (in the real
+//! workspace, a Bash command that destroys work waits for the human's
+//! Allow) and [`PlanMod`] (`/plan`: read-only until `/plan off`).
 //!
 //! A mod runs with the HOST's full trust, sandbox or not: a native mod is the
 //! host's own code, and a mod file can do whatever its `haest` API reaches.
@@ -35,7 +40,7 @@
 //! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModCaps`] bounds it, [`ModLoadError`] says why one did not load |
 //! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`] |
-//! | [`ModTools`], [`ModSystemPrompt`] | the wrappers a host puts around its tool source and its system prompt |
+//! | [`ModTools`], [`ModSystemPrompt`], [`ModHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
@@ -44,9 +49,10 @@
 //! # Putting mods in the loop
 //!
 //! Load the mods, wrap the agent's tool source in [`ModTools`] and its system
-//! prompt in [`ModSystemPrompt`], and pass the human's text through
-//! [`Mods::rewrite_prompt`] before it goes to the agent. The model here is
-//! scripted, so the example runs offline.
+//! prompt in [`ModSystemPrompt`] (and its hooks in [`ModHooks`], for the
+//! loop events: [the mod file below](#a-mod-file-in-the-loop) uses them), and
+//! pass the human's text through [`Mods::rewrite_prompt`] before it goes to
+//! the agent. The model here is scripted, so the example runs offline.
 //!
 //! ```
 //! use haest_core::{
@@ -245,6 +251,82 @@
 //! # }
 //! ```
 //!
+//! # A mod file in the loop
+//!
+//! The loop events run where the host put [`ModHooks`] around its hooks.
+//! This mod hides the host's `Push` tool from the model, and holds every
+//! turn until the tests ran: `turn.end` keeps it going with a message.
+//!
+//! ```
+//! use std::path::Path;
+//!
+//! use haest_core::{
+//!     Agent, AgentDeps, AgentOptions, LoopEvent, Message, NoHooks, SharedDeps, ShutWorkspace,
+//!     Tools,
+//!     testing::{ScriptedProvider, text_answer, tool_answer},
+//!     workspace::WorkspaceMode,
+//! };
+//! use haest_mods::{JsMod, ModEnv, ModHooks, ModTools, Mods};
+//! use serde_json::json;
+//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
+//! # struct Terminal;
+//! # #[async_trait::async_trait]
+//! # impl ModUi for Terminal {
+//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+//! #     fn info(&self, _: &str) {}
+//! # }
+//! # struct Named(&'static str);
+//! # #[async_trait::async_trait]
+//! # impl haest_core::Tool for Named {
+//! #     fn name(&self) -> &str { self.0 }
+//! #     fn description(&self) -> String { self.0.into() }
+//! #     fn parameters(&self) -> serde_json::Value { json!({"type": "object"}) }
+//! #     fn kind(&self) -> &str { "dev.run" }
+//! #     async fn execute(&self, _: haest_core::tool::JsonMap, _: &haest_core::ToolContext)
+//! #         -> Result<haest_core::ToolOutput, haest_core::ToolError> {
+//! #         Ok(haest_core::ToolOutput::text("ok"))
+//! #     }
+//! # }
+//!
+//! const TESTED_FIRST_TS: &str = r#"
+//! export default function (haest: any) {
+//!   haest.disableTool('Push')
+//!   let tested = false
+//!   haest.on('tool.after', (call: { name: string }) => { if (call.name === 'Test') tested = true })
+//!   haest.on('turn.end', (turn: { stopReason: string }) =>
+//!     tested ? undefined : { continue: 'Run the tests before you stop.' })
+//! }
+//! "#;
+//!
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), haest_core::error::BoxError> {
+//! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
+//! let rule = JsMod::load(Path::new("/mods/tested-first.ts"), TESTED_FIRST_TS.into(), &env).await?;
+//! let mods = Mods::new(env, [rule]);
+//!
+//! let model = ScriptedProvider::new([
+//!     text_answer("Done, I think."),
+//!     tool_answer(&[("t1", "Test", json!({}))]),
+//!     text_answer("The tests pass."),
+//! ]);
+//! let tools = Tools::new().with(Named("Test")).with(Named("Push"));
+//! let shared = SharedDeps::new(model.resolver(), "/project", ShutWorkspace);
+//! let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "")
+//!     .with_hooks(ModHooks::new(NoHooks, mods));
+//! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
+//!
+//! let end = agent.run("fix the bug", &mut Vec::<LoopEvent>::new()).await;
+//! assert_eq!(end.error, None);
+//!
+//! // The model never saw Push, and was sent back once to run the tests.
+//! let requests = model.requests();
+//! assert!(requests.iter().all(|r| r.tools.iter().all(|t| t.name != "Push")));
+//! assert_eq!(requests.len(), 3);
+//! assert!(matches!(&agent.history()[2], Message::User(u) if u.content.contains("Run the tests")));
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! # Approvals
 //!
 //! [`ApprovalMod`] asks before a Bash command in the real workspace that can
@@ -275,7 +357,10 @@ mod ask;
 #[cfg(test)]
 mod conversation_tests;
 mod decorate;
+mod env;
+mod events;
 mod gate;
+mod hooks;
 mod js;
 mod loader;
 mod plan;
@@ -283,13 +368,15 @@ mod registry;
 #[cfg(test)]
 mod testkit;
 
-pub use api::{Before, Mod, ModEnv, ModRef, ModToolCall, ModUi, ModUiRef};
+pub use api::{Before, Mod, ModRef, ModToolCall, Step, TurnEnd};
 pub use approval::{
     ApprovalMod, AutoJudge, AutoJudgeRef, BashVerdict, SHELL_TOOLS, irreversible_reason,
 };
 pub use ask::{ApprovalRequest, Decision};
 pub use decorate::{ModSystemPrompt, ModTools};
+pub use env::{ModEnv, ModUi, ModUiRef};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
+pub use hooks::ModHooks;
 pub use js::{JsMod, ModCaps, ModLoadError};
 pub use loader::{ModOptions, load_mods};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanMod};

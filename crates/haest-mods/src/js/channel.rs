@@ -40,12 +40,25 @@ pub(crate) struct ToolMeta {
     pub read_only: bool,
 }
 
+/// A change a file mod made to its own tools, on its way to the
+/// [`LiveTools`](haest_core::LiveTools) its [`JsMod`](super::JsMod) holds.
+pub(crate) enum ToolChange {
+    /// `haest.tool(t)`: add it, or replace the tool of that name in place.
+    Set(ToolMeta),
+    /// `haest.removeTool(name)`.
+    Remove(String),
+}
+
 /// What a file mod has registered so far (it may register more later).
 #[derive(Default)]
 pub(crate) struct JsMeta {
     pub events: HashSet<String>,
-    pub tools: Vec<ToolMeta>,
+    /// Tool changes in the order the mod made them, not yet applied: the
+    /// mod's thread cannot make a tool (a tool holds the thread's handle).
+    pub tool_changes: Vec<ToolChange>,
     pub commands: Vec<String>,
+    /// `haest.disableTool` names, once each, until `haest.enableTool`.
+    pub disabled: Vec<String>,
 }
 
 impl JsMeta {
@@ -56,14 +69,17 @@ impl JsMeta {
         meta.lock().expect("the mod's registrations lock poisoned")
     }
 
-    /// A second tool with the same name replaces the first.
-    pub(super) fn add_tool(&mut self, tool: ToolMeta) {
-        self.tools.retain(|t| t.name != tool.name);
-        self.tools.push(tool);
-    }
     pub(super) fn add_command(&mut self, name: String) {
         if !self.commands.contains(&name) {
             self.commands.push(name);
+        }
+    }
+
+    /// Hide `name`, or show it again.
+    pub(super) fn set_disabled(&mut self, name: String, disabled: bool) {
+        self.disabled.retain(|n| *n != name);
+        if disabled {
+            self.disabled.push(name);
         }
     }
 }

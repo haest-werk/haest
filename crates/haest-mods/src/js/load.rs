@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use haest_core::LiveTools;
 use serde_json::json;
 
 use super::{
@@ -15,7 +16,7 @@ use super::{
     channel::{CallError, JsMeta, JsThread},
     thread::{self, Setup},
 };
-use crate::api::ModEnv;
+use crate::{env::ModEnv, events::ModEvent};
 
 /// The bounds a file mod runs in. The default: 10 s of code without a pause,
 /// 128 MiB of memory, 30 s for its default export to return.
@@ -164,7 +165,12 @@ impl JsMod {
             runtime,
         };
         let thread = Arc::new(JsThread::new(thread::start(setup).await?));
-        let env = json!({ "env": { "cwd": haest.cwd(), "workspace": haest.workspace().as_str() } });
+        // The events are the Rust side's list: the JavaScript half takes
+        // `haest.on` for these, and refuses to start if it handles others.
+        let env = json!({
+            "env": { "cwd": haest.cwd(), "workspace": haest.workspace().as_str() },
+            "events": ModEvent::WORDS,
+        });
         let wait = caps.load_timeout;
         match tokio::time::timeout(wait, thread.call("load", env, None)).await {
             Err(_) => Err(ModLoadError::Timeout(wait)),
@@ -174,6 +180,7 @@ impl JsMod {
                 name: path.display().to_string(),
                 thread,
                 meta,
+                tools: LiveTools::new(),
             }),
         }
     }

@@ -1,19 +1,16 @@
-//! What a mod is ([`Mod`]), what it can reach ([`ModEnv`]), and the host's half
-//! ([`ModUi`]): the human's Allow / Deny and the lines they see.
-
-use std::path::{Path, PathBuf};
+//! What a mod is ([`Mod`]), and what its events decide ([`Before`],
+//! [`Step`], [`TurnEnd`]).
 
 use async_trait::async_trait;
 use haest_core::{
-    Tools,
+    Agent, AssistantMessage, Tools, TurnOutcome,
     error::BoxError,
     tool::{JsonMap, ToolContext, ToolOutput},
-    workspace::WorkspaceMode,
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::ask::{ApprovalRequest, Decision};
+use crate::env::ModEnv;
 
 /// One tool call as a mod sees it, in `tool.before` and `tool.after`.
 ///
@@ -43,113 +40,27 @@ pub enum Before {
     Input(JsonMap),
 }
 
-/// PLUG POINT: how mods reach the human, implemented by the host (a CLI, a
-/// control panel, a chat app).
-///
-/// `ask` and the lines reach the human; how is the host's business. Most hosts
-/// do not implement this: an [`ApprovalGate`](crate::ApprovalGate) over their
-/// own [`Prompter`](crate::Prompter) keeps the rules every ask must keep, and
-/// [`ApprovalGate::mod_ui`](crate::ApprovalGate::mod_ui) makes it a
-/// `ModUi` that sends every other line where the host says.
-/// [`ApprovalGate`](crate::ApprovalGate#examples)'s example is a whole host.
-///
-/// Haest holds one in a [`ModUiRef`].
-#[async_trait]
-pub trait ModUi: Send + Sync {
-    /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
-    /// human never answers -- a tool call must never hang on someone who walked away.
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision;
-    /// A line the human sees: what a mod has to say (plan mode is on).
-    fn info(&self, text: &str);
-    /// Something was skipped or held and the conversation goes on; the
-    /// human should see it. Default: an [`info`](Self::info) line.
-    fn warn(&self, text: &str) {
-        self.info(text)
-    }
-    /// A mod failed to load or in an event; the human must see it. Default:
-    /// an [`info`](Self::info) line.
-    fn error(&self, text: &str) {
-        self.info(text)
-    }
-    /// A line for haest's diagnostic log, which the human need not see (each
-    /// mod as it loads). Default: dropped.
-    fn debug(&self, _message: &str) {}
+/// What a [`Mod::model_before`] or [`Mod::model_after`] hook decided about
+/// the turn.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// Go on.
+    Pass,
+    /// End the turn here, as an error whose text names this mod and says
+    /// `reason` ([`TurnOutcome::error`]). The first stop wins; later mods
+    /// are not asked.
+    Stop(String),
 }
 
-haest_core::plug_ref! {
-    /// A [`ModUi`], shared: how the host reaches the human. A parameter that
-    /// takes `impl Into<ModUiRef>` takes the host's value itself, or an `Arc`
-    /// of it.
-    pub struct ModUiRef(dyn ModUi);
-}
-
-/// Where haest runs, and the human: what every mod event can reach.
-///
-/// One per conversation, shared by every mod in [`Mods`](crate::Mods); the
-/// events get it as their `haest` argument. Cheap to clone.
-#[derive(Debug, Clone)]
-pub struct ModEnv {
-    cwd: PathBuf,
-    workspace: WorkspaceMode,
-    ui: ModUiRef,
-}
-
-impl ModEnv {
-    /// The environment for one conversation's mods: its working directory,
-    /// the workspace its tools run in, and the host's [`ModUi`].
-    pub fn new(cwd: impl Into<PathBuf>, workspace: WorkspaceMode, ui: impl Into<ModUiRef>) -> Self {
-        Self {
-            cwd: cwd.into(),
-            workspace,
-            ui: ui.into(),
-        }
-    }
-
-    /// The conversation's working directory.
-    pub fn cwd(&self) -> &Path {
-        &self.cwd
-    }
-
-    /// The workspace the agent's tools run in:
-    /// [`ApprovalMod`](crate::ApprovalMod) asks only in `Real`.
-    pub fn workspace(&self) -> WorkspaceMode {
-        self.workspace
-    }
-
-    /// The host's ask, and its info, warn, error and debug lines.
-    pub fn ui(&self) -> &ModUiRef {
-        &self.ui
-    }
-
-    /// The human's Allow / Deny, through the host; Deny on interrupt or
-    /// timeout. An ask under an already-interrupted call (`cancel` fired) is a
-    /// Deny at once, never a prompt.
-    pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
-        if cancel.is_cancelled() {
-            return Decision::Deny;
-        }
-        self.ui.ask(req, cancel).await
-    }
-
-    /// A line the human sees, through the host ([`ModUi::info`]).
-    pub fn info(&self, text: &str) {
-        self.ui.info(text)
-    }
-
-    /// Something skipped or held, through the host ([`ModUi::warn`]).
-    pub fn warn(&self, text: &str) {
-        self.ui.warn(text)
-    }
-
-    /// Something failed, through the host ([`ModUi::error`]).
-    pub fn error(&self, text: &str) {
-        self.ui.error(text)
-    }
-
-    /// A line for the host's diagnostic log ([`ModUi::debug`]).
-    pub fn debug(&self, message: &str) {
-        self.ui.debug(message)
-    }
+/// What a [`Mod::turn_end`] hook decided about a turn that would end on its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnEnd {
+    /// Let it end.
+    Pass,
+    /// Keep it going: the text goes to the model as a user message, and the
+    /// turn makes another model call under its caps. The first mod that keeps
+    /// it going wins; later mods are not asked.
+    Continue(String),
 }
 
 /// A NATIVE mod: plain Rust with the same events a mod file has. Every method
@@ -164,10 +75,17 @@ impl ModEnv {
 /// value, or as an `Arc` the host keeps to look at it), and held in a
 /// [`ModRef`]; every event runs across the mods in the order they were added. An `Err` from an
 /// event (any error, or a line of text: `Err("why".into())`) is reported to
-/// the human through [`ModUi::error`] with its causes, and never takes the
-/// conversation down. What else a failure means depends on the event;
-/// [`Mods`](crate::Mods) has the rules (a failed `tool.before` refuses the
-/// call, a failed `tool.after` leaves the output as it was).
+/// the human through [`ModUi::error`](crate::ModUi::error) with its causes,
+/// and never takes the conversation down. What else a failure means depends
+/// on the event; [`Mods`](crate::Mods) has the rules (a failed `tool.before`
+/// refuses the call, a failed `tool.after` leaves the output as it was, a
+/// failed loop event changes nothing and the turn goes on).
+///
+/// The loop events (`model.before`, `model.after`, `turn.end`) run where the
+/// host put [`ModHooks`](crate::ModHooks) around its own hooks, after the
+/// host's, for the conversation's own agent (not its subagents). They get
+/// the running [`Agent`] itself, to read and change, and the turn's cancel
+/// token, to pass to any model call made there.
 ///
 /// A mod runs with the HOST's full trust, sandbox or not.
 #[async_trait]
@@ -228,11 +146,80 @@ pub trait Mod: Send + Sync {
         Ok(None)
     }
 
+    /// `model.before`: before every model call, once the host's
+    /// [`before_model_call`](haest_core::AgentHooks::before_model_call) has
+    /// run (its compaction included). [`Step::Stop`] ends the turn before the
+    /// call.
+    ///
+    /// `agent` is the running agent: read its history, steer it
+    /// ([`Agent::control`]), switch its model, or compact it
+    /// ([`compact`](haest_core::compaction::compact), with `cancel`: what the
+    /// summary costs counts toward the turn). An `Err` changes nothing: the
+    /// turn goes on.
+    async fn model_before(
+        &self,
+        _agent: &mut Agent,
+        _cancel: &CancellationToken,
+        _haest: &ModEnv,
+    ) -> Result<Step, BoxError> {
+        Ok(Step::Pass)
+    }
+
+    /// `model.after`: once each answer is in history, before any of its tool
+    /// calls runs (after the host's
+    /// [`after_model_call`](haest_core::AgentHooks::after_model_call)).
+    /// [`Step::Stop`] ends the turn, and the answer's calls are answered as
+    /// not run.
+    ///
+    /// `answer` is the last message in `agent`'s history. Steer here
+    /// ([`Agent::control`]) to put input after the answer's tool results, or
+    /// to keep going a turn whose answer had none. Leave the history as it is
+    /// (the results land after the answer): compact in
+    /// [`model_before`](Self::model_before) or [`turn_end`](Self::turn_end).
+    /// An `Err` changes nothing: the calls run.
+    async fn model_after(
+        &self,
+        _agent: &mut Agent,
+        _answer: &AssistantMessage,
+        _cancel: &CancellationToken,
+        _haest: &ModEnv,
+    ) -> Result<Step, BoxError> {
+        Ok(Step::Pass)
+    }
+
+    /// `turn.end`: a turn is about to end on its own with `outcome` (an
+    /// answer without tool calls, no steering queued), and the host's
+    /// [`before_turn_end`](haest_core::AgentHooks::before_turn_end) let it.
+    /// [`TurnEnd::Continue`] keeps it going: the stop hook that holds a turn
+    /// to a check (the tests pass, the file is written). A mod that always
+    /// continues ends the turn at a cap.
+    ///
+    /// `agent` is the running agent, its answer last in history; compact it
+    /// here so the next turn starts small. An `Err` changes nothing: the
+    /// turn ends.
+    async fn turn_end(
+        &self,
+        _agent: &mut Agent,
+        _outcome: &TurnOutcome,
+        _cancel: &CancellationToken,
+        _haest: &ModEnv,
+    ) -> Result<TurnEnd, BoxError> {
+        Ok(TurnEnd::Pass)
+    }
+
     /// Tools this mod adds (asked again before every model call).
     /// [`ModTools`](crate::ModTools) runs them inside every mod's hooks, the
     /// same as the host's own.
     fn tools(&self) -> Tools {
         Tools::new()
+    }
+
+    /// The names of the tools this mod hides, whoever added them (the host,
+    /// an MCP server, a mod): [`ModTools`](crate::ModTools) neither
+    /// advertises nor runs them. Asked again before every model call, so a
+    /// name the mod stops returning is back from the next call, as it was.
+    fn disabled_tools(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// The slash commands this mod answers, without the `/`.

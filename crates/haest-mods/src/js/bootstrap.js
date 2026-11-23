@@ -2,12 +2,17 @@
 // receives, and the dispatcher the Rust half (thread.rs) drives. Everything
 // crosses the boundary as JSON strings; Rust holds no JavaScript value between
 // calls. Each mod has its own runtime, so nothing here is shared between mods.
+//
+// The events are the Rust side's list (events.rs), handed in at load: `ops`
+// handles exactly those, or the mod does not start.
 ;(() => {
   const { parse, stringify } = JSON
   const P = Promise
   const freeze = Object.freeze
-  const EVENTS = ['tool.before', 'tool.after', 'prompt.submit', 'system.prompt']
-  const hooks = { 'tool.before': [], 'tool.after': [], 'prompt.submit': [], 'system.prompt': [] }
+  // The ops that are not an event.
+  const CALLS = ['load', 'command', 'execute']
+  let EVENTS = []
+  const hooks = Object.create(null)
   const tools = new Map()
   const commands = new Map()
   const asks = new Map()
@@ -16,6 +21,7 @@
   let askSeq = 0
 
   const isObject = v => v !== null && typeof v === 'object'
+  const given = (v, key) => isObject(v) && key in v && v[key] !== undefined && v[key] !== null
   const errorText = e => {
     try {
       return isObject(e) && 'message' in e ? String(e.message) : String(e)
@@ -62,6 +68,20 @@
         tools.set(t.name, t)
         outbox.push({ type: 'tool', tool: meta })
       },
+      // Only a tool this mod added; true when there was one.
+      removeTool(name) {
+        const bare = String(name)
+        if (!tools.delete(bare)) return false
+        outbox.push({ type: 'removeTool', name: bare })
+        return true
+      },
+      // Any tool, whoever added it, until enableTool.
+      disableTool(name) {
+        outbox.push({ type: 'disableTool', name: String(name) })
+      },
+      enableTool(name) {
+        outbox.push({ type: 'enableTool', name: String(name) })
+      },
       command(name, run) {
         if (typeof run !== 'function') throw new Error(`haest.command("${name}", run): run is not a function`)
         const bare = String(name).replace(/^\//, '')
@@ -83,8 +103,34 @@
       },
     })
 
+  // A loop event's handlers, in order, merged: every steer is kept, the first
+  // compact counts, and the first stop (or continue) ends the run of handlers.
+  // `takes` names what this event takes; anything else a handler returns passes.
+  const decide = async (event, takes, view) => {
+    const out = {}
+    for (const fn of hooks[event]) {
+      const v = await fn(view)
+      if (takes.includes('compact') && isObject(v) && v.compact && !out.compact)
+        out.compact = given(v.compact, 'instructions') ? { instructions: String(v.compact.instructions) } : {}
+      if (takes.includes('steer') && given(v, 'steer')) (out.steer ??= []).push(String(v.steer))
+      const last = takes.find(k => (k === 'stop' || k === 'continue') && given(v, k))
+      if (last) {
+        out[last] = String(v[last])
+        break
+      }
+    }
+    return Object.keys(out).length ? out : null
+  }
+
   const ops = {
-    async load({ env }) {
+    async load({ env, events }) {
+      const handled = Object.keys(ops).filter(op => !CALLS.includes(op))
+      const missing = events.filter(e => !handled.includes(e))
+      const extra = handled.filter(op => !events.includes(op))
+      if (missing.length || extra.length)
+        throw new Error(`the mod runtime is out of step with haest: no handler for [${missing}], not an event: [${extra}]`)
+      EVENTS = events
+      for (const e of events) hooks[e] = []
       const main = globalThis.__haestMod
       delete globalThis.__haestMod
       await main(api(env))
@@ -127,6 +173,9 @@
       const parts = hooks['system.prompt'].map(fn => now(fn(), 'system.prompt')).filter(Boolean)
       return parts.length ? parts.map(String).join('\n\n') : null
     },
+    'model.before': view => decide('model.before', ['compact', 'steer', 'stop'], view),
+    'model.after': view => decide('model.after', ['steer', 'stop'], view),
+    'turn.end': view => decide('turn.end', ['compact', 'continue'], view),
     async command({ name, args }) {
       const run = commands.get(name)
       if (!run) throw new Error(`this mod has no command "${name}"`)

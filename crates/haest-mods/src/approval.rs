@@ -17,8 +17,9 @@ use regex::bytes::{Regex, RegexBuilder};
 use serde_json::Value;
 
 use crate::{
-    api::{Before, Mod, ModEnv, ModToolCall},
+    api::{Before, Mod, ModToolCall},
     ask::{ApprovalRequest, Decision},
+    env::ModEnv,
 };
 
 /// ASCII classes, the way the JavaScript patterns these came from match.

@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 use super::{
-    channel::{JsMeta, ToJs, ToolMeta},
+    channel::{JsMeta, ToJs, ToolChange, ToolMeta},
     thread::Js,
 };
 use crate::ask::{ApprovalRequest, Decision};
@@ -19,13 +19,22 @@ struct Drained {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "camelCase")]
 enum Out {
     On {
         event: String,
     },
     Tool {
         tool: ToolMeta,
+    },
+    RemoveTool {
+        name: String,
+    },
+    DisableTool {
+        name: String,
+    },
+    EnableTool {
+        name: String,
     },
     Command {
         name: String,
@@ -61,7 +70,16 @@ impl Js {
             Out::On { event } => {
                 JsMeta::lock(&self.meta).events.insert(event);
             }
-            Out::Tool { tool } => JsMeta::lock(&self.meta).add_tool(tool),
+            Out::Tool { tool } => {
+                let change = ToolChange::Set(tool);
+                JsMeta::lock(&self.meta).tool_changes.push(change);
+            }
+            Out::RemoveTool { name } => {
+                let change = ToolChange::Remove(name);
+                JsMeta::lock(&self.meta).tool_changes.push(change);
+            }
+            Out::DisableTool { name } => JsMeta::lock(&self.meta).set_disabled(name, true),
+            Out::EnableTool { name } => JsMeta::lock(&self.meta).set_disabled(name, false),
             Out::Command { name } => JsMeta::lock(&self.meta).add_command(name),
             Out::Notice { text } => self.ui.info(&text),
             Out::Ask { id, req, signal } => self.ask(id, req, signal),

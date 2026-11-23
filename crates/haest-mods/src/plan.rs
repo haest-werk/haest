@@ -17,7 +17,10 @@ use std::{
 use async_trait::async_trait;
 use haest_core::{error::BoxError, tool::ToolContext};
 
-use crate::api::{Before, Mod, ModEnv, ModToolCall};
+use crate::{
+    api::{Before, Mod, ModToolCall},
+    env::ModEnv,
+};
 
 /// The slash command that drives plan mode, without its `/`: `/plan [topic]`
 /// turns it on, `/plan off` turns it off.

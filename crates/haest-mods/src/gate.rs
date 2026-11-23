@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    api::ModUi,
     ask::{ApprovalRequest, Decision},
+    env::ModUi,
 };
 
 /// How the human answered one prompt: what a [`Prompter`] returns. More

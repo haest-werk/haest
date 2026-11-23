@@ -13,7 +13,8 @@ use std::{
 
 use async_trait::async_trait;
 use haest_core::{
-    ToolRef, Tools,
+    Agent, AgentDeps, AgentHooksRef, AgentOptions, SharedDeps, ToolRef, Tools,
+    testing::ScriptedProvider,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
@@ -21,9 +22,9 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    api::{ModEnv, ModUi},
     ask::{ApprovalRequest, Decision},
     decorate::ModTools,
+    env::{ModEnv, ModUi},
     gate::{ApprovalAnswer, Prompter},
     js::{JsMod, ModCaps, ModLoadError},
     registry::Mods,
@@ -212,6 +213,25 @@ pub(crate) async fn js(file: &str, source: &str, haest: &ModEnv) -> Result<JsMod
 /// `tools` wrapped in `mods`' hooks, plus the mods' own tools.
 pub(crate) fn wrapped<T: Into<ToolRef>>(mods: Mods, tools: impl IntoIterator<Item = T>) -> Tools {
     ModTools::wrap(&mods, tools.into_iter().collect())
+}
+
+/// An agent on `p` as a host puts mods in its loop: `tools` in [`ModTools`],
+/// `host`'s hooks in [`ModHooks`](crate::ModHooks).
+pub(crate) fn looped(
+    p: &ScriptedProvider,
+    host: impl Into<AgentHooksRef>,
+    mods: &Mods,
+    tools: Tools,
+) -> Agent {
+    let shared = SharedDeps::new(p.resolver(), CWD, ShutWorkspace);
+    let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "")
+        .with_hooks(crate::ModHooks::new(host, mods.clone()));
+    Agent::new(deps, AgentOptions::new("scripted:m"))
+}
+
+/// The names of `tools`, in order.
+pub(crate) fn names(tools: &[ToolRef]) -> Vec<String> {
+    tools.iter().map(|t| t.name().to_string()).collect()
 }
 
 pub(crate) fn find(tools: &[ToolRef], name: &str) -> ToolRef {

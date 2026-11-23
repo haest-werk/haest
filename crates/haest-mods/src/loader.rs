@@ -17,8 +17,9 @@ use std::path::{Path, PathBuf};
 use haest_core::{error::report, fs::Fs, workspace::WorkspaceMode};
 
 use crate::{
-    api::{ModEnv, ModRef, ModUiRef},
+    api::ModRef,
     approval::ApprovalMod,
+    env::{ModEnv, ModUiRef},
     js::{JsMod, ModCaps},
     plan::PlanMod,
     registry::Mods,

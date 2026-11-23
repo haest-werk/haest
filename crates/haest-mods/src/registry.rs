@@ -11,7 +11,13 @@ use haest_core::{
     tool::{ToolContext, ToolError, ToolOutput},
 };
 
-use crate::api::{Before, Mod, ModEnv, ModRef, ModToolCall};
+use crate::{
+    api::{Before, Mod, ModRef, ModToolCall},
+    env::ModEnv,
+    events::ModEvent,
+};
+
+mod turn;
 
 /// What the model reads for a call the human interrupted while a mod was deciding.
 const INTERRUPTED: &str = "Interrupted by the user before this tool ran.";
@@ -35,11 +41,13 @@ pub enum CommandOutcome {
 ///
 /// Load order is event order: the first mod's `tool.before` decides first,
 /// except a gate's ([`Mod::is_gate`], the approval mod), which judges after
-/// every other mod has had its say, on the call as it will run. A mod that
-/// fails in an event is reported through the host's
-/// [`ModUi::error`](crate::ModUi::error) (unless the human interrupted
-/// that tool call) and never takes the conversation down; what else happens
-/// depends on the event:
+/// every other mod has had its say, on the call as it will run. In the loop
+/// events the first mod that stops the turn (`model.before`,
+/// `model.after`) or keeps it going (`turn.end`) wins, and the mods after it
+/// are not asked. A mod that fails in an event is reported through the
+/// host's [`ModUi::error`](crate::ModUi::error) (unless the human
+/// interrupted that tool call or turn) and never takes the conversation
+/// down; what else happens depends on the event:
 ///
 /// | Event | A mod fails |
 /// |---|---|
@@ -47,13 +55,16 @@ pub enum CommandOutcome {
 /// | `tool.after` | the output stays as it was: the call happened, and the model must not retry it |
 /// | `prompt.submit` | the text stays as it was |
 /// | `system.prompt` | that mod adds nothing |
+/// | `model.before`, `model.after` | that mod changes nothing, the mods after it are asked, and the turn goes on |
+/// | `turn.end` | that mod keeps nothing going, the mods after it are asked, and the turn ends unless one of them keeps it going |
 /// | a slash command | [`CommandOutcome::Handled`] |
 ///
 /// Build one with [`load_mods`](crate::load_mods), or with [`Mods::new`].
 /// Once built, the list never changes. It is a cheap handle: give a clone
 /// each to [`ModTools`](crate::ModTools),
-/// [`ModSystemPrompt`](crate::ModSystemPrompt) and the host's input path,
-/// and they all run the same mods for good.
+/// [`ModSystemPrompt`](crate::ModSystemPrompt),
+/// [`ModHooks`](crate::ModHooks) and the host's input path, and they all
+/// run the same mods for good.
 #[derive(Clone, Debug)]
 pub struct Mods(Arc<Loaded>);
 
@@ -106,9 +117,24 @@ impl Mods {
         self.list().iter().map(|m| m.name().to_string()).collect()
     }
 
-    /// Every tool the mods add, unwrapped ([`crate::ModTools`] wraps them).
+    /// Every tool the mods add, unwrapped ([`crate::ModTools`] wraps them),
+    /// hidden ones included.
     pub fn tools(&self) -> Tools {
         self.list().iter().flat_map(|m| m.tools()).collect()
+    }
+
+    /// The names of every tool a mod hides ([`Mod::disabled_tools`]), once
+    /// each, in load order: what [`ModTools`](crate::ModTools) leaves out. A
+    /// host that offers tools outside [`ModTools`](crate::ModTools) leaves
+    /// these out too.
+    pub fn disabled_tools(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for name in self.list().iter().flat_map(|m| m.disabled_tools()) {
+            if !out.contains(&name) {
+                out.push(name);
+            }
+        }
+        out
     }
 
     fn report(&self, m: &dyn Mod, event: &str, e: &BoxError) {
@@ -138,7 +164,7 @@ impl Mods {
                     return Err(ToolError::Input(INTERRUPTED.into()));
                 }
                 Err(e) => {
-                    self.report(m.as_ref(), "tool.before", &e);
+                    self.report(m.as_ref(), ModEvent::ToolBefore.as_str(), &e);
                     return Err(ToolError::Failed(format!(
                         "the mod {} failed before this call, so it did not run: {e}",
                         m.name()
@@ -162,7 +188,7 @@ impl Mods {
                 Ok(Some(replaced)) => output = replaced,
                 Ok(None) => {}
                 Err(_) if ctx.cancel().is_cancelled() => {}
-                Err(e) => self.report(m.as_ref(), "tool.after", &e),
+                Err(e) => self.report(m.as_ref(), ModEvent::ToolAfter.as_str(), &e),
             }
         }
         output
@@ -177,7 +203,7 @@ impl Mods {
             match m.prompt_submit(&text, self.env()).await {
                 Ok(Some(rewritten)) => text = rewritten,
                 Ok(None) => {}
-                Err(e) => self.report(m.as_ref(), "prompt.submit", &e),
+                Err(e) => self.report(m.as_ref(), ModEvent::PromptSubmit.as_str(), &e),
             }
         }
         text
@@ -192,7 +218,7 @@ impl Mods {
             match m.system_prompt(self.env()).await {
                 Ok(Some(text)) if !text.is_empty() => parts.push(text),
                 Ok(_) => {}
-                Err(e) => self.report(m.as_ref(), "system.prompt", &e),
+                Err(e) => self.report(m.as_ref(), ModEvent::SystemPrompt.as_str(), &e),
             }
         }
         parts.join("\n\n")

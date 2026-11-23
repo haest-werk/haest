@@ -10,8 +10,9 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::{
-    api::{Before, Mod, ModEnv, ModRef, ModToolCall},
+    api::{Before, Mod, ModRef, ModToolCall},
     decorate::ModSystemPrompt,
+    env::ModEnv,
     plan::PlanMod,
     testkit::*,
 };
