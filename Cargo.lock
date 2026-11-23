@@ -954,6 +954,7 @@ dependencies = [
  "async-trait",
  "haest-core",
  "haest-mods",
+ "haest-settings",
  "haest-ts",
  "rquickjs",
  "serde",

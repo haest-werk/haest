@@ -178,6 +178,12 @@ mod js;
 #[cfg(all(test, feature = "js"))]
 mod testkit;
 
+/// The `mod_reload` setting's word, haest-settings' own: whether
+/// [`ModFiles`] reloads the files as they change.
+#[cfg(feature = "js")]
+#[cfg_attr(docsrs, doc(cfg(feature = "js")))]
+#[doc(no_inline)]
+pub use haest_settings::ModReload;
 #[cfg(feature = "js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "js")))]
 pub use js::{JsMod, ModCaps, ModFileOptions, ModFiles, ModLoadError};

@@ -2,7 +2,7 @@
 //! files, in what order, and a file that fails.
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -12,7 +12,7 @@ use haest_mods::{ModEnv, ModOptions, load_mods};
 use serde_json::json;
 
 use super::*;
-use crate::testkit::*;
+use crate::{ModCaps, testkit::*};
 
 const HOME: &str = "/home/cfg";
 const HOME_MODS: &str = "/home/cfg/mods";

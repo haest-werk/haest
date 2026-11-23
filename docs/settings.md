@@ -400,7 +400,7 @@ flag          --project-mods
 
 ### `mod_reload`
 
-Whether mod files reload as they change, checked before each model call: off, ask (a new or changed file waits for your Allow) or auto (it loads without asking).
+Whether mod files reload as they change, checked before each model call: off, ask (a new, changed or deleted file waits for your Allow) or auto (it loads or unloads without asking).
 A deleted file unloads, and its tools leave the model's list. A file that fails to load keeps the version that ran, and haest says why. After a Deny the old version stays, and the same content is not asked about again. Rust mods never reload.
 
 - Takes: one of `off`, `ask`, `auto`

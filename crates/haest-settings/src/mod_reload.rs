@@ -20,9 +20,9 @@ haest_core::word_enum! {
         /// The files load once, when the conversation starts.
         #[default]
         Off = "off",
-        /// A change waits for the human's Allow: on Deny the version that
-        /// runs stays, and the same content is not asked about again. A
-        /// deleted file unloads without asking.
+        /// A change waits for the human's Allow, a deleted file's unload
+        /// too: on Deny the version that runs stays, and the same content
+        /// (or the same deletion) is not asked about again.
         Ask = "ask",
         /// A change loads without asking.
         Auto = "auto",

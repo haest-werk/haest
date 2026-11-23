@@ -200,6 +200,42 @@ async fn the_mod_files_run_after_the_built_ins_and_before_the_hosts_own_mods() {
     assert_eq!(rewritten, "hi (mine) (repo) (house style)");
 }
 
+/// `mod_reload` reaches the mod files: with `auto`, a file changed between
+/// turns runs from the next model call.
+#[tokio::test]
+async fn mod_reload_auto_runs_a_changed_mod_file_from_the_next_model_call() {
+    use haest_core::{
+        LoopEvent,
+        testing::{ScriptedProvider, text_answer},
+    };
+    use haest_settings::ModReload;
+
+    let tag =
+        |t: &str| format!("export default (haest) => haest.on('prompt.submit', t => t + ' ({t})')");
+    let file = "/h/.config/haest/mods/mine.js";
+    let files = MemFs::from_files([(file, tag("v1"))]);
+    let settings = Settings {
+        mods: true,
+        mod_reload: ModReload::Auto,
+        ..hardcoded()
+    };
+    let model = ScriptedProvider::new([text_answer("ok")]);
+    let inputs =
+        RuntimeInputs::new(settings, World::files(files.clone())).with_models(model.resolver());
+    let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(rt.mods().rewrite_prompt("hi").await, "hi (v1)");
+
+    files
+        .write(Path::new(file), tag("v2").as_bytes())
+        .await
+        .unwrap();
+    let outcome = rt.human_turn("go", &mut |_: LoopEvent| {}).await;
+    assert_eq!(outcome.error, None, "{outcome:?}");
+    assert_eq!(rt.mods().rewrite_prompt("hi").await, "hi (v2)");
+}
+
 /// A host's own models: a turn runs on them with no key and no HTTP, and a
 /// `/model` switch resolves through them too.
 #[tokio::test]

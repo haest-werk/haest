@@ -38,7 +38,8 @@ pub(crate) async fn mods_for(
     if s.mods || s.project_mods {
         let opts = ModFileOptions::new(&s.config_dir)
             .with_user_mods(s.mods)
-            .with_project_mods(s.project_mods);
+            .with_project_mods(s.project_mods)
+            .with_reload(s.mod_reload);
         let env = ModEnv::new(&s.cwd, s.workspace, mod_ui.clone());
         cfg = cfg.with_mod(ModFiles::load(opts, fs, env).await);
     }

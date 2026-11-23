@@ -18,7 +18,7 @@ workspace = true
 [features]
 # TypeScript and JavaScript mod files in embedded QuickJS (`JsMod`), and a
 # conversation's mod files as one mod that reloads them (`ModFiles`).
-js = ["dep:rquickjs", "dep:haest-ts"]
+js = ["dep:rquickjs", "dep:haest-ts", "dep:haest-settings"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -33,6 +33,8 @@ tokio-util = { workspace = true }
 rquickjs = { version = "0.14", default-features = false, features = ["std"], optional = true }
 # js: `.ts` mod files, through the same type stripper as the sandbox `js` command.
 haest-ts = { workspace = true, optional = true }
+# js: the `mod_reload` setting's word, `ModReload` (haest-settings links haest-core only).
+haest-settings = { workspace = true, optional = true }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
