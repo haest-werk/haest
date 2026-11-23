@@ -12,7 +12,7 @@
 
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
 use async_trait::async_trait;
@@ -36,6 +36,8 @@ use crate::{
 mod cases;
 #[cfg(test)]
 mod human;
+#[cfg(test)]
+mod tests;
 
 pub use cases::{
     AnyHook, DecisionCase, Naming, Once, bind, decision_cases, effect, hooks_answering, naming,
@@ -48,9 +50,10 @@ pub(crate) use human::Human;
 pub const CWD: &str = "/p";
 
 /// `m`, held until the guard drops. A fake's lock is held only to read or
-/// add one value, so a poisoned one is a broken test.
+/// add one value, so one a panic poisoned still holds every value added
+/// before it: the kit reads on, and the test reports its own failure.
 fn held<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().expect("a test fake's lock poisoned")
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A host that records every line and ask that reached the human, and

@@ -279,6 +279,27 @@ fn ts_answering(event: ModEvent, answer: &Value) -> String {
     )
 }
 
+/// A mod file that hides the `Echo` a tool event's [`effect`] calls: the
+/// effect of a hidden tool, never a panic.
+#[tokio::test]
+async fn a_tool_event_on_a_mod_file_that_hides_echo_has_the_effect_of_a_hidden_tool() {
+    const HIDES: &str = "export default function (haest: any): void {
+      haest.disableTool('Echo')
+      haest.on('tool.before', (): void => { haest.notice('asked') })
+    }";
+    for event in [ModEvent::ToolBefore, ModEvent::ToolAfter] {
+        let ui = TestUi::new();
+        let haest = env(ui.clone(), WorkspaceMode::Sandbox);
+        let file = js("hides.ts", HIDES, &haest).await.expect("the mod loads");
+        assert_eq!(
+            effect(event, Mods::new(haest, [file]), "hides.ts").await,
+            json!({ "out": { "hidden": true }, "ran": [] }),
+            "{event}"
+        );
+        assert_eq!(ui.infos(), Vec::<String>::new(), "{event}: not asked");
+    }
+}
+
 /// Every case that differs is listed, not only the first.
 #[tokio::test]
 async fn a_decision_takes_the_same_effect_from_a_ts_mod_and_a_hooks_closure() {

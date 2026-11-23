@@ -136,20 +136,24 @@ pub fn user_text(m: &Message) -> Option<String> {
 /// What `mods` did when `event` fired, in words that do not name the mod
 /// (`name` is how it signs a stopped turn): a tool event runs an `Echo`
 /// probe inside the mods (a call a failed hook refused is
-/// `{ "failed": true }`), `prompt.submit` rewrites `hi`, `system.prompt`
-/// is what the mods append, and a loop event runs a turn on a scripted
-/// model (whose first answer is `SUMMARY`, for a compaction) over two
-/// earlier exchanges.
+/// `{ "failed": true }`, and an `Echo` the mods hide is
+/// `{ "hidden": true }`, neither offered nor run), `prompt.submit` rewrites
+/// `hi`, `system.prompt` is what the mods append, and a loop event runs a
+/// turn on a scripted model (whose first answer is `SUMMARY`, for a
+/// compaction) over two earlier exchanges.
 pub async fn effect(event: ModEvent, mods: Mods, name: &str) -> Value {
     match event {
         ModEvent::ToolBefore | ModEvent::ToolAfter => {
             let echo = Probe::new("Echo");
             let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
+            let Some(offered) = tools.iter().find(|t| t.name() == "Echo") else {
+                return json!({ "out": { "hidden": true }, "ran": echo.ran() });
+            };
             // A map built directly, not `tool::input(..)`: its `Result`
             // would need an unwrap, and `effect` is public kit code that
             // does not panic.
             let call = JsonMap::from_iter([("v".into(), "hi".into())]);
-            let out = match tools[0].execute(call, &ctx()).await {
+            let out = match offered.execute(call, &ctx()).await {
                 Ok(o) => json!({ "content": o.content, "isError": o.is_error }),
                 // A hook that failed refuses the call in words that name its
                 // mod and its form: what counts is that it failed.
