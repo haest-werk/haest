@@ -7,10 +7,8 @@ use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
 use serde_json::{Value, json};
 
-use super::{
-    channel::{CallError, JsThread, ToolMeta},
-    ctx_json,
-};
+use super::channel::{CallError, JsThread, ToolMeta};
+use crate::payload::ToolCallContext;
 
 pub(crate) struct JsTool {
     meta: ToolMeta,
@@ -42,7 +40,8 @@ impl Tool for JsTool {
     }
 
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
-        let payload = json!({ "name": self.meta.name, "input": input, "ctx": ctx_json(ctx) });
+        let ctx_seen = ToolCallContext::new(ctx);
+        let payload = json!({ "name": self.meta.name, "input": input, "ctx": ctx_seen });
         match self
             .thread
             .call("execute", payload, Some(ctx.cancel()))

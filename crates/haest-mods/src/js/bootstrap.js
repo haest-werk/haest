@@ -103,23 +103,25 @@
       },
     })
 
-  // A loop event's handlers, in order, merged: every steer is kept, the first
-  // compact counts, and the first stop (or continue) ends the run of handlers.
-  // `takes` names what this event takes; anything else a handler returns passes.
+  // A loop event's handlers, in order, each answer as the Rust side reads it
+  // (only what this event `takes`, text as text; anything else passes), up
+  // to the first stop or continue: the handlers after it are not run. The
+  // Rust side applies the list (decision.rs): the first compact counts,
+  // every steer is kept.
   const decide = async (event, takes, view) => {
-    const out = {}
+    const out = []
     for (const fn of hooks[event]) {
       const v = await fn(view)
-      if (takes.includes('compact') && isObject(v) && v.compact && !out.compact)
-        out.compact = given(v.compact, 'instructions') ? { instructions: String(v.compact.instructions) } : {}
-      if (takes.includes('steer') && given(v, 'steer')) (out.steer ??= []).push(String(v.steer))
+      const d = {}
+      if (takes.includes('compact') && isObject(v) && v.compact)
+        d.compact = given(v.compact, 'instructions') ? { instructions: String(v.compact.instructions) } : true
+      if (takes.includes('steer') && given(v, 'steer')) d.steer = String(v.steer)
       const last = takes.find(k => (k === 'stop' || k === 'continue') && given(v, k))
-      if (last) {
-        out[last] = String(v[last])
-        break
-      }
+      if (last) d[last] = String(v[last])
+      if (Object.keys(d).length) out.push(d)
+      if (last) break
     }
-    return Object.keys(out).length ? out : null
+    return out
   }
 
   const ops = {

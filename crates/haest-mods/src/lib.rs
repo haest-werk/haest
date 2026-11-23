@@ -1,18 +1,25 @@
 //! Mods: code that changes how a haest agent behaves, without a change to haest itself.
 //!
-//! A mod is plain Rust (a [`Mod`]) or a `.js` / `.ts` file run in embedded
-//! QuickJS (a [`JsMod`]). Both kinds hook the same events of the agent
-//! loop --
+//! A mod is plain Rust (a [`Mod`]), a `.js` / `.ts` file run in embedded
+//! QuickJS (a [`JsMod`]), or a set of [`Hooks`]: one handler per event, a
+//! Rust closure or anything else that implements [`Hook`]. All of them hook
+//! the same events of the agent loop --
 //!
-//! | Event | When | May |
-//! |---|---|---|
-//! | `tool.before` | before every tool call | refuse it (the model reads the reason) or replace its input; the first deny wins |
-//! | `tool.after` | after the call ran | replace its output |
-//! | `prompt.submit` | a human message, before the model sees it | rewrite it |
-//! | `system.prompt` | before every model call | append text to the system prompt |
-//! | `model.before` | before every model call, after the host's own hook | stop the turn, steer it, compact it |
-//! | `model.after` | an answer landed, its tool calls have not run | stop the turn (its calls do not run), steer it |
-//! | `turn.end` | a turn is about to end on its own | keep it going with a message (the first wins), compact it |
+//! | Event | When | May | Payload | Decision |
+//! |---|---|---|---|---|
+//! | `tool.before` | before every tool call | refuse it (the model reads the reason) or replace its input; the first deny wins | [`ToolBeforePayload`] | [`Before`] |
+//! | `tool.after` | after the call ran | replace its output | [`ToolAfterPayload`] | `Option<ToolOutput>` |
+//! | `prompt.submit` | a human message, before the model sees it | rewrite it | [`PromptSubmitPayload`] | `Option<String>` |
+//! | `system.prompt` | before every model call | append text to the system prompt | [`SystemPromptPayload`] | `Option<String>` |
+//! | `model.before` | before every model call, after the host's own hook | stop the turn, steer it, compact it | [`ModelBeforePayload`] | [`ModelBeforeDecision`] |
+//! | `model.after` | an answer landed, its tool calls have not run | stop the turn (its calls do not run), steer it | [`ModelAfterPayload`] | [`ModelAfterDecision`] |
+//! | `turn.end` | a turn is about to end on its own | keep it going with a message (the first wins), compact it | [`TurnEndPayload`] | [`TurnEndDecision`] |
+//!
+//! The payload is what a handler gets and the decision what it answers,
+//! typed once ([`Event`]): as JSON they are exactly what a mod file's
+//! handler has always been handed and returned (`{ deny }`, `{ input }`,
+//! `{ stop }`, `{ steer }`, `{ continue }`, `{ compact }`), so a hook in
+//! another process or behind a URL speaks the same words.
 //!
 //! -- add, replace and remove their own tools, hide any tool (the host's,
 //! an MCP server's, another mod's) and show it again, add slash commands,
@@ -37,6 +44,8 @@
 //! | Piece | What |
 //! |---|---|
 //! | [`Mod`] | a native mod: implement only the events it hooks |
+//! | [`Hooks`], [`Hook`], [`Binding`] | one handler per event as a mod: a closure, an `async fn` or any [`Hook`], each bound with a timeout, an [`OnError`] and (tool events) a tool-name matcher |
+//! | [`Event`], [`ModEvent`] and the payload and decision types | the events' protocol: what a handler gets and answers, typed once, the mod files' own JSON |
 //! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModCaps`] bounds it, [`ModLoadError`] says why one did not load |
 //! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`] |
@@ -198,6 +207,15 @@
 //! # }
 //! ```
 //!
+//! # Hooks
+//!
+//! When a mod is only a few handlers, bind them per event instead:
+//! [`Hooks`] takes a closure (or any [`Hook`]) for each event, with a
+//! timeout, what its failure does ([`OnError`]) and, on a tool event, the
+//! tools it is for, and goes into [`Mods`] like any mod.
+//! [`Hooks`' example](Hooks#examples) guards Bash with a matcher and sends
+//! a turn back once.
+//!
 //! # A mod file
 //!
 //! A `.js` or `.ts` file whose default export receives the `haest` API (all
@@ -356,14 +374,20 @@ mod approval;
 mod ask;
 #[cfg(test)]
 mod conversation_tests;
+mod decision;
 mod decorate;
 mod env;
 mod events;
 mod gate;
+mod hook;
+mod hook_set;
 mod hooks;
 mod js;
 mod loader;
+mod payload;
 mod plan;
+#[cfg(test)]
+mod protocol_tests;
 mod registry;
 #[cfg(test)]
 mod testkit;
@@ -373,11 +397,19 @@ pub use approval::{
     ApprovalMod, AutoJudge, AutoJudgeRef, BashVerdict, SHELL_TOOLS, irreversible_reason,
 };
 pub use ask::{ApprovalRequest, Decision};
+pub use decision::{Compact, ModelAfterDecision, ModelBeforeDecision, TurnEndDecision};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use env::{ModEnv, ModUi, ModUiRef};
+pub use events::{Event, ModEvent, ToolEvent};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
+pub use hook::{Binding, DEFAULT_HOOK_TIMEOUT, Hook, HookError, OnError};
+pub use hook_set::Hooks;
 pub use hooks::ModHooks;
 pub use js::{JsMod, ModCaps, ModLoadError};
 pub use loader::{ModOptions, load_mods};
+pub use payload::{
+    AgentView, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
+    ToolAfterPayload, ToolBeforePayload, ToolCallContext, TurnEndPayload,
+};
 pub use plan::{PLAN_COMMAND, PLAN_PROMPT, PLANNING_TOOLS, PlanMod};
 pub use registry::{CommandOutcome, Mods};

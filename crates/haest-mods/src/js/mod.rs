@@ -31,7 +31,6 @@ mod returns;
 mod tests;
 mod thread;
 mod tool;
-mod turn;
 
 use std::sync::{Arc, Mutex};
 
@@ -41,23 +40,24 @@ use haest_core::{
     error::BoxError,
     tool::{ToolContext, ToolOutput, ToolSource},
 };
-use serde_json::{Value, json};
+use serde::de::DeserializeOwned;
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     api::{Before, Mod, ModToolCall, Step, TurnEnd},
+    decision::{ModelAfterDecision, ModelBeforeDecision, TurnEndDecision},
     env::ModEnv,
-    events::ModEvent,
+    events::{Event, ModEvent},
+    payload::{
+        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
+        ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
+    },
 };
 use channel::{JsMeta, JsThread, ToolChange};
 pub use load::{ModCaps, ModLoadError};
 use returns::{BadReturn, text_of};
 use tool::JsTool;
-
-/// What a handler of a tool event sees as `ctx` (`signal` is added in the runtime).
-fn ctx_json(ctx: &ToolContext) -> Value {
-    json!({ "cwd": ctx.cwd(), "toolCallId": ctx.tool_call_id() })
-}
 
 /// One loaded mod file: a `.js` or `.ts` ES module run in embedded QuickJS,
 /// whose default export receives the `haest` API.
@@ -97,6 +97,10 @@ fn ctx_json(ctx: &ToolContext) -> Value {
 /// | `model.after` | `{ modelSpec, effort, historyLength, answer }` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
 /// | `turn.end` | `{ modelSpec, effort, historyLength, stopReason, error }` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
 ///
+/// What a handler gets is its event's payload and what it returns is read
+/// as its event's decision, the types [`Event`](crate::Event) ties together
+/// (the [crate docs](crate) list them): a [`Hook`](crate::Hook) in Rust or
+/// in another process gets and answers the same.
 /// `call` is a [`ModToolCall`] and `output` a tool output, both in camelCase.
 /// `ctx` is `{ cwd, toolCallId, signal }`; a tool's `execute` gets it too,
 /// and returns a string or `{ content, isError }`. `lastMessage` and
@@ -144,17 +148,24 @@ impl JsMod {
         JsMeta::lock(&self.meta).events.contains(event.as_str())
     }
 
-    /// An event this mod has a handler for; Ok(Null) when it has none.
-    async fn event(
+    /// `E`'s handlers on the payload `payload` builds (only when the mod
+    /// has one), and their answer: `E`'s decision, or a loop event's list
+    /// of them; its default (a pass) when the mod has no handler.
+    async fn answer<E: Event, T: DeserializeOwned + Default>(
         &self,
-        event: ModEvent,
-        payload: Value,
+        payload: impl FnOnce() -> E,
         cancel: Option<&CancellationToken>,
-    ) -> Result<Value, BoxError> {
+    ) -> Result<T, BoxError> {
+        let event = E::NAME;
         if !self.hooks(event) {
-            return Ok(Value::Null);
+            return Ok(T::default());
         }
-        Ok(self.thread.call(event.as_str(), payload, cancel).await?)
+        let payload = serde_json::to_value(payload())
+            .map_err(|source| BadReturn::Payload { event, source })?;
+        let got = self.thread.call(event.as_str(), payload, cancel).await?;
+        let answer: Option<T> =
+            serde_json::from_value(got).map_err(|source| BadReturn::Answer { event, source })?;
+        Ok(answer.unwrap_or_default())
     }
 }
 
@@ -178,19 +189,8 @@ impl Mod for JsMod {
         ctx: &ToolContext,
         _haest: &ModEnv,
     ) -> Result<Before, BoxError> {
-        let payload = json!({ "call": call, "ctx": ctx_json(ctx) });
-        match self
-            .event(ModEvent::ToolBefore, payload, Some(ctx.cancel()))
-            .await?
-        {
-            Value::Null => Ok(Before::Pass),
-            Value::Object(mut v) => match (v.remove("deny"), v.remove("input")) {
-                (Some(Value::String(reason)), _) => Ok(Before::Deny(reason)),
-                (_, Some(Value::Object(input))) => Ok(Before::Input(input)),
-                _ => Err(BadReturn::InputNotObject.into()),
-            },
-            other => Err(BadReturn::Before(other).into()),
-        }
+        let payload = || ToolBeforePayload::new(call, ctx);
+        self.answer(payload, Some(ctx.cancel())).await
     }
 
     async fn tool_after(
@@ -200,28 +200,16 @@ impl Mod for JsMod {
         ctx: &ToolContext,
         _haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
-        let payload = json!({ "call": call, "output": output, "ctx": ctx_json(ctx) });
-        match self
-            .event(ModEvent::ToolAfter, payload, Some(ctx.cancel()))
-            .await?
-        {
-            Value::Null => Ok(None),
-            v => serde_json::from_value(v)
-                .map(Some)
-                .map_err(|e| BadReturn::NotOutput(e).into()),
-        }
+        let payload = || ToolAfterPayload::new(call, output, ctx);
+        self.answer(payload, Some(ctx.cancel())).await
     }
 
     async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        let event = ModEvent::PromptSubmit;
-        let v = self.event(event, json!({ "text": text }), None).await?;
-        text_of(v, event.as_str())
+        self.answer(|| PromptSubmitPayload::new(text), None).await
     }
 
     async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        let event = ModEvent::SystemPrompt;
-        let v = self.event(event, json!({}), None).await?;
-        text_of(v, event.as_str())
+        self.answer(SystemPromptPayload::new, None).await
     }
 
     async fn model_before(
@@ -230,7 +218,9 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         _haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        self.on_model_before(agent, cancel).await
+        let payload = || ModelBeforePayload::new(agent);
+        let decided = self.answer(payload, Some(cancel)).await?;
+        ModelBeforeDecision::apply(decided, agent, cancel).await
     }
 
     async fn model_after(
@@ -240,7 +230,9 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         _haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        self.on_model_after(agent, answer, cancel).await
+        let payload = || ModelAfterPayload::new(agent, answer);
+        let decided = self.answer(payload, Some(cancel)).await?;
+        Ok(ModelAfterDecision::apply(decided, agent))
     }
 
     async fn turn_end(
@@ -250,7 +242,9 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         _haest: &ModEnv,
     ) -> Result<TurnEnd, BoxError> {
-        self.on_turn_end(agent, outcome, cancel).await
+        let payload = || TurnEndPayload::new(agent, outcome);
+        let decided = self.answer(payload, Some(cancel)).await?;
+        TurnEndDecision::apply(decided, agent, cancel).await
     }
 
     /// The tools as the mod left them: what it added or replaced since the

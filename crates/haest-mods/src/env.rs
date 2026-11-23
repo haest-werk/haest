@@ -1,10 +1,13 @@
 //! What every mod event can reach ([`ModEnv`]), and the host's half
 //! ([`ModUi`]): the human's Allow / Deny and the lines they see.
 
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
-use haest_core::workspace::WorkspaceMode;
+use haest_core::{error::report, workspace::WorkspaceMode};
 use tokio_util::sync::CancellationToken;
 
 use crate::ask::{ApprovalRequest, Decision};
@@ -115,5 +118,12 @@ impl ModEnv {
     /// A line for the host's diagnostic log ([`ModUi::debug`]).
     pub fn debug(&self, message: &str) {
         self.ui.debug(message)
+    }
+
+    /// The mod (or the hooks) `name` failed in `event`: the human sees it,
+    /// with every cause ([`ModUi::error`]).
+    pub(crate) fn report_failure(&self, name: &str, event: &str, e: &(dyn Error + 'static)) {
+        let why = report(e);
+        self.error(&format!("Mod {name} failed in {event}: {why}"));
     }
 }

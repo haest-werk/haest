@@ -27,10 +27,15 @@ pub struct ModToolCall {
     pub read_only: bool,
 }
 
-/// What a [`Mod::tool_before`] hook decided about one tool call.
-#[derive(Debug, Clone, PartialEq)]
+/// What a [`Mod::tool_before`] hook decided about one tool call: the
+/// decision of `tool.before`, for a mod and a [`Hook`](crate::Hook) alike.
+///
+/// As JSON it is what a mod file's handler returns: `{ deny: reason }`,
+/// `{ input: {..} }`, or anything else (`null`) to pass.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum Before {
     /// Let the call through as it is.
+    #[default]
     Pass,
     /// Refuse it: the model reads `Refused: <reason>` as the call's error
     /// result, and the tool does not run. The first deny wins; later mods are

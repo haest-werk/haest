@@ -3,7 +3,7 @@
 //! except a gate's ([`Mod::is_gate`], the approval mod), which judges after
 //! every other mod has had its say, on the call as it will run.
 
-use std::sync::Arc;
+use std::{ops::ControlFlow, sync::Arc};
 
 use haest_core::{
     Tools,
@@ -12,7 +12,8 @@ use haest_core::{
 };
 
 use crate::{
-    api::{Before, Mod, ModRef, ModToolCall},
+    api::{Mod, ModRef, ModToolCall},
+    decision::system_text,
     env::ModEnv,
     events::ModEvent,
 };
@@ -138,10 +139,7 @@ impl Mods {
     }
 
     fn report(&self, m: &dyn Mod, event: &str, e: &BoxError) {
-        let why = report(&**e);
-        self.env()
-            .ui()
-            .error(&format!("Mod {} failed in {event}: {why}", m.name()));
+        self.env().report_failure(m.name(), event, &**e);
     }
 
     /// `tool.before` across every mod: the call to run, or why it must not run.
@@ -155,10 +153,10 @@ impl Mods {
         let (gates, rest): (Vec<_>, Vec<_>) = self.list().iter().partition(|m| m.is_gate());
         for m in rest.into_iter().chain(gates) {
             match m.tool_before(&call, ctx, self.env()).await {
-                Ok(Before::Pass) => {}
-                Ok(Before::Input(input)) => call.input = input,
-                Ok(Before::Deny(reason)) => {
-                    return Err(ToolError::Input(format!("Refused: {reason}")));
+                Ok(decision) => {
+                    if let ControlFlow::Break(reason) = decision.apply_to(&mut call) {
+                        return Err(ToolError::Input(format!("Refused: {reason}")));
+                    }
                 }
                 Err(_) if ctx.cancel().is_cancelled() => {
                     return Err(ToolError::Input(INTERRUPTED.into()));
@@ -217,12 +215,11 @@ impl Mods {
         let mut parts = Vec::new();
         for m in self.list() {
             match m.system_prompt(self.env()).await {
-                Ok(Some(text)) if !text.is_empty() => parts.push(text),
-                Ok(_) => {}
+                Ok(text) => parts.extend(text),
                 Err(e) => self.report(m.as_ref(), ModEvent::SystemPrompt.as_str(), &e),
             }
         }
-        parts.join("\n\n")
+        system_text(parts)
     }
 
     /// Every slash command the mods answer, without the `/`, once each.
