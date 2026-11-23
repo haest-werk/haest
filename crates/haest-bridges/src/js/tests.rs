@@ -125,6 +125,7 @@ async fn commands_system_prompt_and_notices_from_a_mod_take_effect() {
       haest.command('/hello', args => 'say hello to ' + args)
       haest.command('quiet', () => { haest.notice('handled') })
       haest.on('system.prompt', () => 'House rule: ' + haest.workspace)
+      haest.on('system.prompt', () => haest.workspace === 'real' && 'Real files here.')
       haest.notice('loaded in ' + haest.cwd)
     }"#;
     let ui = TestUi::new();
@@ -137,7 +138,9 @@ async fn commands_system_prompt_and_notices_from_a_mod_take_effect() {
     );
     assert_eq!(mods.command("quiet", "").await, CommandOutcome::Handled);
     assert_eq!(ui.infos().len(), 2);
+    // `cond && 'text'` answers `false`: nothing added, and no failure.
     assert_eq!(mods.system_append().await, "House rule: sandbox");
+    assert!(ui.errors().is_empty(), "{:?}", ui.errors());
 }
 
 /// A command whose promise never settles never returns; a host that gives

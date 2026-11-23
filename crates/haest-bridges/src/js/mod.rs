@@ -91,7 +91,7 @@ use tool::JsTool;
 /// | `tool.before` | `call`, `ctx` | `{ deny: reason }` refuses, `{ input: {...} }` replaces the input for the handlers after it, anything else passes |
 /// | `tool.after` | `call`, `output`, `ctx` | a new output (`{ content, isError }`), or nothing to keep it |
 /// | `prompt.submit` | `text` | the new text, or nothing |
-/// | `system.prompt` | nothing | text to append, or nothing |
+/// | `system.prompt` | nothing | text to append, or nothing (`undefined`, `null` or `false`, so `cond && 'text'` works) |
 /// | `model.before` | the agent, `lastMessage` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; anything else passes |
 /// | `model.after` | the agent, `answer` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
 /// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
@@ -118,7 +118,8 @@ use tool::JsTool;
 /// through: a key whose value is `null` counts as absent (`{ deny: null }`
 /// passes), and a value of the wrong type (`{ stop: false }`,
 /// `{ steer: 42 }`, `{ compact: 'yes' }`, a number from `prompt.submit`) is
-/// that handler's failure, never turned into text. Several handlers of one
+/// that handler's failure, never turned into text. `system.prompt`'s
+/// `false` is nothing, as `compact: false` is. Several handlers of one
 /// event run in the order they were added, by the rules
 /// [`Hooks`](haest_mods::Hooks)' bindings run by: the next one sees the
 /// input, output or text the one before it left, and none is asked after

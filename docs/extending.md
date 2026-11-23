@@ -49,7 +49,7 @@ the build's gates.
 | `tool.before` | `Before::{Pass, Deny, Input}` | `{ deny: reason }`, `{ input: {..} }`, anything else passes | rewrites chain; the first deny wins and refuses the call (the model reads the reason) |
 | `tool.after` | `Option<ToolOutput>` | `{ content, isError, .. }` or nothing | each sees the output the one before left; what the call spent stays the tool's |
 | `prompt.submit` | `Option<String>` | a string or nothing | rewrites chain |
-| `system.prompt` | `Option<String>` | a string or nothing | the texts are joined |
+| `system.prompt` | `Option<String>` | a string, or nothing (`null` or `false`) | the texts are joined |
 | `model.before` | `ModelBeforeDecision { compact, steer, stop }` | `{ compact, steer, stop }` | the first stop wins; every steer is kept; the first compact counts |
 | `model.after` | `ModelAfterDecision { steer, stop }` | `{ steer, stop }` | the first stop wins (the answer's calls do not run); every steer is kept |
 | `turn.end` | `TurnEndDecision { compact, continue }` | `{ compact, continue }` | the first continue wins and keeps the turn going |
@@ -69,11 +69,12 @@ These are the mod files' own words, typed once in haest-mods (`Event` and its pa
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the
 decision; the rules for applying it run in one place for every form.
 
-One decoder reads every answer, a mod file's handler's included. A key whose value is `null`
-counts as absent (`{ deny: null }` passes). A value of the wrong type (`{ stop: false }`,
-`{ steer: 42 }`, `{ compact: "yes" }`, a number from `prompt.submit` or `system.prompt`) is
-the hook's failure: a binding's `on_error` decides what that does, and in a mod file the
-event fails as a throw does. Nothing is turned into text. A mod file's handlers on one event
+One decoder reads every answer (`Event::read_decision`), a mod file's handler's included. A
+key whose value is `null` counts as absent (`{ deny: null }` passes), as do `compact: false`
+and a `system.prompt` answer of `false` (JavaScript's `cond && 'text'`). A value of the wrong
+type (`{ stop: false }`, `{ steer: 42 }`, `{ compact: "yes" }`, a number from `prompt.submit`
+or `system.prompt`) is the hook's failure: a binding's `on_error` decides what that does, and
+in a mod file the event fails as a throw does. Nothing is turned into text. A mod file's handlers on one event
 are asked one at a time, by the same rules as a `Hooks` binding's, in the table's last column.
 
 ## Hooks: one handler per event

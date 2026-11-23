@@ -1,13 +1,15 @@
-//! Every decision as JSON, and the one decoder of a hook's answer: what a
-//! mod file's handler returns (haest-bridges hands it over as it was
-//! returned) and what a shell or HTTP hook answers are read by these impls
-//! and the event's own serde, so an answer means the same whatever carries it.
+//! Every decision as JSON, and the one decoder of a hook's answer
+//! ([`read_answer`], which [`Event::read_decision`] is): what a mod file's
+//! handler returns (haest-bridges hands it over as it was returned) and what
+//! a shell or HTTP hook answers are read there, by these impls and the
+//! event's own serde, so an answer means the same whatever carries it.
 //!
 //! A `tool.before` or loop-event answer that is not an object (nothing,
 //! text, a number) passes, a key the event does not take is ignored, and a
 //! key whose value is `null` counts as absent. Where a key takes text the
 //! value is a string, and `input` an object; `prompt.submit` and
-//! `system.prompt` answer text or nothing, `tool.after` an output or
+//! `system.prompt` answer text or nothing (`system.prompt` also `false`, so
+//! JavaScript's `cond && 'text'` adds nothing), `tool.after` an output or
 //! nothing. Anything else is an answer haest does not take: the hook
 //! failed. Nothing is coerced to text.
 
@@ -20,7 +22,20 @@ use serde::{
 use serde_json::Value;
 
 use super::{Compact, ModelAfterDecision, ModelBeforeDecision, TurnEndDecision};
-use crate::api::Before;
+use crate::{
+    api::Before,
+    events::{Event, ModEvent},
+};
+
+/// A hook's answer as `E`'s decision: the decision's own serde, except that
+/// `system.prompt` reads `false` as nothing (`compact: false` reads so too).
+pub(crate) fn read_answer<E: Event>(answer: Value) -> Result<E::Decision, serde_json::Error> {
+    let answer = match answer {
+        Value::Bool(false) if E::NAME == ModEvent::SystemPrompt => Value::Null,
+        answer => answer,
+    };
+    serde_json::from_value(answer)
+}
 
 impl Serialize for Before {
     /// `null`, `{ "deny": reason }` or `{ "input": {..} }`.

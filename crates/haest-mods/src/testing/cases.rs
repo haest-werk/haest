@@ -31,7 +31,7 @@ pub fn once<E: Event>(answer: Value) -> impl Hook<E> {
         let given = first.swap(false, Ordering::SeqCst).then(|| answer.clone());
         async move {
             Ok::<_, BoxError>(match given {
-                Some(v) => serde_json::from_value::<E::Decision>(v)?,
+                Some(v) => E::read_decision(v)?,
                 None => E::Decision::default(),
             })
         }
@@ -185,6 +185,8 @@ pub fn decision_cases() -> Vec<DecisionCase> {
         }),
         case(E::PromptSubmit, json!(42), |v| *v == "hi"),
         case(E::SystemPrompt, json!(42), |v| *v == ""),
+        // JavaScript's `cond && 'text'`: nothing to add, and no failure.
+        case(E::SystemPrompt, json!(false), |v| *v == ""),
         case(E::ModelBefore, json!({ "stop": false }), untouched),
         case(E::ModelBefore, json!({ "steer": 42 }), untouched),
         case(E::ModelBefore, json!({ "compact": "yes" }), untouched),

@@ -71,7 +71,7 @@ fn failing<E: Event>(fails: Fails, on: Option<OnError>) -> Binding<E> {
 fn answering<E: Event>(answer: Value) -> Binding<E> {
     Binding::new(move |_: E, _: CancellationToken| {
         let answer = answer.clone();
-        async move { Ok::<_, BoxError>(serde_json::from_value::<E::Decision>(answer)?) }
+        async move { Ok::<_, BoxError>(E::read_decision(answer)?) }
     })
 }
 

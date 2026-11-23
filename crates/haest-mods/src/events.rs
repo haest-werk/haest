@@ -59,6 +59,30 @@ pub trait Event:
     const ON_ERROR: OnError;
     /// What a hook answers. Its [`Default`] passes (changes nothing).
     type Decision: Serialize + DeserializeOwned + Default + fmt::Debug + Send + 'static;
+
+    /// A hook's answer, as JSON, read as this event's decision: the one
+    /// decoder every bridge reads an answer with (a mod file's handler, a
+    /// shell or HTTP hook), so an answer means the same whatever carries
+    /// it. It is the decision's own serde, but for one thing:
+    /// `system.prompt` reads `false` as nothing, as JavaScript's
+    /// `cond && 'text'` answers when `cond` does not hold.
+    ///
+    /// ```
+    /// use haest_mods::{Event, PromptSubmitPayload, SystemPromptPayload};
+    /// use serde_json::json;
+    ///
+    /// assert_eq!(SystemPromptPayload::read_decision(json!(false)).unwrap(), None);
+    /// assert!(SystemPromptPayload::read_decision(json!(42)).is_err());
+    /// assert!(PromptSubmitPayload::read_decision(json!(false)).is_err());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// An answer the event does not take (`{ "deny": 42 }`, a number from
+    /// `prompt.submit`): the hook failed.
+    fn read_decision(answer: serde_json::Value) -> Result<Self::Decision, serde_json::Error> {
+        crate::decision::read_answer::<Self>(answer)
+    }
 }
 
 /// An event about one tool call (`tool.before`, `tool.after`): a binding
@@ -179,7 +203,7 @@ mod_events! {
         on_error: Continue,
         /// Bind a hook to `system.prompt`: before every model call it gets a
         /// [`SystemPromptPayload`] and answers text to append to the system
-        /// prompt, or `None`.
+        /// prompt, or `None` (as JSON, `null` or `false`).
         bind: on_system_prompt,
     }
     /// [`Mod::model_before`](crate::Mod::model_before).

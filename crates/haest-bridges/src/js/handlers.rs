@@ -59,7 +59,7 @@ impl<E: Event> Handlers<E> for JsHandlers<'_, E> {
         let asked = json!({ "nth": nth, "payload": payload });
         let got = self.thread.call(event.as_str(), asked, self.cancel).await?;
         let decision =
-            serde_json::from_value(got).map_err(|source| BadReturn::Answer { event, source })?;
+            E::read_decision(got).map_err(|source| BadReturn::Answer { event, source })?;
         Ok(Some(decision))
     }
 }

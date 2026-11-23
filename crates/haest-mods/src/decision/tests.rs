@@ -5,7 +5,12 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use super::{Compact, ModelAfterDecision, ModelBeforeDecision, TurnEndDecision};
-use crate::{api::Before, testing::input};
+use crate::{
+    api::Before,
+    events::Event,
+    payload::{PromptSubmitPayload, SystemPromptPayload},
+    testing::input,
+};
 
 fn read<T: DeserializeOwned>(v: Value) -> T {
     serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{v} does not read: {e}"))
@@ -158,10 +163,17 @@ fn loop_decisions_write_what_they_read() {
 }
 
 #[test]
-fn the_text_events_read_text_or_nothing() {
+fn the_text_events_read_text_or_nothing_and_system_prompt_false_as_nothing() {
     assert_eq!(read::<Option<String>>(json!("new")), Some("new".into()));
     assert_eq!(read::<Option<String>>(Value::Null), None);
     refused::<Option<String>>(json!({ "text": "new" }));
+    let system = SystemPromptPayload::read_decision;
+    assert_eq!(system(json!(false)).unwrap(), None);
+    assert_eq!(system(json!("rule")).unwrap(), Some("rule".into()));
+    for bad in [json!(true), json!(42), json!(0)] {
+        assert!(system(bad.clone()).is_err(), "{bad} must not read");
+    }
+    assert!(PromptSubmitPayload::read_decision(json!(false)).is_err());
     let output = read::<Option<haest_core::ToolOutput>>(json!({ "content": "x" }));
     assert_eq!(
         output.map(|o| (o.content, o.is_error)),

@@ -20,6 +20,8 @@ mod json;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use json::read_answer;
+
 /// A request to compact the conversation: haest's own compaction
 /// ([`compact`](haest_core::compaction::compact)), with what the summary
 /// should keep. JSON: `true`, or `{ instructions }`.
