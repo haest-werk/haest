@@ -84,6 +84,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod caps;
+mod mod_reload;
 mod sets;
 mod settings;
 #[cfg(test)]
@@ -91,5 +92,6 @@ mod tests;
 
 pub use caps::CapSettings;
 pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordSet};
+pub use mod_reload::ModReload;
 pub use sets::BuiltinTools;
 pub use settings::{DEFAULT_MODEL, Settings};

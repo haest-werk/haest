@@ -5,7 +5,7 @@
 //! until asked for, every brake on.
 
 use haest_core::{Effort, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine};
-use haest_settings::{BuiltinTools, ContextSources, SkillSources};
+use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
 
 use crate::fields::{
     BrokerAccess, Config, ControlSocket, ENV, EnvPassthrough, Get, Raw, Set, WEB_SEARCH,
@@ -276,6 +276,9 @@ settings! {
     "env" => own(ENV): def(WORK, Vars, "GH_TOKEN=${GITHUB_TOKEN}", "A variable every process haest starts gets, the sandbox's shell included, over env_passthrough: NAME=VALUE, or NAME for haest's own value; repeat it for more. In a file: an [env] table. ${NAME} and ${NAME:-default} in a value are filled in from haest's environment").short('E'),
     "mods" => settings.mods: def(WORK, Bool, "true", "Your mods in <config dir>/mods"),
     "project_mods" => settings.project_mods: def(WORK, Bool, "true", "The project's mods in .haest/mods (its code runs; a trusted dir only)"),
+    "mod_reload" => settings.mod_reload: def(WORK, Choice(ModReload::WORDS), "ask", "Whether mod files reload as they change, checked before each model call: off, ask (a new or changed file waits for your Allow) or auto (it loads without asking)")
+        .detail("A deleted file unloads, and its tools leave the model's list. A file that fails to load keeps the version that ran, and haest says why. After a Deny the old version stays, and the same content is not asked about again. Rust mods never reload.")
+        .scope(Scope::User),
     "approvals" => settings.approvals: def(WORK, Bool, "false", "The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking")
         .detail("haest asks on a terminal only where the question can be seen and answered: stdin must be a terminal, and so must stderr, where the question shows (with --json it is a line on stdout, which must not be a regular file). Otherwise each approval is refused at once, and haest says why on stderr."),
     "trusted_dirs" => trusted_dirs: def(WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),

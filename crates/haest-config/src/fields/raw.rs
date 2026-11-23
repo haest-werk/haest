@@ -7,7 +7,7 @@ use haest_core::{
     Effort, WorkspaceMode, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
 };
-use haest_settings::{BuiltinTools, ContextSources, SkillSources};
+use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
 
 use super::{BrokerAccess, ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
@@ -44,7 +44,8 @@ word!(
     EnvPassthrough,
     ControlSocket,
     BrokerAccess,
-    WebSearchEngine
+    WebSearchEngine,
+    ModReload
 );
 
 impl Raw for f64 {

@@ -15,7 +15,7 @@ use haest_core::{
     wind_down::WindDown,
 };
 
-use crate::{CapSettings, ContextSources, sets::BuiltinTools};
+use crate::{CapSettings, ContextSources, ModReload, sets::BuiltinTools};
 
 /// The model a run uses when none is configured: [`Settings::bare`]'s `model_spec`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
@@ -115,6 +115,9 @@ pub struct Settings {
     /// No trust check happens here: haest-config turns this on only inside
     /// `trusted_dirs`. A host that sets it runs whatever `.haest/mods` holds.
     pub project_mods: bool,
+    /// Whether those mod files reload as they change while the conversation
+    /// runs ([`ModReload`]). Bare: off.
+    pub mod_reload: ModReload,
     /// The built-in approval mod: in the real workspace, asks before a shell
     /// command that cannot be undone. Bare: on.
     pub approvals: bool,
@@ -183,6 +186,7 @@ impl Settings {
             workspace: WorkspaceMode::Sandbox,
             mods: false,
             project_mods: false,
+            mod_reload: ModReload::Off,
             approvals: true,
             caps: CapSettings::default(),
             wind_down_at: WindDown::OFF,

@@ -29,7 +29,7 @@ whole config files.
 | Model and prompt | [`model`](#model), [`effort`](#effort), [`cache_ttl`](#cache_ttl), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
 | Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
 | Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
-| Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
+| Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`mod_reload`](#mod_reload), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`wind_down_at`](#wind_down_at), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
 | Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir), [`broker_url`](#broker_url), [`broker_access`](#broker_access) |
@@ -396,6 +396,21 @@ The project's mods in .haest/mods (its code runs; a trusted dir only).
 config.toml   project_mods = true
 variable      HAEST_PROJECT_MODS=true
 flag          --project-mods
+```
+
+### `mod_reload`
+
+Whether mod files reload as they change, checked before each model call: off, ask (a new or changed file waits for your Allow) or auto (it loads without asking).
+A deleted file unloads, and its tools leave the model's list. A file that fails to load keeps the version that ran, and haest says why. After a Deny the old version stays, and the same content is not asked about again. Rust mods never reload.
+
+- Takes: one of `off`, `ask`, `auto`
+- Default: `off`
+- Set in: your own config file, its variable, its flag; never a project's file or a profile
+
+```text
+config.toml   mod_reload = "ask"
+variable      HAEST_MOD_RELOAD=ask
+flag          --mod-reload ask
 ```
 
 ### `approvals`
