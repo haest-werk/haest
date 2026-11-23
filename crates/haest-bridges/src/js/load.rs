@@ -114,7 +114,9 @@ impl JsMod {
 
     /// [`load`](Self::load) within these `caps`: its memory, its
     /// [`slice`](VmCaps::slice), and its [`timeout`](VmCaps::timeout) for the
-    /// default export to return.
+    /// default export to return. Build them from [`VmCaps::mod_file`], what
+    /// `load` uses: [`VmCaps::default`] is the Code tool's caps (64 MiB, a
+    /// minute), not a mod file's (128 MiB, 30 s).
     ///
     /// # Errors
     ///

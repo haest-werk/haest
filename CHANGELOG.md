@@ -24,10 +24,13 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   haest-code's, the one the Code tool runs on, and takes its caps type.
   `ModCaps` is gone: `JsMod::load_with` and `ModFileOptions::with_caps`
   take a `VmCaps` (`haest::code::VmCaps`, also `haest::bridges::VmCaps`).
-  `ModCaps::default()` is `VmCaps::mod_file()`, `slice` and `memory_bytes`
-  keep their names, and `load_timeout` is `timeout`. `VmCaps::timeout_ms`
-  is `timeout`, a `Duration`, and `slice` is new (a Code run does not read
-  it). haest-bridges' `js` links haest-code in place of its own rquickjs.
+  `ModCaps::default()` is `VmCaps::mod_file()`, never `VmCaps::default()`:
+  that one is the Code tool's caps (64 MiB, 60 s), and a mod given it
+  silently loses half its memory and gets twice its load time. `slice` and
+  `memory_bytes` keep their names, and `load_timeout` is `timeout`.
+  `VmCaps::timeout_ms` is `timeout`, a `Duration`, and `slice` is new (a
+  Code run does not read it). haest-bridges' `js` links haest-code in place
+  of its own rquickjs.
 - `Usage` gains `cache_write_1h` and `CompactionOptions` gains
   `instructions`. A struct literal that names every field no longer
   compiles: end it with `..Default::default()` (`Usage`) or

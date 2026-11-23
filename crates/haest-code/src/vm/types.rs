@@ -11,13 +11,15 @@ use serde_json::{Map, Value};
 
 /// The bounds of one engine: a run of [`run_in_vm`](super::run_in_vm) (the
 /// Code tool's, the sandbox `js` command's) or a mod file (haest-bridges'
-/// `JsMod`). All of haest's JavaScript runs on the same engine, held to this
-/// one type; each field says which runs read it.
+/// `JsMod`). A mod file's caps start from [`VmCaps::mod_file`]: 128 MiB,
+/// 30 s to load, 10 s of code without a pause. [`VmCaps::default`] is the
+/// Code tool's when the model sets no timeout: a minute,
+/// [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES) (64 MiB), 100,000 characters
+/// of output. A mod file given caps built on `default()` gets the Code
+/// tool's memory and timeout, not its own.
 ///
-/// [`VmCaps::default`] is the Code tool's when the model sets no timeout: a
-/// minute, [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES), 100,000 characters of
-/// output. [`VmCaps::mod_file`] is a mod file's: 30 s to load, 128 MiB, 10 s
-/// of code without a pause.
+/// All of haest's JavaScript runs on the same engine, held to this one type;
+/// each field says which runs read it.
 ///
 /// ```
 /// use std::time::Duration;

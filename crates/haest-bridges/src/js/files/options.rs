@@ -63,6 +63,18 @@ impl ModFileOptions {
     }
 
     /// The bounds every mod file runs in, in place of [`VmCaps::mod_file`].
+    /// Build them from `VmCaps::mod_file()`: `VmCaps::default()` is the Code
+    /// tool's caps (64 MiB, a minute), not a mod file's (128 MiB, 30 s).
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_bridges::{ModFileOptions, VmCaps};
+    ///
+    /// let caps = VmCaps::mod_file().with_slice(Duration::from_secs(2));
+    /// let opts = ModFileOptions::new("/home/me/.config/haest").with_caps(caps);
+    /// # let _ = opts;
+    /// ```
     #[must_use]
     pub fn with_caps(mut self, caps: VmCaps) -> Self {
         self.caps = caps;
