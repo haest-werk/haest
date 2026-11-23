@@ -81,12 +81,12 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 
 ```toml
 [dependencies]
-haest = "0.4"
+haest = "0.5"
 # or, the whole conversation with haest's own files, variables and flags (the CLI's way):
-# haest = { version = "0.4", features = ["runtime", "config"] }
+# haest = { version = "0.5", features = ["runtime", "config"] }
 # or, a host with its own HTTP client, files and tools (the notebook example);
 # `tools` still builds reqwest for WebFetch, so drop it too for a tree with none:
-# haest = { version = "0.4", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
+# haest = { version = "0.5", default-features = false, features = ["providers", "workspace", "tools", "settings"] }
 ```
 
 ## Run the CLI
@@ -209,7 +209,7 @@ More providers go in `<config dir>/providers.json`
 
 ```toml
 [dependencies]
-haest = "0.4"
+haest = "0.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

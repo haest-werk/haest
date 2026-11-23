@@ -6,7 +6,10 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
-## Unreleased
+## 0.5.0 (2026-11-23)
+
+haest-issues 0.4.0 goes with it: its code is unchanged, its haest-core and
+haest-http are 0.5.0's. haest-bridges is new and released for the first time.
 
 A host and its mods can change the agent while it runs: tools that come
 and go, hooks on every step of the loop, compaction from a hook, and
