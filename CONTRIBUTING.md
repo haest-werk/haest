@@ -74,7 +74,9 @@
   uses is re-exported at its root, once (haest-core, whose modules are the
   contract, is the exception). `pub` only for what a host or a plug-in author
   uses; what only the haest crates share goes in a `__private` module
-  (haest-core's, or haest-http's for what the crates that send share). Only
+  (haest-core's; haest-http's for what the crates that send share;
+  haest-code's for the JavaScript engine haest-bridges' mod files run on;
+  haest-mods' for how a mod file's handlers are asked and folded). Only
   a crate released in step with the one it reaches into may use its
   `__private`: haest-issues, versioned on its own, uses public items only
   (no `__private` path and no `#[doc(hidden)]` macro such as `plug_ref!`;
