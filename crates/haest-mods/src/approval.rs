@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::{
     api::{Before, Mod, ModToolCall},
-    ask::{ApprovalRequest, Decision},
+    ask::{ApprovalDecision, ApprovalRequest},
     env::ModEnv,
 };
 
@@ -270,8 +270,8 @@ impl Mod for ApprovalMod {
         .with_input_preview(command.clone())
         .with_key(command);
         Ok(match haest.ask(req, ctx.cancel()).await {
-            Decision::Allow => Before::Pass,
-            Decision::Deny => Before::Deny(format!(
+            ApprovalDecision::Allow => Before::Pass,
+            ApprovalDecision::Deny => Before::Deny(format!(
                 "the human did not approve this command (it {why}). Ask them, or find another way."
             )),
         })

@@ -54,11 +54,11 @@ use crate::registry::Mods;
 /// };
 /// use haest_mods::{Mod, ModEnv, ModLoopHooks, Mods, TurnEnd};
 /// use tokio_util::sync::CancellationToken;
-/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 /// # struct Terminal;
 /// # #[async_trait]
 /// # impl ModUi for Terminal {
-/// #     async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> Decision { Decision::Deny }
+/// #     async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 /// #     fn info(&self, _: &str) {}
 /// # }
 ///

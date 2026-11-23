@@ -84,6 +84,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `Edit Write`). A `.*` end is a regular expression only in a
   tool's name: a model spec holds dots, so `openrouter:openai/gpt-6.*` is
   the prefix of every `gpt-6.1-*` spec.
+- haest-mods: `Decision` -> `ApprovalDecision`, a mechanical rename. The
+  human's Allow / Deny no longer reads as one of the protocol's decisions
+  (`Event::Decision`, `TurnEndDecision`).
 
 ### Added
 

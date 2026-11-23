@@ -87,7 +87,7 @@ fn bash_call(command: &str) -> serde_json::Map<String, serde_json::Value> {
 
 #[tokio::test]
 async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_allow() {
-    let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
+    let ui = TestUi::answering([ApprovalDecision::Deny, ApprovalDecision::Allow]);
     let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real), [ApprovalMod::new()]);
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
@@ -110,7 +110,7 @@ async fn in_the_real_workspace_an_irreversible_command_runs_only_on_the_humans_a
 /// cannot hide its tail from the ask.
 #[tokio::test]
 async fn the_ask_shows_the_whole_command_however_long() {
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real), [ApprovalMod::new()]);
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
     let command = format!("rm -rf ./build{}; touch PWNED", " ".repeat(186));
@@ -160,7 +160,7 @@ impl Mod for Alias {
 
 #[tokio::test]
 async fn approval_judges_the_command_that_will_run_after_every_rewrite() {
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     // Load order as load_mods has it: the approval mod first, a mod after it.
     let mods = Mods::new(
         env(ui.clone(), WorkspaceMode::Real),
@@ -225,7 +225,7 @@ async fn auto_mode_judges_instead_of_the_list_and_its_note_reaches_the_human() {
 
 #[tokio::test]
 async fn a_host_names_its_own_shell_tools_and_only_those_are_judged() {
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     let approval = ApprovalMod::new().with_shell_tools(["Shell"]);
     let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real), [approval]);
     let (shell, bash) = (Probe::new("Shell"), Probe::new("Bash"));

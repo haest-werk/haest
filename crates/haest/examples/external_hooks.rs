@@ -34,8 +34,8 @@ use haest::{
     },
     http::testing::{Respond, Server},
     mods::{
-        ApprovalRequest, Binding, Decision, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
-        SessionView,
+        ApprovalDecision, ApprovalRequest, Binding, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi,
+        Mods, SessionView,
     },
     serde_json::{Value, json},
 };
@@ -79,8 +79,8 @@ struct Terminal;
 
 #[haest::async_trait]
 impl ModUi for Terminal {
-    async fn ask(&self, _: ApprovalRequest, _: &haest::CancellationToken) -> Decision {
-        Decision::Deny
+    async fn ask(&self, _: ApprovalRequest, _: &haest::CancellationToken) -> ApprovalDecision {
+        ApprovalDecision::Deny
     }
     fn info(&self, text: &str) {
         println!("(for the human) {text}");

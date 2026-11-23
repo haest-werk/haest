@@ -1,5 +1,5 @@
 //! A mod's ask for the human's Allow / Deny ([`ApprovalRequest`]), and the
-//! answer ([`Decision`]).
+//! answer ([`ApprovalDecision`]).
 
 use serde::{Deserialize, Serialize};
 
@@ -87,7 +87,7 @@ haest_core::word_enum! {
     /// (`"allow"`, `"deny"`) is what a mod file's `haest.ask` promise
     /// resolves to.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum Decision ("decision") {
+    pub enum ApprovalDecision ("decision") {
         /// The human allowed it.
         Allow = "allow",
         /// The human refused it, did not answer in time, or the call was interrupted.

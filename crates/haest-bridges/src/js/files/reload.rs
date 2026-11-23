@@ -9,7 +9,7 @@ use std::{
 
 use haest_code::VmCaps;
 use haest_core::{error::report, fs::FsRef};
-use haest_mods::{ApprovalRequest, Decision, ModEnv, ModRef, Mods};
+use haest_mods::{ApprovalDecision, ApprovalRequest, ModEnv, ModRef, Mods};
 use haest_settings::ModReload;
 use tokio_util::sync::CancellationToken;
 
@@ -193,7 +193,7 @@ impl Files {
                 // Not answered: asked again at the next step.
                 return false;
             }
-            if asked == Decision::Deny {
+            if asked == ApprovalDecision::Deny {
                 self.env.info(&kept(path, now.as_ref(), file));
                 file.denied.insert(now.clone());
                 file.settled = now;

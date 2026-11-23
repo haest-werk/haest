@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    ask::{ApprovalRequest, Decision},
+    ask::{ApprovalDecision, ApprovalRequest},
     env::ModUi,
 };
 
@@ -203,15 +203,15 @@ impl ApprovalGate {
     /// withdrawn -- its future dropped -- and a Deny returned when `cancel`
     /// fires or the timeout passes. A `cancel` that fired before the call is a
     /// Deny with no prompt at all.
-    pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
+    pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> ApprovalDecision {
         // Checked first: a prompt raised now would only ever be withdrawn.
         if cancel.is_cancelled() {
-            return Decision::Deny;
+            return ApprovalDecision::Deny;
         }
         let key = rule_key(&req);
         if self.lock_always().contains(&key) {
             self.prompter.auto_approved(&req);
-            return Decision::Allow;
+            return ApprovalDecision::Allow;
         }
         let answer = tokio::select! {
             a = self.prompter.prompt(&req) => a,
@@ -219,12 +219,12 @@ impl ApprovalGate {
             _ = tokio::time::sleep(self.timeout) => ApprovalAnswer::Deny,
         };
         match answer {
-            ApprovalAnswer::Allow => Decision::Allow,
+            ApprovalAnswer::Allow => ApprovalDecision::Allow,
             ApprovalAnswer::AllowAlways => {
                 self.lock_always().insert(key);
-                Decision::Allow
+                ApprovalDecision::Allow
             }
-            ApprovalAnswer::Deny => Decision::Deny,
+            ApprovalAnswer::Deny => ApprovalDecision::Deny,
         }
     }
 
@@ -313,7 +313,7 @@ impl<F> ModUi for GateUi<F>
 where
     F: Fn(ModLine<'_>) + Send + Sync + 'static,
 {
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
+    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> ApprovalDecision {
         self.gate.ask(req, cancel).await
     }
 

@@ -11,7 +11,7 @@ use haest_core::{
     session::{EffortChange, SessionRecord},
     tool::ToolContext,
 };
-use haest_mods::{ApprovalRequest, Decision, ModUiRef};
+use haest_mods::{ApprovalDecision, ApprovalRequest, ModUiRef};
 use haest_providers::http::{HttpClient, HttpClientRef, HttpError, Request, Response};
 use haest_session::{Body, Driven, Frame, Hub, Input, SessionPrompter, Subscription, start};
 use haest_settings::Settings;
@@ -448,9 +448,13 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     let first = ask(&asks);
     let id = next_ask(&mut sub).await;
     session.answer(id, Answer::Always).unwrap();
-    assert_eq!(first.await.unwrap(), Decision::Allow);
+    assert_eq!(first.await.unwrap(), ApprovalDecision::Allow);
     let covered = asks.ask(rm(), &CancellationToken::new()).await;
-    assert_eq!(covered, Decision::Allow, "the ALWAYS covers it, no ask");
+    assert_eq!(
+        covered,
+        ApprovalDecision::Allow,
+        "the ALWAYS covers it, no ask"
+    );
 
     gate.revoke("Bash");
     let again = ask(&asks);
@@ -458,7 +462,7 @@ async fn an_always_answered_over_the_session_is_the_runtimes_gate() {
     session.answer(id, Answer::Deny).unwrap();
     assert_eq!(
         again.await.unwrap(),
-        Decision::Deny,
+        ApprovalDecision::Deny,
         "asked over the session again"
     );
     session.close().await;

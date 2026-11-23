@@ -50,14 +50,14 @@ writes its mods in Rust never links an engine.
 ```rust
 use haest_bridges::{ModFileOptions, ModFiles, ModReload};
 use haest_core::{MemFs, workspace::WorkspaceMode};
-use haest_mods::{ApprovalRequest, Decision, ModEnv, ModOptions, ModUi, load_mods};
+use haest_mods::{ApprovalDecision, ApprovalRequest, ModEnv, ModOptions, ModUi, load_mods};
 
 struct Terminal;
 
 #[async_trait::async_trait]
 impl ModUi for Terminal {
-    async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision {
-        Decision::Deny
+    async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision {
+        ApprovalDecision::Deny
     }
     fn info(&self, text: &str) {
         println!("{text}")

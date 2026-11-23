@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use haest_core::fs::MemFs;
-use haest_mods::{ApprovalAnswer, ApprovalRequest, Decision, Prompter};
+use haest_mods::{ApprovalAnswer, ApprovalDecision, ApprovalRequest, Prompter};
 use tokio_util::sync::CancellationToken;
 
 use super::{hardcoded, openrouter_key};
@@ -51,10 +51,19 @@ async fn a_host_takes_an_always_back_in_a_built_conversation() {
     let asks = rt.mods().env().ui().clone();
     let none = CancellationToken::new();
 
-    assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Allow);
-    assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(
+        asks.ask(rm("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
+    assert_eq!(
+        asks.ask(rm("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
     rt.gate().revoke("Bash");
-    assert_eq!(asks.ask(rm("rm -rf a"), &none).await, Decision::Deny);
+    assert_eq!(
+        asks.ask(rm("rm -rf a"), &none).await,
+        ApprovalDecision::Deny
+    );
     assert_eq!(
         answers.0.lock().unwrap().1,
         2,

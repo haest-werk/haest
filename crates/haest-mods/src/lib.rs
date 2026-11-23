@@ -78,11 +78,11 @@
 //! };
 //! use serde_json::json;
 //! use tokio_util::sync::CancellationToken;
-//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
+//! # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 //! # struct Terminal;
 //! # #[async_trait::async_trait]
 //! # impl ModUi for Terminal {
-//! #     async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> Decision { Decision::Deny }
+//! #     async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 //! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //! # struct Bash;
@@ -159,11 +159,11 @@
 //! };
 //! use haest_mods::{Before, Mod, ModEnv, ModToolCall, ModTools, Mods};
 //! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
+//! # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 //! # struct Terminal;
 //! # #[async_trait]
 //! # impl ModUi for Terminal {
-//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 //! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //! # struct Bash;
@@ -300,7 +300,7 @@ pub use api::{Before, Mod, ModRef, ModToolCall, Step, TurnEnd};
 pub use approval::{
     ApprovalMod, AutoJudge, AutoJudgeRef, BashVerdict, SHELL_TOOLS, irreversible_reason,
 };
-pub use ask::{ApprovalRequest, Decision};
+pub use ask::{ApprovalDecision, ApprovalRequest};
 pub use decision::{Compact, ModelAfterDecision, ModelBeforeDecision, TurnEndDecision};
 pub use decorate::{ModSystemPrompt, ModTools};
 pub use env::{ModEnv, ModUi, ModUiRef};

@@ -12,7 +12,7 @@ use haest_core::{
     tool::{JsonMap, Tool, ToolError},
     workspace::WorkspaceMode,
 };
-use haest_mods::Decision;
+use haest_mods::ApprovalDecision;
 use serde_json::{Value, json};
 
 use super::*;
@@ -136,7 +136,7 @@ async fn a_file_that_fails_to_load_keeps_the_version_before_and_is_reported_once
 #[tokio::test]
 async fn ask_puts_the_new_content_before_the_human_and_a_deny_is_not_asked_again() {
     let fs = MemFs::from_files([(FILE, version("One", "Push"))]);
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     let mods = files(&fs, ModReload::Ask, &ui).await;
     assert!(ui.asks().is_empty(), "the files there at the start load");
 
@@ -159,7 +159,7 @@ async fn ask_puts_the_new_content_before_the_human_and_a_deny_is_not_asked_again
 #[tokio::test]
 async fn ask_loads_a_new_or_changed_file_on_the_humans_allow() {
     let fs = MemFs::from_files([(FILE, version("One", "Push"))]);
-    let ui = TestUi::answering([Decision::Allow, Decision::Allow]);
+    let ui = TestUi::answering([ApprovalDecision::Allow, ApprovalDecision::Allow]);
     let mods = files(&fs, ModReload::Ask, &ui).await;
 
     write(&fs, &version("Two", "Pull")).await;
@@ -176,7 +176,7 @@ async fn ask_loads_a_new_or_changed_file_on_the_humans_allow() {
 #[tokio::test]
 async fn ask_asks_before_a_deleted_file_unloads() {
     let fs = MemFs::from_files([(FILE, version("One", "Push"))]);
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     let mods = files(&fs, ModReload::Ask, &ui).await;
 
     fs.remove(Path::new(FILE)).await.unwrap();
@@ -189,7 +189,7 @@ async fn ask_asks_before_a_deleted_file_unloads() {
 #[tokio::test]
 async fn an_ask_the_turn_interrupted_is_asked_again_at_the_next_step() {
     let fs = MemFs::from_files([(FILE, version("One", "Push"))]);
-    let ui = TestUi::answering([Decision::Allow]);
+    let ui = TestUi::answering([ApprovalDecision::Allow]);
     let mods = files(&fs, ModReload::Ask, &ui).await;
     write(&fs, &version("Two", "Pull")).await;
 

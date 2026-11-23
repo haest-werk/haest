@@ -71,11 +71,11 @@ type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// use haest_core::{ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
 /// use haest_mods::{CommandOutcome, ModOptions, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
-/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 /// # struct Terminal;
 /// # #[async_trait::async_trait]
 /// # impl ModUi for Terminal {
-/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 /// #     fn info(&self, text: &str) { println!("{text}") }
 /// # }
 /// # struct Write;

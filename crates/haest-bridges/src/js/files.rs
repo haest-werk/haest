@@ -72,11 +72,11 @@ use reload::{Files, Look};
 /// use haest_bridges::{ModFileOptions, ModFiles};
 /// use haest_core::{MemFs, workspace::WorkspaceMode};
 /// use haest_mods::{ModEnv, ModOptions, load_mods};
-/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 /// # struct Terminal;
 /// # #[async_trait::async_trait]
 /// # impl ModUi for Terminal {
-/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 /// #     fn info(&self, _: &str) {}
 /// # }
 ///

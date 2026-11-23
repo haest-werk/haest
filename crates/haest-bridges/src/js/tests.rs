@@ -9,7 +9,7 @@ use haest_core::{
     tool::{ToolError, input},
     workspace::WorkspaceMode,
 };
-use haest_mods::{CommandOutcome, Decision, Mod, ModToolCall, Mods};
+use haest_mods::{ApprovalDecision, CommandOutcome, Mod, ModToolCall, Mods};
 use serde_json::json;
 
 use super::{JsMod, ModLoadError};
@@ -203,7 +203,7 @@ async fn a_mod_asks_the_human_and_their_answer_decides() {
         return verdict === 'allow' ? undefined : { deny: 'the human said no' }
       })
     }"#;
-    let ui = TestUi::answering([Decision::Deny, Decision::Allow]);
+    let ui = TestUi::answering([ApprovalDecision::Deny, ApprovalDecision::Allow]);
     let mods = with_mod(ui.clone(), "asker.js", source).await;
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));

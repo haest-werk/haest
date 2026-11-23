@@ -3,7 +3,7 @@
 //! Registrations land before any reply, so a loaded mod's tools are there by
 //! the time `load` returns.
 
-use haest_mods::{ApprovalRequest, Decision};
+use haest_mods::{ApprovalDecision, ApprovalRequest};
 use serde::Deserialize;
 
 use super::{
@@ -103,7 +103,7 @@ impl Js {
         let (ui, own) = (self.ui.clone(), self.own.clone());
         self.runtime.spawn(async move {
             let decision = if cancel.is_cancelled() {
-                Decision::Deny
+                ApprovalDecision::Deny
             } else {
                 ui.ask(req, &cancel).await
             };

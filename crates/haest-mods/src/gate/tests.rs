@@ -21,11 +21,11 @@ async fn always_covers_that_exact_command_not_every_later_irreversible_one() {
     let none = CancellationToken::new();
     assert_eq!(
         gate.ask(bash("rm -rf node_modules"), &none).await,
-        Decision::Allow
+        ApprovalDecision::Allow
     );
     assert_eq!(
         gate.ask(bash("rm -rf node_modules"), &none).await,
-        Decision::Allow
+        ApprovalDecision::Allow
     );
     assert_eq!(human.prompts(), 1, "the second ask answered itself");
     assert_eq!(human.receipts(), 1);
@@ -41,7 +41,7 @@ async fn always_covers_that_exact_command_not_every_later_irreversible_one() {
         leave.cancel();
     });
     assert_eq!(human.prompts(), 2, "a different command prompts again");
-    assert_eq!(decision, Decision::Deny);
+    assert_eq!(decision, ApprovalDecision::Deny);
 }
 
 #[tokio::test]
@@ -52,7 +52,7 @@ async fn an_ask_under_an_already_interrupted_turn_is_a_deny_at_once_never_a_prom
     interrupted.cancel();
     assert_eq!(
         gate.ask(bash("rm -rf x"), &interrupted).await,
-        Decision::Deny
+        ApprovalDecision::Deny
     );
     assert_eq!(human.prompts(), 0);
 }
@@ -62,7 +62,7 @@ async fn an_ask_nobody_answers_is_a_deny_after_the_timeout() {
     let human = Human::answering([]);
     let gate = ApprovalGate::new(human.clone()).with_timeout(Duration::from_millis(20));
     let decision = gate.ask(bash("rm -rf x"), &CancellationToken::new()).await;
-    assert_eq!(decision, Decision::Deny);
+    assert_eq!(decision, ApprovalDecision::Deny);
     assert_eq!(human.prompts(), 1);
 }
 
@@ -80,8 +80,14 @@ async fn a_gates_mod_ui_asks_through_the_gate_and_sends_each_line_as_what_it_is(
         })
     });
     let none = CancellationToken::new();
-    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
-    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(
+        ui.ask(bash("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
+    assert_eq!(
+        ui.ask(bash("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
     assert_eq!(human.prompts(), 1, "the gate's ALWAYS held");
     ui.info("n");
     ui.warn("w");
@@ -99,10 +105,19 @@ async fn the_gate_stays_reachable_after_it_becomes_the_mod_ui_so_always_can_be_r
     let gate = ApprovalGate::new(human.clone());
     let ui = gate.mod_ui(|_| {});
     let none = CancellationToken::new();
-    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
-    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Allow);
+    assert_eq!(
+        ui.ask(bash("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
+    assert_eq!(
+        ui.ask(bash("rm -rf a"), &none).await,
+        ApprovalDecision::Allow
+    );
     gate.revoke("Bash");
-    assert_eq!(ui.ask(bash("rm -rf a"), &none).await, Decision::Deny);
+    assert_eq!(
+        ui.ask(bash("rm -rf a"), &none).await,
+        ApprovalDecision::Deny
+    );
     assert_eq!(
         human.prompts(),
         2,

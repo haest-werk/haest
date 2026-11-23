@@ -12,7 +12,7 @@ use haest_core::{error::report, workspace::WorkspaceMode};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    ask::{ApprovalRequest, Decision},
+    ask::{ApprovalDecision, ApprovalRequest},
     payload::SessionView,
 };
 
@@ -31,7 +31,7 @@ use crate::{
 pub trait ModUi: Send + Sync {
     /// The human's Allow / Deny. Deny when `cancel` fires (an interrupt) or the
     /// human never answers -- a tool call must never hang on someone who walked away.
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision;
+    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> ApprovalDecision;
     /// A line the human sees: what a mod has to say (plan mode is on).
     fn info(&self, text: &str);
     /// Something was skipped or held and the conversation goes on; the
@@ -174,9 +174,9 @@ impl ModEnv {
     /// The human's Allow / Deny, through the host; Deny on interrupt or
     /// timeout. An ask under an already-interrupted call (`cancel` fired) is a
     /// Deny at once, never a prompt.
-    pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
+    pub async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> ApprovalDecision {
         if cancel.is_cancelled() {
-            return Decision::Deny;
+            return ApprovalDecision::Deny;
         }
         self.ui.ask(req, cancel).await
     }

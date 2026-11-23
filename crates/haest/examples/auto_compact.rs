@@ -28,8 +28,8 @@ use haest::{
         workspace::WorkspaceMode,
     },
     mods::{
-        ApprovalRequest, Compact, Decision, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi, Mods,
-        TurnEndDecision, TurnEndPayload,
+        ApprovalDecision, ApprovalRequest, Compact, HookSet, ModEnv, ModLoopHooks, ModTools, ModUi,
+        Mods, TurnEndDecision, TurnEndPayload,
     },
 };
 
@@ -79,8 +79,8 @@ struct Terminal;
 
 #[haest::async_trait]
 impl ModUi for Terminal {
-    async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> Decision {
-        Decision::Deny
+    async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> ApprovalDecision {
+        ApprovalDecision::Deny
     }
     fn info(&self, text: &str) {
         println!("(for the human) {text}");

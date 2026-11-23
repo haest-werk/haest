@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    ask::{ApprovalRequest, Decision},
+    ask::{ApprovalDecision, ApprovalRequest},
     decorate::ModTools,
     env::{ModEnv, ModUi},
     loop_hooks::ModLoopHooks,
@@ -57,7 +57,7 @@ pub struct TestUi {
     infos: Mutex<Vec<String>>,
     errors: Mutex<Vec<String>>,
     asks: Mutex<Vec<ApprovalRequest>>,
-    answers: Mutex<VecDeque<Decision>>,
+    answers: Mutex<VecDeque<ApprovalDecision>>,
     /// Asks never answer: they end only when their call is interrupted.
     hold: bool,
 }
@@ -69,7 +69,7 @@ impl TestUi {
     }
 
     /// Answers asks in this order; out of answers = deny.
-    pub fn answering(answers: impl IntoIterator<Item = Decision>) -> Arc<Self> {
+    pub fn answering(answers: impl IntoIterator<Item = ApprovalDecision>) -> Arc<Self> {
         Arc::new(Self {
             answers: Mutex::new(answers.into_iter().collect()),
             ..Default::default()
@@ -102,14 +102,14 @@ impl TestUi {
 
 #[async_trait]
 impl ModUi for TestUi {
-    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> Decision {
+    async fn ask(&self, req: ApprovalRequest, cancel: &CancellationToken) -> ApprovalDecision {
         held(&self.asks).push(req);
         if self.hold {
             cancel.cancelled().await;
-            return Decision::Deny;
+            return ApprovalDecision::Deny;
         }
         let next = held(&self.answers).pop_front();
-        next.unwrap_or(Decision::Deny)
+        next.unwrap_or(ApprovalDecision::Deny)
     }
     fn info(&self, text: &str) {
         held(&self.infos).push(text.to_string());

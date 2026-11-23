@@ -2,7 +2,7 @@ use haest_core::{Tools, tool::input, workspace::WorkspaceMode};
 use serde_json::json;
 
 use super::*;
-use crate::{ask::Decision, decorate::ModTools, testing::*};
+use crate::{ask::ApprovalDecision, decorate::ModTools, testing::*};
 
 #[test]
 fn the_built_ins_load_first_and_approvals_can_be_turned_off() {
@@ -39,7 +39,7 @@ fn the_hosts_own_mods_load_last_in_order() {
 
 #[tokio::test]
 async fn the_hosts_tool_names_reach_the_built_ins() {
-    let ui = TestUi::answering([Decision::Deny]);
+    let ui = TestUi::answering([ApprovalDecision::Deny]);
     let named = ModOptions::new(CWD, WorkspaceMode::Real)
         .with_approval(ApprovalMod::new().with_shell_tools(["Shell"]))
         .with_plan(PlanMod::new().with_planning_tools(["Notes"]));

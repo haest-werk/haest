@@ -80,11 +80,11 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// ```
 /// # use async_trait::async_trait;
 /// # use haest_core::{ToolContext, ToolOutput, ToolError, ShutWorkspace, tool::{JsonMap, Tool}};
-/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 /// # struct Terminal;
 /// # #[async_trait]
 /// # impl ModUi for Terminal {
-/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 /// #     fn info(&self, _: &str) {}
 /// # }
 /// # struct Bash;
@@ -132,11 +132,11 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// use haest_bridges::{Claude, ShellHook};
 /// use haest_core::workspace::WorkspaceMode;
 /// use haest_mods::{Binding, HookSet, ModEnv, Mods, SessionView, ToolBeforePayload};
-/// # use haest_mods::{ApprovalRequest, Decision, ModUi};
+/// # use haest_mods::{ApprovalDecision, ApprovalRequest, ModUi};
 /// # struct Terminal;
 /// # #[async_trait::async_trait]
 /// # impl ModUi for Terminal {
-/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+/// #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> ApprovalDecision { ApprovalDecision::Deny }
 /// #     fn info(&self, _: &str) {}
 /// # }
 ///
