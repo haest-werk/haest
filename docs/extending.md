@@ -241,9 +241,85 @@ on `model.before` or `model.after` does not compile; the mapping and that list a
 [`external_hooks.rs`](../crates/haest/examples/external_hooks.rs) runs it beside an HTTP hook
 on `turn.end`.
 
-A hook runs with the host's full trust. Load a project's hooks only in a directory the human
-trusts, and an HTTP hook only from the human's own configuration: it receives every tool
-input. There are no hook settings yet (`[[hooks.<event>]]`): a host binds them in Rust.
+A hook runs with the host's full trust: it receives every tool input, and a command runs on
+the host whatever the workspace. Load a project's hooks only in a directory the human trusts,
+and an HTTP hook only from the human's own configuration. A host binds them in Rust as above,
+or the human writes them in a config file.
+
+### Hooks from a config file
+
+The [`hooks`](settings.md#hooks) setting binds the same `ShellHook`s and `HttpHook`s with no
+Rust: one `[[hooks."<event>"]]` entry each, under the protocol's own event name, quoted for
+its dot (`[[hooks.tool.before]]` is a table `tool` to TOML, which haest refuses with a hint).
+
+```toml
+# A Claude Code PreToolUse script, as it is, on Bash calls.
+[[hooks."tool.before"]]
+command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
+dialect = "claude"
+matcher = "Bash"
+
+# A reviewer that may keep a turn going, in haest's own JSON.
+[[hooks."turn.end"]]
+url = "https://review.example/haest/turn-end"
+headers = { authorization = "Bearer ${REVIEW_TOKEN}" }
+timeout = 10
+```
+
+| Key | Takes | Default |
+|---|---|---|
+| `command` | a command, `bash -c` on the host per event, in the working dir: a `ShellHook` | |
+| `url` | an `http://` or `https://` URL, POSTed per event: an `HttpHook` | |
+| `dialect` | `haest` (every event) or `claude` (Claude Code's JSON, on the events Claude Code has: never `model.before` or `model.after`) | `haest` |
+| `matcher` | on `tool.before` and `tool.after` only: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`). Claude Code's `Edit\|Write` is a regular expression, which haest does not read: write one entry per tool | every tool |
+| `timeout` | seconds (`10`, `2.5`); past them the hook failed | 60 |
+| `on_error` | what a failure does: `block` or `continue` | `block` on `tool.before`, else `continue` |
+| `headers` | a `url`'s headers, `{ name = "value" }`; `${NAME}` and `${NAME:-default}` in a value are filled in from haest's environment | none |
+
+An entry takes `command` or `url`, never both. Loading refuses an unknown event or key, an
+entry with neither or both, `dialect = "claude"` on `model.before` or `model.after`, a
+`matcher` on an event that is not about a tool, and `headers` on a command. The error names
+the file and the entry as that file numbers it
+(``~/.config/haest/config.toml: hooks: [[hooks."turn.end"]] #2: unknown key `comand` ``),
+and never a header's value.
+
+Where they come from:
+
+- Every layer's entries bind after the ones before it, in the order written: your file, a
+  trusted project's file, the profile, `HAEST_HOOKS`, then each `--hooks`. A variable or a
+  flag holds the same as TOML: `--hooks '{ "turn.end" = [{ command = "sh check.sh" }] }'`.
+- A project's `.haest/config.toml` is read only inside your
+  [`trusted_dirs`](settings.md#trusted_dirs), so an untrusted repo's hooks never load. A
+  trusted one may bind a `command` (it already runs its own code through its mods and its
+  `.mcp.json`), never a `url`: a POST sends the conversation's events where the repo says. A
+  `url` comes from your own file, a variable or a flag; a project's file, or a profile it
+  defines, that holds one fails to load.
+- Off by default: no entry, no hook.
+
+How they run:
+
+- The entries are one mod, `[hooks]` in reports (`Mod [hooks] failed in tool.before: hook 2
+  on tool.before failed: ..`, where `hook 2` is the event's second bound entry across the
+  layers), after the built-in mods and your mod files, before a host's own mods.
+- A command runs on the host in the working dir, with the environment every process haest
+  starts gets ([`env_passthrough`](settings.md#env_passthrough), [`env`](settings.md#env)):
+  `~` in a command needs `HOME`, which `core` passes. Give a command in your own file as an
+  absolute path or under `~/`: a relative one runs whatever the working dir has at that path.
+  A host whose world starts no process (haest-runtime's `World::files`) binds no command: it
+  warns, and binds the rest.
+- A URL goes through the runtime's `HttpClient`, the one the model calls use.
+- In the `claude` dialect a hook gets the session's id and its file as Claude Code's
+  `session_id` and `transcript_path`, as of that event: after a /clear, the new session's.
+- A subagent's tool calls pass through the hooks, and its system prompt takes what
+  `system.prompt` adds, as with every mod. `prompt.submit`, `model.before`, `model.after` and
+  `turn.end` are the main conversation's: a subagent's turn is not the human's, and a check
+  that keeps the main turn going would hold every subagent's to it too.
+- `haest settings` shows a header by its name only.
+
+A hook from Claude Code's `.claude/settings.json` moves over one entry at a time: the event by
+its haest name (`PreToolUse` is `tool.before`, `PostToolUse` `tool.after`, `UserPromptSubmit`
+`prompt.submit`, `SessionStart` `system.prompt`, `Stop` `turn.end`), its `command` and
+`timeout`, its `matcher` (one entry per tool), and `dialect = "claude"`.
 
 ## Which form to use
 
@@ -251,6 +327,7 @@ input. There are no hook settings yet (`[[hooks.<event>]]`): a host binds them i
 |---|---|
 | a host embedding haest in Rust (brain) | `AgentHooks` for the host's own loop, native `Mod`s and `Hooks` for the rest. No bridge, no QuickJS |
 | a human customizing the CLI | mod files in `~/.config/haest/mods/` |
+| a human with Claude Code hook scripts, a check in any language, or a review service, on the CLI | the [`hooks`](settings.md#hooks) setting |
 | a project shipping rules with its repo | mod files in `.haest/mods/`, which the human turns on with `project_mods` in a directory they trust |
 | a host with Claude Code hook scripts, or a check in any language | `ShellHook`, in the `Claude` dialect for the scripts |
 | a host with a service that reviews or gates the agent | `HttpHook` |

@@ -80,12 +80,14 @@ wants a proxy hands in an HTTP client configured with one.
 ## What a process haest starts gets
 
 haest starts a process for real bash (`workspace = real`), each background job
-of it, and each stdio MCP server. Such a process gets an environment built
+of it, each stdio MCP server, and each [`hooks`](settings.md#hooks) command
+(on the host, in either workspace). Such a process gets an environment built
 from scratch, in this order, a later one winning for the same name:
 
 1. what `env_passthrough` lets through of haest's environment
 2. the variables in `env`
-3. for an MCP server, its own `env` in `.mcp.json`
+3. for an MCP server, its own `env` in `.mcp.json`; for a hook in the
+   `claude` dialect, `CLAUDE_PROJECT_DIR`
 
 | `env_passthrough` | A process gets |
 |---|---|
@@ -141,7 +143,7 @@ env                      NODE_ENV                                 --env
 
 ## `${NAME}` in config files
 
-Two places fill in variables from haest's environment, with Claude Code's
+Three places fill in variables from haest's environment, with Claude Code's
 syntax:
 
 | Written | Becomes |
@@ -158,6 +160,10 @@ syntax:
   (`"Authorization": "Bearer ${TOKEN}"`) or the URL's query, never its
   path: haest keeps a header's value and the query out of its logs and
   errors, and shows the path as it is.
+- A [`hooks`](settings.md#hooks) entry's `headers` values
+  (`authorization = "Bearer ${REVIEW_TOKEN}"`). One with no value and no
+  default is sent as written, and haest says which entry and header name
+  it. `haest settings` shows a header by its name only.
 
 A variable set to an empty value counts as set: `${EMPTY:-x}` is empty.
 

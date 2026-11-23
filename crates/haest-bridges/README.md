@@ -14,8 +14,9 @@ their JSON (`{ deny }`, `{ input }`, `{ stop }`, `{ steer }`, `{ continue }`,
 haest-mods' too, so a handler means the same whichever bridge carries it.
 
 Each bridge is a feature of this crate, with the dependencies only it needs.
-None is on by default; without one the crate is empty, and a host that writes
-its mods in Rust never links an engine.
+None is on by default; without one the crate holds only `HookSettings` (the
+`hooks` setting's entries, below), and a host that writes its mods in Rust
+never links an engine.
 
 - `js`: `.js` / `.ts` mod files in embedded QuickJS (`.ts` is type-stripped
   first, in pure Rust).
@@ -37,6 +38,8 @@ its mods in Rust never links an engine.
   event: the event as JSON on its stdin, the decision on its stdout.
 - `http`: `HttpHook`, a hook behind a URL: each event is a POST of its JSON,
   and the response's body is the decision.
+- `testing`: `testing::Server`, an HTTP server on 127.0.0.1 that a test of
+  HTTP hooks posts to. For `dev-dependencies` only.
 
 ```rust
 use haest_bridges::{ModFileOptions, ModFiles, ModReload};
@@ -122,6 +125,27 @@ host's own with `with_client`), with `content-type: application/json` and the
 headers set with `with_header`. A hook runs with the host's full trust: load a
 project's hooks only from a directory the human trusts, and an HTTP hook only
 from the human's own configuration, since it receives every tool input.
+
+### From a config file
+
+A CLI binds the same hooks with no Rust. `HookSettings` is haest-config's
+`hooks` setting: `[[hooks."tool.before"]]` entries, each a `command` or a
+`url` with its `dialect`, `matcher`, `timeout`, `on_error` and `headers`,
+checked when read (an error names the entry, never a header's value).
+`HookSettings::hooks` binds them, with `shell` or `http` on, in one `Hooks`
+named `[hooks]` for a `HookHost`: the conversation's directory, the
+environment a command gets (none: no command binds), the HTTP client, and
+the session the `claude` dialect names at each event. haest-runtime does
+this in every conversation;
+[docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md#hooks-from-a-config-file)
+has the keys and the trust rules.
+
+```toml
+[[hooks."tool.before"]]
+command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
+dialect = "claude"
+matcher = "Bash"
+```
 
 ### Dialects
 

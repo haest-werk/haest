@@ -31,6 +31,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - `Mods::names` lists the mod files as one entry, `mod files`;
   `ModFiles::names` lists their paths.
 - `Message` gains the variant `ToolChange`: a `match` on it needs the arm.
+- haest-config's `Config` gains the field `hooks`: a struct literal or a
+  destructuring that names every field needs it (`Config::bare` and
+  `Config::from(settings)` set it to none).
 - The session file gains a message kind, `"role": "tool_change"`, which
   the TypeScript haest does not read: a session that changed its tools on
   a model that takes tool changes resumes in this haest only.
@@ -140,6 +143,21 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   config only, never a project's.
 - haest-mods: `Mods` is itself a `Mod`, so a set of mods runs inside
   another; the feature `testing` is the kit a bridge tests its events with.
+- The setting `hooks`: commands and URLs bound to events from a config
+  file, no Rust needed. Each `[[hooks."<event>"]]` entry is a `command` (a
+  `ShellHook`) or a `url` (an `HttpHook`) with `dialect` (`haest` or
+  `claude`), `matcher`, `timeout`, `on_error` and `headers` (`${NAME}`
+  filled in from haest's environment); a variable or a flag holds the same
+  as TOML. Every layer's entries bind after the ones before it, as one mod
+  (`[hooks]`) after the built-ins and the mod files. A wrong entry fails to
+  load, naming its file and its number there, never a header's value. A
+  trusted project's file may bind a command, never a URL; an untrusted
+  project's hooks never load. haest-bridges: `HookSettings` and
+  `HookHost`, and the feature `testing` (`testing::Server`). haest-config:
+  `Config::hooks`, `Loaded::hooks`. haest-runtime:
+  `RuntimeInputs::with_hook_settings`, which `haest::runtime_inputs` sets;
+  the facade's `runtime` turns on `bridge-shell` and `bridge-http`.
+  [docs/extending.md](docs/extending.md#hooks-from-a-config-file).
 
 ### Fixed
 

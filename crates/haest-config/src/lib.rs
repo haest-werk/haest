@@ -56,7 +56,10 @@
 //! `.mcp.json` (which starts programs) and its `.haest/mods` (which run code)
 //! are read only when the working dir is inside one of `trusted_dirs`. Only
 //! your own file, a variable or a flag can set `trusted_dirs`: a project's
-//! file can't trust itself ([`Scope::User`]). A project file skipped for want
+//! file can't trust itself ([`Scope::User`]). A trusted project's file may
+//! bind a `hooks` command (it runs its own code already) but never a `url`
+//! hook, which would send the conversation's events where the repo says;
+//! nor may a profile it defines. A project file skipped for want
 //! of trust is a note in [`Loaded::notes`], and [`Resolved::project_file`]
 //! says which file it was.
 //!

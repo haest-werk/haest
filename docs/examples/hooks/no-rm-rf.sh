@@ -7,6 +7,12 @@
 #     "hooks": { "PreToolUse": [{ "matcher": "Bash",
 #       "hooks": [{ "type": "command", "command": "sh docs/examples/hooks/no-rm-rf.sh" }] }] }
 #
+#   haest (config.toml, copied to ~/.config/haest/hooks/):
+#     [[hooks."tool.before"]]
+#     command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
+#     dialect = "claude"
+#     matcher = "Bash"
+#
 #   haest (Rust):
 #     Hooks::new().on_tool_before(
 #         Binding::new(ShellHook::new("sh docs/examples/hooks/no-rm-rf.sh").with_dialect(Claude::new()))
