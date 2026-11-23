@@ -113,6 +113,12 @@ impl ExecResult {
 /// Exit code for "no such program", the shell convention every mode reports.
 pub const EXIT_NOT_FOUND: i32 = 127;
 
+/// Output a command keeps per stream, in either workspace: its first 64 MiB.
+/// The tools cut it down to their own budget; past this, a command that
+/// prints without end (`yes`) would fill the host's memory before its
+/// timeout. A hook's answer over HTTP is held to the same.
+pub const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+
 /// Where a streamed command's output goes, chunk by chunk as it arrives:
 /// stdout and stderr interleaved, whole UTF-8 characters only.
 ///

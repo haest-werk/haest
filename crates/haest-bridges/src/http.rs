@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use haest_core::workspace::MAX_OUTPUT_BYTES;
 use haest_http::{HttpClientRef, Request, redacted_url};
 use haest_mods::Event;
 use tokio_util::sync::CancellationToken;
@@ -15,9 +16,9 @@ use crate::dialect::{Dialect, Haest, HookFailure, Reply, hook_impls, outgoing, s
 #[cfg(test)]
 mod tests;
 
-/// The most of an answer read: as much as the shell bridge keeps of a
-/// command's stdout. Past it, the answer is a failure.
-const MAX_ANSWER: usize = 64 * 1024 * 1024;
+/// The most of an answer read: as much as a command keeps of its stdout
+/// (the shell bridge's). Past it, the answer is a failure.
+const MAX_ANSWER: usize = MAX_OUTPUT_BYTES;
 
 /// How much of an error status's body is read for its report.
 const MAX_ERROR_BODY: usize = 64 * 1024;

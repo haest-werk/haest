@@ -121,7 +121,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   kept this turn going), worked out once in haest-mods for every hook.
   haest now needs tokio-util 0.7.19 or later.
 - haest-workspace: `RealWorkspace::shell_with_stdin` hands a command its
-  stdin, through the same exec as every command.
+  stdin, through the same exec as every command. haest-core:
+  `workspace::MAX_OUTPUT_BYTES`, the 64 MiB a command keeps of each
+  stream, which an HTTP hook's answer is held to as well.
 - Mod files reload as they change: the setting `mod_reload` (`off`, the
   default; `ask`, where each new, changed or deleted file waits for the
   human's Allow; `auto`) has `ModFiles` read them again before each model
