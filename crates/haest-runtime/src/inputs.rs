@@ -2,6 +2,7 @@
 //! inputs ([`RuntimeInputs`]) and what it decides per run ([`BuildOptions`],
 //! [`Resume`]).
 
+use haest_bridges::HookSettings;
 use haest_core::{ChildEnv, KeySourceRef, ModelResolverRef};
 use haest_mcp::McpServerConfig;
 use haest_mods::ModRef;
@@ -44,6 +45,7 @@ pub struct RuntimeInputs {
     pub(crate) routing: Option<RoutingScopes>,
     pub(crate) http: HttpClientRef,
     pub(crate) host_mods: Vec<ModRef>,
+    pub(crate) hook_settings: HookSettings,
     pub(crate) models: Option<ModelResolverRef>,
     #[cfg(feature = "prompt")]
     pub(crate) prompt_template: Option<haest_prompt::PromptTemplate>,
@@ -53,8 +55,8 @@ impl RuntimeInputs {
     /// The settings in this world, and nothing else: no variables passed, no
     /// keys, no custom providers, no MCP servers, no routing, the default
     /// client ([`HttpClientRef::default`]: the shared `ReqwestClient`, built
-    /// on the first request), no mods of the host's own, the built-in
-    /// providers for the models.
+    /// on the first request), no mods of the host's own, no hooks from a
+    /// config, the built-in providers for the models.
     ///
     /// With no keys, [`build`](crate::build) fails unless the model's provider needs none:
     /// hand in the [`keys`](Self::with_keys) the settings' providers use.
@@ -70,6 +72,7 @@ impl RuntimeInputs {
             routing: None,
             http: HttpClientRef::default(),
             host_mods: Vec::new(),
+            hook_settings: HookSettings::default(),
             models: None,
             #[cfg(feature = "prompt")]
             prompt_template: None,
@@ -147,12 +150,35 @@ impl RuntimeInputs {
     }
 
     /// Add a native mod of the host's own (the mod itself, or an `Arc` of it
-    /// the host keeps): it runs after the built-ins and the mod files, the
-    /// host's mods in the order they were added, whatever the `mods`
-    /// settings say (those are about mod files).
+    /// the host keeps): it runs after the built-ins, the mod files and the
+    /// [`hook_settings`](Self::with_hook_settings), the host's mods in the
+    /// order they were added, whatever the `mods` settings say (those are
+    /// about mod files).
     #[must_use]
     pub fn with_mod(mut self, m: impl Into<ModRef>) -> Self {
         self.host_mods.push(m.into());
+        self
+    }
+
+    /// Commands and URLs to run at the mods protocol's events
+    /// (haest-config's `hooks` setting, its headers filled in): one mod,
+    /// `[hooks]` in reports, after the built-ins and the mod files and
+    /// before the host's own mods. A command runs on the host in the
+    /// settings' `cwd`, with the environment every process haest starts
+    /// gets (the world's `child_env` and the
+    /// [`passed_env`](Self::with_passed_env)); a [`World::files`] starts
+    /// none, so its command hooks are not bound and the [`Ui`](crate::Ui)
+    /// is warned. A URL is POSTed through the [`http`](Self::with_http)
+    /// client. The `claude` dialect names the session file records go to
+    /// at that event: its id and its path, a new one after a /clear.
+    ///
+    /// A subagent's tool calls pass through them and its system prompt
+    /// takes what `system.prompt` adds, as with every mod; `prompt.submit`,
+    /// `model.before`, `model.after` and `turn.end` are the main
+    /// conversation's (a subagent's turn is not the human's).
+    #[must_use]
+    pub fn with_hook_settings(mut self, hooks: HookSettings) -> Self {
+        self.hook_settings = hooks;
         self
     }
 
@@ -248,6 +274,11 @@ impl RuntimeInputs {
     /// The host's own mods, in order ([`with_mod`](Self::with_mod)).
     pub fn host_mods(&self) -> &[ModRef] {
         &self.host_mods
+    }
+
+    /// The hooks from a config ([`with_hook_settings`](Self::with_hook_settings)).
+    pub fn hook_settings(&self) -> &HookSettings {
+        &self.hook_settings
     }
 
     /// The host's own model resolver ([`with_models`](Self::with_models));
