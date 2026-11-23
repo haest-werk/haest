@@ -180,9 +180,10 @@ impl Serialize for MinContext {
     }
 }
 
-/// A whole number of tokens, 1 or more, or a share strictly between 0 and 1;
+/// A share strictly between 0 and 1, or a whole number of tokens above 0;
 /// anything else (`0`, `1.0`, a percentage as text) is refused, the value
-/// saying why.
+/// saying why. A number with a point is never tokens: `1.0` is refused as
+/// no share, not read as one token.
 impl<'de> Deserialize<'de> for MinContext {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         struct Expected;
@@ -190,7 +191,7 @@ impl<'de> Deserialize<'de> for MinContext {
             type Value = MinContext;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
-                    "a whole number of tokens, 1 or more (120000), or a share of the context window between 0 and 1 (0.6)",
+                    "a share of the context window above 0 and below 1 (like 0.6), or a whole number of tokens above 0 (like 120000)",
                 )
             }
             fn visit_u64<E: de::Error>(self, n: u64) -> Result<Self::Value, E> {
@@ -208,10 +209,13 @@ impl<'de> Deserialize<'de> for MinContext {
             }
             fn visit_f64<E: de::Error>(self, share: f64) -> Result<Self::Value, E> {
                 if share > 0.0 && share < 1.0 {
-                    Ok(MinContext::Share(share))
-                } else {
-                    Err(E::invalid_value(de::Unexpected::Float(share), &self))
+                    return Ok(MinContext::Share(share));
                 }
+                // `1.0` above all: someone who meant the whole window must
+                // not be steered to `1`, one token.
+                Err(E::custom(format_args!(
+                    "{share:?} is not a share of the context window, which is above 0 and below 1 (like 0.6); a number of tokens is a whole number, written without a point (like 120000)"
+                )))
             }
         }
         d.deserialize_any(Expected)

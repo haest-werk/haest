@@ -249,6 +249,15 @@ fn min_context_is_tokens_or_a_share_of_the_window() {
         assert!(read(&text).is_err(), "{text}");
     }
     assert!(read("compact_before_expire = { min_context = 1 }").is_ok());
+    // `1.0` is no share, and its refusal names both forms, so someone who
+    // meant the whole window is not steered to `1`, one token.
+    let why = read("compact_before_expire = { min_context = 1.0 }")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        why.contains("1.0 is not a share") && why.contains("0.6") && why.contains("120000"),
+        "{why}"
+    );
 }
 
 #[test]
