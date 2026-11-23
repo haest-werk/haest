@@ -68,6 +68,22 @@ async fn run_passes_argv_untouched_and_reports_a_missing_program_as_127() {
     assert_eq!(ws.run(&[], opts(&dir)).await.exit_code, EXIT_NOT_FOUND);
 }
 
+/// A directory that does not exist failed the spawn with the OS's ENOENT,
+/// reported as the program's: "/bin/bash: No such file or directory", when
+/// bash was there all along.
+#[tokio::test]
+async fn a_command_in_a_missing_directory_says_the_directory_is_missing() {
+    let (_t, dir) = tempdir();
+    let gone = dir.join("gone");
+    let r = real().shell("echo hi", opts(&gone)).await;
+    assert_eq!(r.exit_code, EXIT_NOT_FOUND);
+    assert!(
+        r.stderr.contains(&gone.display().to_string()) && !r.stderr.contains("bash"),
+        "{}",
+        r.stderr
+    );
+}
+
 /// A command's output was kept whole, so one that printed without end (`yes`,
 /// `cat /dev/urandom`) filled the host's memory until its timeout. Each
 /// stream keeps its first 64 MiB, as the sandbox does, and the child is

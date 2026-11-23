@@ -121,6 +121,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-mods: a `tool.after` hook that replaced a tool's output dropped what
   the call spent (`cost_usd`, `child_cost_usd`), so the turn's cost, its
   caps and the ledger missed it. A rewrite now keeps the tool's spend.
+- haest-workspace: a command run in a directory that does not exist
+  reported `/bin/bash: No such file or directory`. It now names the
+  missing directory.
 
 ## 0.4.1 (2026-11-20)
 

@@ -87,13 +87,21 @@ fn exit_code(status: ExitStatus) -> i32 {
         .unwrap_or(-1)
 }
 
-fn not_started(program: &str, e: &io::Error) -> ExecResult {
+/// Why `program` did not start in `cwd`. The OS answers a missing working
+/// directory with the same ENOENT as a missing program: the directory is
+/// named when it is the one missing.
+fn not_started(program: &str, cwd: &Path, e: &io::Error) -> ExecResult {
     let exit_code = match e.kind() {
         io::ErrorKind::NotFound => EXIT_NOT_FOUND,
         _ => 126,
     };
+    let stderr = if e.kind() == io::ErrorKind::NotFound && !cwd.is_dir() {
+        format!("{}: no such directory to run in", cwd.display())
+    } else {
+        format!("{program}: {e}")
+    };
     ExecResult {
-        stderr: format!("{program}: {e}"),
+        stderr,
         exit_code,
         ..Default::default()
     }
@@ -146,7 +154,7 @@ pub(super) async fn spawn_collect(
         .kill_on_drop(true);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return not_started(&shown, &e),
+        Err(e) => return not_started(&shown, &opts.cwd, &e),
     };
     let pid = child.id().unwrap_or(0);
     let mut on_drop = KillGroupOnDrop(Some(pid));
