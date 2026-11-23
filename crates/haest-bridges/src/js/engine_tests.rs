@@ -18,10 +18,18 @@ use tokio_util::sync::CancellationToken;
 use super::JsMod;
 use crate::{VmCaps, testkit::*};
 
-/// 8 MiB of heap; 300 ms for a run, and for a mod file's stretch of code.
-fn tight() -> VmCaps {
+/// 8 MiB of heap, and a minute for a run and for a mod file's stretch of
+/// code: only the heap stops [`FILL`], however loaded the machine.
+fn small_heap() -> VmCaps {
     VmCaps::mod_file()
         .with_memory_bytes(8 << 20)
+        .with_timeout(Duration::from_secs(60))
+        .with_slice(Duration::from_secs(60))
+}
+
+/// 300 ms for a run, and for a mod file's stretch of code.
+fn short_clock() -> VmCaps {
+    VmCaps::mod_file()
         .with_timeout(Duration::from_millis(300))
         .with_slice(Duration::from_millis(300))
 }
@@ -37,16 +45,18 @@ fn stopped_in_time(started: Instant) -> bool {
 #[tokio::test]
 async fn a_code_run_is_held_to_its_caps_by_the_engine() {
     let cancel = CancellationToken::new();
-    let tight_spec = VmSpec::new().with_caps(tight());
-    let run = run_in_vm(FILL, &tight_spec, &cancel, |_| {}).await;
-    assert!(run.error.is_some(), "{run:?}");
+    let small = VmSpec::new().with_caps(small_heap());
+    let run = run_in_vm(FILL, &small, &cancel, |_| {}).await;
+    let error = run.error.clone().unwrap_or_default();
+    assert!(error.contains("out of memory"), "{run:?}");
     assert_eq!(run.stopped, None);
     let roomy = VmSpec::new().with_caps(VmCaps::default());
     let run = run_in_vm(FILL, &roomy, &cancel, |_| {}).await;
     assert_eq!(run.value.as_deref(), Some("256"), "{run:?}");
 
+    let short = VmSpec::new().with_caps(short_clock());
     let started = Instant::now();
-    let run = run_in_vm("for (;;) {}", &tight_spec, &cancel, |_| {}).await;
+    let run = run_in_vm("for (;;) {}", &short, &cancel, |_| {}).await;
     assert_eq!(run.stopped, Some(VmStop::Timeout));
     assert!(stopped_in_time(started));
 }
@@ -64,17 +74,21 @@ async fn a_mod_file_is_held_to_its_caps_by_the_engine() {
     );
     let haest = env(TestUi::new(), WorkspaceMode::Sandbox);
     let load = |caps| JsMod::load_with(Path::new("caps.js"), source.clone(), &haest, caps);
-    let tight_mod = load(tight()).await.expect("the mod loads");
-    assert!(tight_mod.prompt_submit("fill", &haest).await.is_err());
+    let small = load(small_heap()).await.expect("the mod loads");
+    let error = small.prompt_submit("fill", &haest).await.unwrap_err();
+    assert!(error.to_string().contains("out of memory"), "{error}");
     let roomy = load(VmCaps::mod_file()).await.expect("the mod loads");
     let filled = roomy.prompt_submit("fill", &haest).await.unwrap();
     assert_eq!(filled.as_deref(), Some("256"));
 
+    let short = load(short_clock()).await.expect("the mod loads");
     let started = Instant::now();
-    let error = tight_mod.prompt_submit("spin", &haest).await.unwrap_err();
+    let error = short.prompt_submit("spin", &haest).await.unwrap_err();
     assert!(error.to_string().contains("without pausing"), "{error}");
     assert!(stopped_in_time(started));
     // Each cap stopped one call: the engine still runs the next.
-    let ok = tight_mod.prompt_submit("ok", &haest).await.unwrap();
-    assert_eq!(ok.as_deref(), Some("ok"));
+    for stopped in [&small, &short] {
+        let ok = stopped.prompt_submit("ok", &haest).await.unwrap();
+        assert_eq!(ok.as_deref(), Some("ok"));
+    }
 }
