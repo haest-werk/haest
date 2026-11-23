@@ -125,7 +125,25 @@ steering instead is `crates/haest/tests/plug_in.rs`.
 | 12 | Agent core (D22): durable runs (`Agent::run_durable` over a `RunStore`, `Tool::on_resume`), a subagent hub that runs a host's own members (`SubagentParent::start_member`), thresholds with wind-down, subagent budgets held on the ledger | done |
 | 13 | The 0.3 API (D21); review rounds until one found no regression, leak or data loss; the spelling layer removed (D23); a last cut of boilerplate and workarounds (D24) | done, 0.3.0 |
 | 14 | The system prompt as a template (D25-D28): `haest-prompt` on MiniJinja, `Tool::prompt_guide`, catalog family/tier/generation, `PromptSections`, `RuntimeInputs::with_prompt_template` behind the `prompt` feature | done, 0.4.0 |
-| 15 | Live extension (D29-D38): `LiveTools`; `after_model_call` / `before_turn_end`; `Mod` loop events through `ModHooks`, tool disable / remove, the TypeScript twins, the `ts` feature split; `ModFiles` with `mod_reload`; cache TTL, per-TTL accounting and prices, `Agent::warm_cache` and `keep_warm`; compaction from mods; `docs/extending.md` (the map of every extension point and its twin) and `docs/examples/mods/` | in progress |
+| 15 | Live extension (D29-D41): `LiveTools`; `after_model_call` / `before_turn_end`; `Mod` loop events through `ModHooks`, tool disable / remove, the TypeScript twins; the hook protocol and `Hooks`; `haest-bridges` (`js` with `ModFiles` and `mod_reload`, `shell` with the `claude` dialect, `http`); cache TTL, per-TTL accounting and prices, `Agent::warm_cache`, `CachePolicy` with keep-warm and `compact_before_expire`, cache-safe tool changes; compaction from mods; `docs/extending.md` (every extension point and its bridges) and `docs/examples/` | in progress |
+
+### Wave 15: what every new piece reuses
+
+One new crate only, `haest-bridges`: a crate exists to carry a dependency a host must be able to leave out (QuickJS, a process, HTTP). Everything else goes in the crate that already owns the concept. Each piece below uses the one that exists, extended where it falls short, never a second copy:
+
+| Need | The one place | Used by |
+|---|---|---|
+| A tool set that changes | `LiveTools` (haest-core) | the runtime's own tools, the TypeScript mods' tools, D40 |
+| A tool-name or model-spec pattern (exact, or `prefix*`) | `matches` in haest-code, moved to haest-core for every crate | Code's `code_tools`, hook matchers, `[cache.models."..."]`. The `claude` dialect alone keeps Claude Code's regex matchers, for compatibility |
+| Starting a process on the host | haest-workspace's real exec (`spawn_collect`: process group, deadline, cancel, `ChildEnv`), given stdin | `ShellHook`; haest-mcp's stdio start keeps rmcp's own transport |
+| An HTTP request | haest-http's `HttpClient` | `HttpHook` |
+| The event JSON | the TypeScript mods' payloads and returns, typed once in haest-mods | the `js`, `shell` and `http` bridges |
+| Timeout, `on_error`, matcher, encode / decode for an external hook | one runner in haest-bridges | `shell`, `http` |
+| A structured config entry (a table per key, an array of tables) | one new registry kind in haest-config, built by whichever task lands first | `[cache]` / `[cache.models."..."]`, `[[hooks.<event>]]` |
+| Compacting a conversation | `haest_core::compaction::compact` | the runtime's threshold, a mod's `{ compact }`, `compact_before_expire` |
+| A request that reuses the last prefix | `request_prefix.rs` | compaction's summary, `Agent::warm_cache` |
+
+Every task's report lists what it reused and any duplicate it found; a review pass on duplication and crate boundaries runs before the wave is called done.
 
 ### Parity (2026-11-10)
 
