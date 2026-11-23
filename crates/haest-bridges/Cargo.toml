@@ -13,32 +13,45 @@ categories.workspace = true
 [lints]
 workspace = true
 
-# One feature per bridge, each carrying what only it needs; none is on by
-# default.
+# One feature per bridge, each carrying what it needs; none is on by
+# default, and with none on the crate is empty and links nothing. Every
+# bridge names the same first line, what they all run on: haest-core,
+# haest-mods' protocol, and the crates its hooks are written with.
 [features]
 # TypeScript and JavaScript mod files in embedded QuickJS (`JsMod`), and a
 # conversation's mod files as one mod that reloads them (`ModFiles`).
-js = ["dep:rquickjs", "dep:haest-ts", "dep:haest-settings"]
+js = [
+    "dep:haest-core", "dep:haest-mods", "dep:async-trait", "dep:serde", "dep:serde_json", "dep:thiserror", "dep:tokio", "dep:tokio-util",
+    "dep:rquickjs", "dep:haest-ts", "dep:haest-settings",
+]
 # A command per event (`ShellHook`): the event as JSON on its stdin, the
 # decision on its stdout, run on the host by haest-workspace's real exec.
-shell = ["dep:haest-workspace"]
+shell = [
+    "dep:haest-core", "dep:haest-mods", "dep:async-trait", "dep:serde", "dep:serde_json", "dep:thiserror", "dep:tokio", "dep:tokio-util",
+    "dep:haest-workspace",
+]
 # A POST per event (`HttpHook`) through haest-http's `HttpClient`, the host's
 # own or the default.
-http = ["dep:haest-http"]
+http = [
+    "dep:haest-core", "dep:haest-mods", "dep:async-trait", "dep:serde", "dep:serde_json", "dep:thiserror", "dep:tokio", "dep:tokio-util",
+    "dep:haest-http",
+]
 
 [dependencies]
-haest-core = { workspace = true }
-haest-mods = { workspace = true }
+# Every bridge: the first line of each feature above.
+haest-core = { workspace = true, optional = true }
+# The events, their payloads and decisions, `Hook` and `Mod`.
+haest-mods = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"], optional = true }
+tokio-util = { workspace = true, optional = true }
 # http: its types only (no client without its `reqwest` feature): the
 # request goes through the host's HttpClient (no client of its own), and
 # `HttpHook`'s Debug hides a URL's credentials (`redacted_url`).
 haest-http = { workspace = true, optional = true }
-async-trait = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
-tokio-util = { workspace = true }
 # js: the engine (the same build the Code tool links).
 rquickjs = { version = "0.14", default-features = false, features = ["std"], optional = true }
 # js: `.ts` mod files, through the same type stripper as the sandbox `js` command.
