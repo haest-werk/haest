@@ -16,7 +16,7 @@ use serde_json::json;
 
 use super::{
     JsMod,
-    channel::{CallError, JsMeta, JsThread},
+    channel::{CallError, JsMeta},
     thread::{self, Setup},
 };
 
@@ -137,7 +137,7 @@ impl JsMod {
             caps,
             runtime,
         };
-        let thread = Arc::new(JsThread::new(thread::start(setup).await?));
+        let thread = Arc::new(thread::start(setup).await?);
         // The events are the Rust side's list: the JavaScript half takes
         // `haest.on` for these, and refuses to start if it handles others.
         let env = json!({

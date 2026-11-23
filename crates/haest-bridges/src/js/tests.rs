@@ -1,11 +1,15 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
 use haest_mods::{CommandOutcome, Decision, Mod, ModToolCall, Mods};
 use serde_json::json;
 
 use super::{JsMod, ModLoadError};
-use crate::testkit::*;
+use crate::{VmCaps, testkit::*};
 
 const GUARD_TS: &str = r#"
 interface Call { name: string; input: Record<string, unknown>; readOnly: boolean }
@@ -276,4 +280,33 @@ async fn a_runaway_mod_is_stopped_and_its_next_call_still_works() {
     let out = tools[0].execute(input(json!({"v": "ok"})), &ctx()).await;
     assert_eq!(out.unwrap().content, "echo:ok");
     assert_eq!(ui.errors().len(), 1);
+}
+
+/// Dropping a mod stops its code at once, even mid-loop: its thread ends,
+/// letting go of the host's ui, long before the loop's slice is up.
+#[tokio::test]
+async fn a_dropped_mod_stops_its_code_mid_loop() {
+    let source = r#"export default function (haest) {
+      haest.on('prompt.submit', text => { if (text === 'spin') for (;;) {} return text })
+    }"#;
+    let ui = TestUi::new();
+    let held = Arc::downgrade(&ui);
+    let haest = env(ui, WorkspaceMode::Sandbox);
+    let caps = VmCaps::mod_file().with_slice(Duration::from_secs(60));
+    let m = JsMod::load_with(Path::new("spin.js"), source.into(), &haest, caps)
+        .await
+        .expect("the mod loads");
+    let spin = m.prompt_submit("spin", &haest);
+    let given_up = tokio::time::timeout(Duration::from_millis(200), spin).await;
+    assert!(given_up.is_err(), "the loop is running");
+    drop((m, haest));
+    let dropped = Instant::now();
+    while held.strong_count() > 0 {
+        let took = dropped.elapsed();
+        assert!(
+            took < Duration::from_secs(10),
+            "still running {took:?} after the drop"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }

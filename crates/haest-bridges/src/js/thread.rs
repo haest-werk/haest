@@ -8,7 +8,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, Mutex, atomic::AtomicBool, mpsc},
     time::Duration,
 };
 
@@ -24,7 +24,7 @@ use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    channel::{JsMeta, Reply, ToJs},
+    channel::{JsMeta, JsThread, Reply, ToJs},
     load::ModLoadError,
 };
 
@@ -41,18 +41,21 @@ pub(crate) struct Setup {
     pub runtime: Handle,
 }
 
-/// Start the thread: Ok once the module ran and its default export is a function.
-pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, ModLoadError> {
+/// Start the thread: its handle once the module ran and its default export
+/// is a function.
+pub(crate) async fn start(setup: Setup) -> Result<JsThread, ModLoadError> {
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = oneshot::channel();
     let own = tx.clone();
+    let stop = Arc::new(AtomicBool::new(false));
+    let engine_stop = stop.clone();
     // A panic drops the thread's ends of the channels on its way out: the
     // load hears `Stopped`, and so does every call in flight.
     let ended = |_: Result<(), String>| {};
-    spawn_thread("haest-mod", move || serve(setup, &rx, own, ready_tx), ended)
-        .map_err(ModLoadError::Thread)?;
+    let body = move || serve(setup, &rx, own, engine_stop, ready_tx);
+    spawn_thread("haest-mod", body, ended).map_err(ModLoadError::Thread)?;
     match ready_rx.await {
-        Ok(Ok(())) => Ok(tx),
+        Ok(Ok(())) => Ok(JsThread::new(tx, stop)),
         Ok(Err(e)) => Err(e),
         Err(_) => Err(ModLoadError::Stopped),
     }
@@ -62,9 +65,10 @@ fn serve(
     setup: Setup,
     rx: &mpsc::Receiver<ToJs>,
     own: mpsc::Sender<ToJs>,
+    stop: Arc<AtomicBool>,
     ready: oneshot::Sender<Result<(), ModLoadError>>,
 ) {
-    let mut js = match Js::init(setup, own) {
+    let mut js = match Js::init(setup, own, stop) {
         Ok(js) => js,
         Err(e) => {
             let _ = ready.send(Err(e));
@@ -142,11 +146,17 @@ enum Loaded {
 }
 
 impl Js {
-    fn init(setup: Setup, own: mpsc::Sender<ToJs>) -> Result<Js, ModLoadError> {
+    fn init(
+        setup: Setup,
+        own: mpsc::Sender<ToJs>,
+        stop: Arc<AtomicBool>,
+    ) -> Result<Js, ModLoadError> {
         let code = runnable(&setup.path, setup.source)?;
-        // Nothing else holds the engine's stop flag: a mod file stops
-        // between requests (`ToJs::Stop`), and its slice stops a CPU loop.
-        let engine = JsEngine::new(&setup.caps, STACK_BYTES, Arc::default())
+        // The mod's handle (`JsThread`) holds the engine's stop flag and sets
+        // it when it drops: the code stops at the next poll, even mid-loop,
+        // and the thread ends at `ToJs::Stop`. While the mod lives, its slice
+        // stops a CPU loop.
+        let engine = JsEngine::new(&setup.caps, STACK_BYTES, stop)
             .map_err(|e| ModLoadError::Evaluate(e.to_string()))?;
         let js = Js {
             engine,

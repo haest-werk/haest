@@ -3,7 +3,11 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, MutexGuard, mpsc},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
 };
 
 use haest_mods::ModEvent;
@@ -103,20 +107,25 @@ pub(crate) enum CallError {
     Stopped,
 }
 
-/// The way into one mod's thread. Dropping the last handle stops the thread.
+/// The way into one mod's thread. Dropping the last handle stops the
+/// thread, and the mod's code with it, even mid-loop.
 pub(crate) struct JsThread {
     tx: mpsc::Sender<ToJs>,
+    /// The engine's stop flag: once set, its watch stops the mod's code at
+    /// the next poll.
+    stop: Arc<AtomicBool>,
 }
 
 impl Drop for JsThread {
     fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
         let _ = self.tx.send(ToJs::Stop);
     }
 }
 
 impl JsThread {
-    pub(crate) fn new(tx: mpsc::Sender<ToJs>) -> Self {
-        Self { tx }
+    pub(crate) fn new(tx: mpsc::Sender<ToJs>, stop: Arc<AtomicBool>) -> Self {
+        Self { tx, stop }
     }
 
     /// One request; `cancel` = stop waiting when it fires. Once it has
