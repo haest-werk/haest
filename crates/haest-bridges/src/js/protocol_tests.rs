@@ -60,7 +60,7 @@ fn handed(event: ModEvent, args: &Value) -> Value {
         ModEvent::PromptSubmit => json!({ "text": arg(0) }),
         ModEvent::SystemPrompt => json!({}),
         ModEvent::ModelBefore | ModEvent::ModelAfter | ModEvent::TurnEnd => arg(0),
-        // `ModEvent` is non-exhaustive outside haest-core: a new event fails
+        // `ModEvent` is non-exhaustive outside haest-mods: a new event fails
         // the tests below at run time, as every event is driven through.
         other => panic!("{other} is not driven through a mod file here"),
     }

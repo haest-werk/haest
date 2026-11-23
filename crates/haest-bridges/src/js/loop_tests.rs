@@ -95,7 +95,7 @@ async fn every_mod_event_reaches_its_handler_in_a_ts_mod() {
                 let end = m.turn_end(&mut agent, &ended, &cancel, &haest).await;
                 assert_eq!(end.unwrap(), TurnEnd::Pass);
             }
-            // `ModEvent` is non-exhaustive outside haest-core: a new event
+            // `ModEvent` is non-exhaustive outside haest-mods: a new event
             // fails here at run time, as every event is driven through.
             other => panic!("{other} is not driven through a mod file here"),
         }

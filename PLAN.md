@@ -67,7 +67,8 @@ there, file by file, tests included. Since 0.2.0 the Rust haest leads.
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch (+ net guard), tasks, ToolSearch, Skill, Agent tools (`SubagentHub`, `AgentDirectory`, `AgentToolOptions`), GenerateImage | `tools/*.ts`, `net-guard.ts` |
 | `haest-mcp` | MCP client over `rmcp`: stdio + HTTP servers, their tools as haest tools | `core/mcp.ts` |
 | `haest-code` | the code VM (`rquickjs`), the Code tool over sibling tools, the sandbox `js` command | `core/code-vm*.ts`, `tools/code*.ts` |
-| `haest-mods` | mods in QuickJS: commands, prompt rewrite, tool wrapping, approvals, plan mode | `core/mods.ts` |
+| `haest-mods` | mods in Rust: `Mod`, `Hooks`, the events' protocol, commands, prompt rewrite, tool wrapping, approvals, plan mode; no QuickJS (D29) | `core/mods.ts` |
+| `haest-bridges` | mods outside Rust, one feature per bridge: `js` (`JsMod`, `ModFiles` and its reload, D33) | `core/mods.ts` (the file mods), new (D29, D41) |
 | `haest-ts` | the ONE TypeScript stripper (`swc` strip_types) used by Code, `js` and mods | -- |
 | `haest-settings` | typed `Settings` (`Settings::bare`), `BuiltinTools` / `ContextSources` / `SkillSources` word sets; no I/O | new (D15) |
 | `haest-config` | the opt-in loader: the registry (one row per setting), TOML/env/flag layers with provenance, profiles, trust, `env_passthrough`; reads the keys, `providers.json`, routing and a trusted `.mcp.json` for the runtime | new (D8, D15) |
@@ -77,7 +78,7 @@ there, file by file, tests included. Since 0.2.0 the Rust haest leads.
 | `haest-session` | a conversation another program watches and drives while it runs: the session driver (one turn at a time, input mid-turn steered in), its `Backend` handle, a numbered stream with catch-up and one `gap` for a slow reader, approval asks over it | new (0.3) |
 | `haest-transport` | the session served to another program: one connection's rules over any line source and sink, `Peer`, and `Stdio`, `UnixSocket` and `Broker` behind their features | new (0.3) |
 | `haest-cli` | the `haest` binary on `haest-config` + `haest-runtime`: flags generated from the registry, `haest settings`, print mode, `--json` events in the wire's envelope, a REPL, sessions + resume, `--stdio`, the control socket and `haest ctl`, the broker link | new (the TS haest has no CLI; its host is the broker) |
-| `haest` | the one dependency a host takes; default features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `settings` and `reqwest` (`http` comes with them); opt-in `rmcp`, `config`, `runtime`, `testing`, `wire`, `session`, `transport`, `transport-stdio`, `transport-unix`, `transport-broker`, `prompt` | -- |
+| `haest` | the one dependency a host takes; default features `providers`, `workspace`, `tools`, `mcp`, `code`, `mods`, `bridge-js`, `settings` and `reqwest` (`http` comes with them); opt-in `rmcp`, `config`, `runtime`, `testing`, `wire`, `session`, `transport`, `transport-stdio`, `transport-unix`, `transport-broker`, `prompt` | -- |
 | `haest-issues` | EXPERIMENTAL, an example of how to write tools: a `Tracker` trait, a GitHub Issues backend (REST, token handed in) and a board-card backend (markdown + frontmatter files, the board's own bytes), seven Issue* tools over either; not in the facade | new; the card format from remote-claude's `project-card-file.ts` |
 
 ## Brain's plug points (from its vendored patches, `brain/web/src/rooms/agent/haest/README.md`)

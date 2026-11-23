@@ -28,8 +28,9 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-tools` | Read, Write, Edit, Glob, Grep, Bash (+ background jobs), WebFetch, tasks, ToolSearch, Skill, Agent / SendMessage / StopAgent, GenerateImage |
 | `haest-mcp` | MCP client: stdio and streamable HTTP servers, their tools as haest tools |
 | `haest-code` | embedded QuickJS: the Code tool and the sandbox `js` command |
-| `haest-mods` | mods: change how haest behaves without forking it, in Rust or as `.js`/`.ts` files |
-| `haest-ts` | the one TypeScript stripper Code, `js` and mods share |
+| `haest-mods` | mods: change how haest behaves without forking it, in Rust: native mods, hooks bound per event, the events' protocol (payloads and decisions, typed once), approvals and plan mode. Links no script engine |
+| `haest-bridges` | mods and hooks written outside Rust, speaking haest-mods' protocol, one feature per bridge: `js` runs `.js`/`.ts` mod files in embedded QuickJS and reloads a conversation's mod files as they change (`mod_reload`) |
+| `haest-ts` | the one TypeScript stripper Code, `js` and mod files share |
 | `haest-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
 | `haest-config` | the opt-in loader, a builder (`Loader`): TOML files, `HAEST_*` variables and flags in the order a host adds them, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
 | `haest-runtime` | a whole conversation built from what a host hands it, behind its `Ui`; what the CLI is made of |
@@ -58,7 +59,8 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `mcp` | `haest::mcp` | yes |
 | `rmcp` | `haest::mcp::rmcp` and `McpHub::connect_transport` (an MCP server over a transport the host opened; rmcp's types in haest's API); turns on `mcp` | no |
 | `code` | `haest::code` (the Code tool, the sandbox `js` command) | yes |
-| `mods` | `haest::mods` (mods, approvals, plan mode) | yes |
+| `mods` | `haest::mods` (native mods and hooks, approvals, plan mode; no script engine) | yes |
+| `bridge-js` | `haest::bridges` (`.js`/`.ts` mod files in embedded QuickJS, reloaded as they change); turns on `mods` | yes |
 | `settings` | `haest::settings` (the values, plain) | yes |
 | `config` | `haest::config` (the loader: files, variables, flags, profiles, trust) | no |
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
