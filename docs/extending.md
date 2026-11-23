@@ -118,6 +118,27 @@ history records it. What the summary call costs counts toward the turn's caps an
 conversation's ledger. `turn.end` is the place to compact so the next turn starts small; never
 compact in `model.after` (the answer's tool results land after it).
 
+## The prompt cache
+
+[`CachePolicy`](../crates/haest-core/src/cache/policy.rs) is a plug point with two questions:
+
+| Method | Asked | Answers |
+|---|---|---|
+| `plan` | for every request (the loop's, a pre-warm, a summary) | a `CachePlan`: which blocks carry a breakpoint (system, tools, history, chosen messages) and for `5m` or `1h` |
+| `on_idle` | at each idle tick, a little before the cache would expire | an `IdleAction`: nothing, ping (keep the cache warm), or compact while it is still warm |
+
+haest checks every plan before it is sent (at most 4 breakpoints, a longer TTL before a shorter
+one, nothing below the model's minimum cacheable length) and fixes and notes a plan that breaks
+a rule rather than sending it to fail. `IdleState` hands `on_idle` the prices and the cache
+facts it needs to decide (`compaction_pays`), so a policy never pays more to keep a cache than
+the cache saves.
+
+A Rust host sets its own with `AgentOptions::with_cache_policy` or
+`Agent::set_cache_policy`. The CLI's policy is the [`[cache]`](settings.md#cache) setting:
+breakpoints and TTLs per block, `keep_warm`, `compact_before_expire`, per model under
+`[cache.models."<spec>"]`. The idle ticks run where a conversation stays open between turns:
+haest-session's driver calls `Agent::next_cache_tick` and `Agent::cache_tick`.
+
 ## Mod files
 
 A `.js`, `.mjs` or `.ts` file whose default export receives the `haest` API, run in embedded

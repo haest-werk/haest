@@ -44,13 +44,34 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   whoever ran it, so a host that saves history can replay it.
 - haest-core: `CompactionOptions::instructions`, added to haest's own
   summary prompt.
-- haest-core: the prompt cache's lifetime. `CacheTtl` and the setting
-  `cache_ttl` (`5m`, the default, or `1h`) go on every breakpoint haest
-  places; `Usage::cache_write_1h` counts hour-long writes, `ModelPricing`
-  has the 1h write price, and the catalog carries the cache prices of the
-  direct Anthropic and OpenAI rows, so direct calls are priced too.
-  `Agent::warm_cache` sends the last request's prefix as a pre-warm and
-  books what it cost.
+- haest-core: the prompt cache is a policy. `CachePolicy` (a plug point)
+  plans each request's breakpoints as a `CachePlan` (system, tools,
+  history, chosen messages; `5m` or `1h` each) and decides what an idle
+  conversation does (`IdleAction`: nothing, ping, compact). haest checks
+  every plan before it goes out (at most 4 breakpoints, a longer TTL before
+  a shorter one, nothing below the model's minimum) and fixes and notes a
+  plan that breaks a rule instead of sending it to fail.
+- The setting `[cache]`, the default policy: `system`, `tools`, `history`
+  (`off`, `5m`, `1h`), `keep_warm` and `keep_warm_for` (ping an idle
+  conversation before its cache expires, while the prices say it pays),
+  and `compact_before_expire = { min_context, instructions }` (compact an
+  idle conversation over `min_context` tokens, or a share of the window,
+  while its cache is still warm and only when that costs less). Per model
+  under `[cache.models."<spec or prefix*>"]`. A table setting kind in
+  haest-config carries it.
+- haest-core: `Agent::warm_cache` sends the last request's prefix as a
+  pre-warm (Anthropic `max_tokens: 0`; OpenRouter's Anthropic models
+  `max_tokens: 1`, since OpenRouter does not honour 0) and books what it
+  cost. `Agent::next_cache_tick` and `Agent::cache_tick` run the idle
+  policy; haest-session's driver runs them while a conversation waits.
+- haest-core: `Usage::cache_write_1h` counts hour-long writes,
+  `ModelPricing` has the 1h write price, and the catalog carries cache
+  prices and `CacheFacts` (minimum cacheable length, 1h TTL, pre-warm,
+  mid-conversation tool changes) for the models it lists, overridable in
+  `providers.json`. Direct Anthropic and OpenAI calls are priced too.
+- haest-providers: OpenAI's own API gets no cache key by default (on
+  GPT-5.6 and later a key partitions the cache instead of routing to it);
+  OpenRouter gets the session id as its sticky-routing key.
 - haest-mods: the loop events `model.before`, `model.after` and
   `turn.end`, on `Mod` and in mod files: stop the turn, steer it, keep it
   going, or compact it (`{ compact: true }` or `{ compact: { instructions } }`
