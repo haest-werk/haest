@@ -1,0 +1,9 @@
+// haest's JS/TS is never imported by other JS: scripts run under bun, and the
+// rest is loaded from Rust (include_str!), so the static graph cannot see it.
+{
+  "entry": ["scripts/*.ts"],
+  "dynamicallyLoaded": [
+    "crates/haest-bridges/src/js/bootstrap.js",
+    "docs/examples/mods/*.ts"
+  ]
+}
