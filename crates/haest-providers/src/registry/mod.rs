@@ -24,6 +24,8 @@ mod tests;
 mod tests_custom;
 #[cfg(test)]
 mod tests_file;
+#[cfg(test)]
+mod tests_pricing;
 
 use std::{
     collections::{BTreeMap, HashMap},

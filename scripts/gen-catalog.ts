@@ -13,12 +13,26 @@
  * `tier` and `generation` (what a prompt template switches on). They are written
  * by hand in models.json and kept by spec across a run; a TypeScript row that has
  * one wins. The run names every row that has no `family`, so a new model gets one.
+ *
+ * `pricing` is kept the same way: a row the TypeScript side has no price for
+ * (the direct `anthropic:` and `openai:` rows, priced by hand from the
+ * providers' pricing pages, `cacheWrite1h` included) keeps the one in
+ * models.json; a TypeScript row with a price wins, whole.
  */
 
 import { join, resolve } from 'node:path'
 
 const MODALITIES = new Set(['text', 'image', 'file', 'audio', 'video'])
 const EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
+/** USD per 1M tokens: haest-core's `ModelPricing`. */
+interface Pricing {
+  input: number
+  cachedInput: number
+  output: number
+  cacheWrite?: number
+  cacheWrite1h?: number
+}
 
 /** haest's own keys: written by hand in models.json, kept across a run. */
 interface Facts {
@@ -33,7 +47,12 @@ interface Row extends Facts {
   input: string[]
   contextWindow: number
   reasoning?: { mandatory: boolean; efforts: string[] }
-  pricing?: { input: number; cachedInput: number; output: number; cacheWrite?: number }
+  pricing?: Pricing
+}
+
+/** What a run keeps of a row in models.json: haest's facts, and its price. */
+interface Kept extends Facts {
+  pricing?: Pricing
 }
 
 interface Group {
@@ -50,7 +69,8 @@ function problems(row: Row): string[] {
   if (!Number.isInteger(row.contextWindow) || row.contextWindow <= 0) out.push('contextWindow')
   if (row.reasoning && row.reasoning.efforts.some(e => !EFFORTS.has(e))) out.push('unknown effort')
   const p = row.pricing
-  if (p && ![p.input, p.cachedInput, p.output].every(n => typeof n === 'number')) out.push('pricing')
+  const optional = p ? [p.cacheWrite, p.cacheWrite1h].filter(n => n !== undefined) : []
+  if (p && ![p.input, p.cachedInput, p.output, ...optional].every(n => typeof n === 'number')) out.push('pricing')
   for (const key of ['family', 'tier'] as const) {
     if (row[key] !== undefined && (typeof row[key] !== 'string' || !row[key])) out.push(key)
   }
@@ -58,25 +78,27 @@ function problems(row: Row): string[] {
   return out
 }
 
-/** The hand-written facts of every row models.json has now, by spec. */
-async function keptFacts(path: string): Promise<Map<string, Facts>> {
+/** The hand-written facts and prices of every row models.json has now, by spec. */
+async function keptFacts(path: string): Promise<Map<string, Kept>> {
   const file = Bun.file(path)
   if (!(await file.exists())) return new Map()
   const { groups } = (await file.json()) as { groups: Group[] }
   return new Map(
-    groups.flatMap(g => g.models).map(r => [r.spec, { family: r.family, tier: r.tier, generation: r.generation }]),
+    groups
+      .flatMap(g => g.models)
+      .map(r => [r.spec, { family: r.family, tier: r.tier, generation: r.generation, pricing: r.pricing }]),
   )
 }
 
-/** `row` with haest's facts after its label: the TypeScript row's, else the kept ones. */
-function withFacts(row: Row, kept: Facts | undefined): Row {
-  const { spec, label, family, tier, generation, ...rest } = row
+/** `row` with haest's facts after its label and its price last: the TypeScript row's, else the kept ones. */
+function withFacts(row: Row, kept: Kept | undefined): Row {
+  const { spec, label, family, tier, generation, pricing, ...rest } = row
   const facts: Facts = {
     family: family ?? kept?.family,
     tier: tier ?? kept?.tier,
     generation: generation ?? kept?.generation,
   }
-  return { spec, label, ...facts, ...rest }
+  return { spec, label, ...facts, ...rest, pricing: pricing ?? kept?.pricing }
 }
 
 const source = process.argv[2]

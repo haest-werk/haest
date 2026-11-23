@@ -877,7 +877,14 @@
             "image",
             "file"
           ],
-          "contextWindow": 1000000
+          "contextWindow": 1000000,
+          "pricing": {
+            "input": 4,
+            "cachedInput": 0.2,
+            "output": 20,
+            "cacheWrite": 5,
+            "cacheWrite1h": 8
+          }
         },
         {
           "spec": "anthropic:claude-sonnet-5-5",
@@ -890,7 +897,14 @@
             "image",
             "file"
           ],
-          "contextWindow": 1000000
+          "contextWindow": 1000000,
+          "pricing": {
+            "input": 2,
+            "cachedInput": 0.1,
+            "output": 10,
+            "cacheWrite": 2.5,
+            "cacheWrite1h": 4
+          }
         },
         {
           "spec": "openai:gpt-6.1-sol",
@@ -903,7 +917,13 @@
             "image",
             "file"
           ],
-          "contextWindow": 1050000
+          "contextWindow": 1050000,
+          "pricing": {
+            "input": 2,
+            "cachedInput": 0.1,
+            "output": 10,
+            "cacheWrite": 2.5
+          }
         },
         {
           "spec": "openai:gpt-6-luna",
@@ -916,7 +936,13 @@
             "image",
             "file"
           ],
-          "contextWindow": 1050000
+          "contextWindow": 1050000,
+          "pricing": {
+            "input": 0.1,
+            "cachedInput": 0.01,
+            "output": 0.5,
+            "cacheWrite": 0.125
+          }
         },
         {
           "spec": "paperinstruments:ultramarine-1-flash",

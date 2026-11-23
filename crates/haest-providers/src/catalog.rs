@@ -203,6 +203,31 @@ mod tests {
         assert_eq!(priced.get("ultramarine-1-flash"), c.pricing(spec));
     }
 
+    /// The direct Anthropic and OpenAI rows are priced (their APIs report no
+    /// cost), Anthropic's with its hour-long cache write.
+    #[test]
+    fn the_direct_anthropic_and_openai_rows_are_priced() {
+        let c = Catalog::builtin();
+        for provider in ["anthropic", "openai"] {
+            let priced = c.provider_pricing(provider);
+            let unpriced: Vec<_> = (c.models())
+                .filter_map(|m| m.spec.strip_prefix(&format!("{provider}:")))
+                .filter(|id| !priced.contains_key(*id))
+                .collect();
+            assert!(
+                !priced.is_empty() && unpriced.is_empty(),
+                "{provider}: {unpriced:?}"
+            );
+            for (id, p) in &priced {
+                let write = p.cache_write.unwrap_or(p.input);
+                assert!(p.cached_input < p.input && p.input < write, "{id}");
+                let hour = p.cache_write_1h;
+                assert_eq!(hour.is_some(), provider == "anthropic", "{id}");
+                assert!(hour.is_none_or(|h| h > write), "{id}");
+            }
+        }
+    }
+
     #[test]
     fn an_unknown_spec_is_unknown_not_text_only() {
         let c = Catalog::builtin();
