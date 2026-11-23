@@ -8,6 +8,7 @@ use std::{path::Path, sync::Arc, time::Duration};
 use haest_core::{
     ChildEnv, NoHooks, ToolContext, ToolError, ToolOutput, Tools,
     testing::{ScriptedProvider, text_answer},
+    tool::input,
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use haest_mods::{Binding, Hooks, Mods, OnError, SystemPromptPayload, ToolBeforePayload};
@@ -51,7 +52,7 @@ async fn bash_with(
     let mods = Mods::new(env(ui, WorkspaceMode::Real), [hooks]);
     let tools = wrapped(mods, Tools::from_iter([probe.clone()]));
     let out = tools[0]
-        .execute(input(json!({ "command": command })), ctx)
+        .execute(input(json!({ "command": command })).unwrap(), ctx)
         .await;
     (out, probe.ran().len())
 }

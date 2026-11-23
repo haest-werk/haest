@@ -5,7 +5,11 @@
 
 use std::time::Duration;
 
-use haest_core::{NoHooks, StopReason, Tools, error::BoxError, tool::ToolError};
+use haest_core::{
+    NoHooks, StopReason, Tools,
+    error::BoxError,
+    tool::{ToolError, input},
+};
 
 use super::*;
 use crate::{
@@ -91,7 +95,9 @@ async fn a_failed_tool_before_hook_refuses_the_call_unless_it_continues() {
         let (mods, ui) = with_ui(hooks);
         let echo = Probe::new("Echo");
         let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
-        let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
+        let out = tools[0]
+            .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
+            .await;
         let case = format!("{fails:?} {on:?}");
         if blocks::<ToolBeforePayload>(on) {
             let why = match out {
@@ -115,7 +121,9 @@ async fn a_failed_tool_after_hook_keeps_the_output_or_the_hooks_before_it() {
             .on_tool_after(failing::<ToolAfterPayload>(fails, on));
         let (mods, ui) = with_ui(hooks);
         let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
-        let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
+        let out = tools[0]
+            .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
+            .await;
         let kept = if blocks::<ToolAfterPayload>(on) {
             "echo:hi"
         } else {

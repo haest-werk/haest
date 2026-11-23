@@ -4,7 +4,10 @@
 
 use std::sync::Mutex;
 
-use haest_core::{StopReason, ToolOutput, tool::ToolError};
+use haest_core::{
+    StopReason, ToolOutput,
+    tool::{ToolError, input},
+};
 
 use super::*;
 use crate::{
@@ -48,7 +51,7 @@ fn before(log: &Log, tag: &'static str, then: fn(&str) -> Before) -> impl Hook<T
 }
 
 fn v(text: String) -> Before {
-    Before::Input(input(json!({ "v": text })))
+    Before::Input(input(json!({ "v": text })).unwrap())
 }
 
 #[tokio::test]
@@ -59,7 +62,9 @@ async fn bindings_run_in_order_rewrites_chain_and_the_first_deny_wins() {
         .on_tool_before(before(&log, "2", |x| v(format!("{x}b"))));
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks.clone()]);
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
-    let out = tools[0].execute(input(json!({"v": "x"})), &ctx()).await;
+    let out = tools[0]
+        .execute(input(json!({"v": "x"})).unwrap(), &ctx())
+        .await;
     assert_eq!(out.unwrap().content, "echo:xab");
     assert_eq!(noted(&log), ["1", "2"]);
 
@@ -69,7 +74,10 @@ async fn bindings_run_in_order_rewrites_chain_and_the_first_deny_wins() {
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [refusing]);
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
-    match tools[0].execute(input(json!({"v": "x"})), &ctx()).await {
+    match tools[0]
+        .execute(input(json!({"v": "x"})).unwrap(), &ctx())
+        .await
+    {
         Err(ToolError::Input(why)) => assert!(why.contains("stop here")),
         other => panic!("not refused: {other:?}"),
     }
@@ -113,7 +121,9 @@ async fn output_and_prompt_rewrites_chain_and_system_texts_join_in_order() {
     let added = mods.system_append().await;
     assert!(added.find("one") < added.find("two"), "{added}");
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
-    let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
+    let out = tools[0]
+        .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
+        .await;
     assert_eq!(out.unwrap().content, "ECHO:HI!");
 }
 
@@ -238,10 +248,15 @@ async fn a_matcher_asks_a_hook_only_about_the_tools_it_names() {
     let tools = wrapped(mods, names.map(Probe::new));
     let mut got = Vec::new();
     for tool in &tools {
-        got.push(match tool.execute(input(json!({"v": "x"})), &ctx()).await {
-            Ok(out) => out.content,
-            Err(e) => e.to_string(),
-        });
+        got.push(
+            match tool
+                .execute(input(json!({"v": "x"})).unwrap(), &ctx())
+                .await
+            {
+                Ok(out) => out.content,
+                Err(e) => e.to_string(),
+            },
+        );
     }
     assert!(got[0].contains("no bash"), "{got:?}");
     assert_eq!(got[1], "seen");
@@ -262,7 +277,7 @@ async fn an_interrupt_while_a_hook_decides_is_no_failure_whatever_its_on_error()
         let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
         let c = ctx();
         let cancel = c.cancel().clone();
-        let (out, ()) = tokio::join!(tools[0].execute(input(json!({})), &c), async {
+        let (out, ()) = tokio::join!(tools[0].execute(input(json!({})).unwrap(), &c), async {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             cancel.cancel();
         });

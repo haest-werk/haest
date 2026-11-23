@@ -1,4 +1,4 @@
-use haest_core::{Tools, workspace::WorkspaceMode};
+use haest_core::{Tools, tool::input, workspace::WorkspaceMode};
 use serde_json::json;
 
 use super::*;
@@ -46,10 +46,13 @@ async fn the_hosts_tool_names_reach_the_built_ins() {
     let mods = load_mods(named, ui.clone());
     let (shell, notes) = (Probe::new("Shell"), Probe::new("Notes"));
     let tools = ModTools::wrap(&mods, Tools::from_iter([shell.clone(), notes.clone()]));
-    let rm = input(json!({"command": "rm -rf x"}));
+    let rm = input(json!({"command": "rm -rf x"})).unwrap();
     assert!(tools[0].execute(rm, &ctx()).await.is_err());
     assert_eq!(ui.asks()[0].tool_name, "Shell");
     mods.command("plan", "").await;
-    tools[1].execute(input(json!({})), &ctx()).await.unwrap();
+    tools[1]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     assert_eq!(notes.ran().len(), 1);
 }

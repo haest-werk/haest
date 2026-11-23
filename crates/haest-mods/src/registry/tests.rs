@@ -3,7 +3,7 @@ use haest_core::{
     ToolRef, Tools,
     deps::SystemPrompt,
     error::BoxError,
-    tool::{ToolContext, ToolError, ToolOutput},
+    tool::{ToolContext, ToolError, ToolOutput, input},
     workspace::WorkspaceMode,
 };
 use serde_json::{Value, json};
@@ -35,7 +35,7 @@ impl Mod for Rewriter {
         Ok(if v == "bad" {
             Before::Deny("no bad".into())
         } else {
-            Before::Input(input(json!({"v": format!("{v}!")})))
+            Before::Input(input(json!({"v": format!("{v}!")})).unwrap())
         })
     }
     async fn tool_after(
@@ -57,9 +57,14 @@ async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [Rewriter]);
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
-    let ok = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
+    let ok = tools[0]
+        .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
+        .await;
     assert_eq!(ok.unwrap().content, "ECHO:HI!");
-    match tools[0].execute(input(json!({"v": "bad"})), &ctx()).await {
+    match tools[0]
+        .execute(input(json!({"v": "bad"})).unwrap(), &ctx())
+        .await
+    {
         Err(ToolError::Input(m)) => assert!(m.contains("no bad")),
         other => panic!("not refused: {other:?}"),
     }
@@ -154,12 +159,14 @@ async fn a_failing_mod_is_reported_and_never_lets_a_guarded_call_through() {
     let echo = Probe::new("Echo");
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     let refused = tools[0]
-        .execute(input(json!({"guarded": true})), &ctx())
+        .execute(input(json!({"guarded": true})).unwrap(), &ctx())
         .await;
     assert!(refused.is_err());
     assert!(echo.ran().is_empty());
     // tool.after failing after the tool ran: the output stands, the call is not a failure.
-    let ran = tools[0].execute(input(json!({"v": "x"})), &ctx()).await;
+    let ran = tools[0]
+        .execute(input(json!({"v": "x"})).unwrap(), &ctx())
+        .await;
     assert_eq!(ran.unwrap().content, "echo:x");
     assert_eq!(echo.ran().len(), 1);
     assert_eq!(ui.errors().len(), 2);
@@ -229,7 +236,7 @@ impl Mod for UnreadGuard {
 async fn a_guard_that_failed_tells_the_model_its_cause_too() {
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [UnreadGuard]);
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
-    match tools[0].execute(input(json!({})), &ctx()).await {
+    match tools[0].execute(input(json!({})).unwrap(), &ctx()).await {
         Err(ToolError::Failed(why)) => assert!(why.contains("disk gone"), "{why}"),
         other => panic!("not refused as failed: {other:?}"),
     }
@@ -242,7 +249,9 @@ async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let c = ctx();
     c.cancel().cancel();
-    let out = tools[0].execute(input(json!({"guarded": true})), &c).await;
+    let out = tools[0]
+        .execute(input(json!({"guarded": true})).unwrap(), &c)
+        .await;
     assert!(matches!(out, Err(ToolError::Input(_))));
     assert!(ui.errors().is_empty());
 }
@@ -290,7 +299,10 @@ async fn a_tool_after_rewrite_keeps_what_the_tool_spent() {
     );
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks]);
     let tools = wrapped(mods, Tools::new().with(Billed));
-    let out = tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    let out = tools[0]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     assert_eq!(out.content, "replaced");
     assert_eq!((out.cost_usd, out.child_cost_usd), (Some(0.25), Some(0.5)));
 }

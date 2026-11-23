@@ -9,7 +9,7 @@ use haest_core::{
     Agent, NoHooks, StopReason, Tools,
     error::BoxError,
     testing::{ScriptedProvider, text_answer},
-    tool::{ToolContext, ToolError, ToolOutput},
+    tool::{ToolContext, ToolError, ToolOutput, input},
     workspace::WorkspaceMode,
 };
 use serde_json::json;
@@ -99,7 +99,10 @@ async fn a_nested_mods_runs_its_mods_in_its_place_among_the_others() {
     assert_eq!(mods.rewrite_prompt("hi").await, "hi a b c d");
     assert_eq!(mods.system_append().await, "a\n\nb\n\nc\n\nd");
     let tools = wrapped(mods.clone(), Tools::from_iter([Probe::new("Echo")]));
-    tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    tools[0]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     let p = ScriptedProvider::new([text_answer("done")]);
     let _ = looped(&p, NoHooks, &mods, Tools::new())
         .run("go", &mut Vec::new())
@@ -157,7 +160,7 @@ async fn a_nested_mods_failure_is_reported_once_under_the_failing_mods_name() {
 
     let echo = Probe::new("Echo");
     let tools = wrapped(mods.clone(), Tools::from_iter([echo.clone()]));
-    match tools[0].execute(input(json!({})), &ctx()).await {
+    match tools[0].execute(input(json!({})).unwrap(), &ctx()).await {
         Err(ToolError::Failed(why)) => {
             assert!(why.contains("the mod fails failed"), "{why}");
             assert!(

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use haest_core::{
     Tools,
-    tool::{ToolContext, ToolError},
+    tool::{ToolContext, ToolError, input},
     workspace::WorkspaceMode,
 };
 use serde_json::json;
@@ -82,7 +82,7 @@ fn flags_after_the_operands_and_discarding_every_change_need_approval_too() {
 }
 
 fn bash_call(command: &str) -> serde_json::Map<String, serde_json::Value> {
-    input(json!({ "command": command }))
+    input(json!({ "command": command })).unwrap()
 }
 
 #[tokio::test]

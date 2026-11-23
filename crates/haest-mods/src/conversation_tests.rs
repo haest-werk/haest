@@ -9,7 +9,7 @@ use std::{
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Message, SharedDeps, ToolResultMessage, Tools,
     testing::{ScriptedProvider, text_answer, tool_answer},
-    tool::{OnResume, Tool, ToolSource},
+    tool::{OnResume, Tool, ToolSource, input},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use serde_json::json;
@@ -132,8 +132,16 @@ async fn plan_mode_lets_the_hosts_planning_tools_through_and_no_others() {
     assert_eq!(mods.command("plan", "").await, CommandOutcome::Handled);
     let (notes, tasks) = (Probe::new("Notes"), Probe::new("TaskCreate"));
     let tools = wrapped(mods, Tools::from_iter([notes.clone(), tasks.clone()]));
-    tools[0].execute(input(json!({})), &ctx()).await.unwrap();
-    assert!(tools[1].execute(input(json!({})), &ctx()).await.is_err());
+    tools[0]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
+    assert!(
+        tools[1]
+            .execute(input(json!({})).unwrap(), &ctx())
+            .await
+            .is_err()
+    );
     assert_eq!((notes.ran().len(), tasks.ran().len()), (1, 0));
 }
 

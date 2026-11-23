@@ -1,17 +1,18 @@
 //! Fakes for tests of mods, in this crate and in the crates that bridge
 //! mods to another language or process (`haest-mods = { ..., features =
 //! ["testing"] }` in dev-dependencies): a host that records what reached
-//! the human ([`TestUi`]), a human at an approval prompt ([`Human`]), a tool
-//! that records what it ran ([`Probe`]), and the decision cases every
-//! bridge must answer the way [`Hooks`](crate::Hooks) does
-//! ([`decision_cases`], [`effect`]).
+//! the human ([`TestUi`]), a tool that records what it ran ([`Probe`]),
+//! mods around tools and in a loop ([`wrapped`], [`looped`]), and the
+//! decision cases every bridge must answer the way [`Hooks`](crate::Hooks)
+//! does ([`decision_cases`], [`effect`]).
+//!
+//! Not part of the API and not covered by semver, like every `testing`
+//! module and feature in haest: it holds what haest's own crates test with,
+//! and changes in any release.
 
 use std::{
     collections::VecDeque,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -28,14 +29,17 @@ use crate::{
     ask::{ApprovalRequest, Decision},
     decorate::ModTools,
     env::{ModEnv, ModUi},
-    gate::{ApprovalAnswer, Prompter},
     hooks::ModHooks,
     registry::Mods,
 };
 
 mod cases;
+#[cfg(test)]
+mod human;
 
 pub use cases::{DecisionCase, decision_cases, effect, hooks_answering, once, user_text};
+#[cfg(test)]
+pub(crate) use human::Human;
 
 /// The working directory every fake here runs in.
 pub const CWD: &str = "/p";
@@ -115,50 +119,6 @@ impl ModUi for TestUi {
     }
 }
 
-/// A human at the gate's prompt: answers in order (out of answers = never
-/// answers), counting the prompts and the asks an earlier ALWAYS answered.
-#[derive(Debug, Default)]
-pub struct Human {
-    answers: Mutex<VecDeque<ApprovalAnswer>>,
-    prompts: AtomicUsize,
-    receipts: AtomicUsize,
-}
-
-impl Human {
-    /// A human who gives these answers, in order.
-    pub fn answering(answers: impl IntoIterator<Item = ApprovalAnswer>) -> Arc<Self> {
-        Arc::new(Self {
-            answers: Mutex::new(answers.into_iter().collect()),
-            ..Default::default()
-        })
-    }
-
-    /// How many prompts they saw.
-    pub fn prompts(&self) -> usize {
-        self.prompts.load(Ordering::SeqCst)
-    }
-
-    /// How many asks an earlier ALWAYS answered for them.
-    pub fn receipts(&self) -> usize {
-        self.receipts.load(Ordering::SeqCst)
-    }
-}
-
-#[async_trait]
-impl Prompter for Human {
-    async fn prompt(&self, _req: &ApprovalRequest) -> ApprovalAnswer {
-        self.prompts.fetch_add(1, Ordering::SeqCst);
-        let next = held(&self.answers).pop_front();
-        match next {
-            Some(a) => a,
-            None => std::future::pending().await,
-        }
-    }
-    fn auto_approved(&self, _req: &ApprovalRequest) {
-        self.receipts.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
 /// The mods' environment: [`CWD`], `workspace`, `ui`.
 pub fn env(ui: Arc<TestUi>, workspace: WorkspaceMode) -> ModEnv {
     ModEnv::new(CWD, workspace, ui)
@@ -169,9 +129,14 @@ pub fn ctx() -> ToolContext {
     ToolContext::new(CWD, ShutWorkspace)
 }
 
-/// `v`'s fields as a tool's input (none unless `v` is an object).
+/// `v` as a tool's input: [`haest_core::tool::input`], for a test that
+/// knows `v` is an object. A new test calls that one itself.
+///
+/// # Panics
+///
+/// When `v` is not a JSON object.
 pub fn input(v: Value) -> JsonMap {
-    v.as_object().cloned().unwrap_or_default()
+    haest_core::tool::input(v).expect("a test's tool input is a JSON object")
 }
 
 /// A tool that records every input it ran with and answers `<name>:<v>` in lower case.

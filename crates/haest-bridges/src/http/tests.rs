@@ -7,6 +7,7 @@ use std::{sync::Arc, time::Duration};
 
 use haest_core::{
     ToolContext, ToolError, ToolOutput, Tools,
+    tool::input,
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use haest_mods::{Binding, Hooks, Mods, OnError, ToolBeforePayload};
@@ -24,7 +25,9 @@ async fn call(
     let probe = Probe::new("Echo");
     let mods = Mods::new(env(ui, WorkspaceMode::Sandbox), [hooks]);
     let tools = wrapped(mods, Tools::from_iter([probe.clone()]));
-    let out = tools[0].execute(input(json!({ "v": "hi" })), ctx).await;
+    let out = tools[0]
+        .execute(input(json!({ "v": "hi" })).unwrap(), ctx)
+        .await;
     (out, probe.ran().len())
 }
 
