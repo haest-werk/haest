@@ -7,8 +7,12 @@ the `haest` CLI and brain.
 It is a port of the TypeScript haest in remote-claude (`src/haest-agent-host`),
 which remote-claude's agent host still runs.
 Session files keep the TS haest's JSON shape, so either haest resumes the other's.
-Decisions and status live in
-[PLAN.md](https://github.com/haest-werk/haest/blob/main/PLAN.md), working rules in
+New here: [docs/quickstart.md](https://github.com/haest-werk/haest/blob/main/docs/quickstart.md)
+(the command and an embedded host, five minutes each), then
+[docs/howto.md](https://github.com/haest-werk/haest/blob/main/docs/howto.md) (one recipe per
+task). Decisions and status live in
+[PLAN.md](https://github.com/haest-werk/haest/blob/main/PLAN.md), what is not built yet in
+[ROADMAP.md](https://github.com/haest-werk/haest/blob/main/ROADMAP.md), working rules in
 [CONTRIBUTING.md](https://github.com/haest-werk/haest/blob/main/CONTRIBUTING.md),
 what each release changed in
 [CHANGELOG.md](https://github.com/haest-werk/haest/blob/main/CHANGELOG.md).
@@ -154,10 +158,12 @@ The rest is in `docs/`:
 
 | Doc | What |
 |---|---|
+| [docs/quickstart.md](https://github.com/haest-werk/haest/blob/main/docs/quickstart.md) | the command (a key, tools, a hook script, a mod file) and an embedded host (one turn, a hook), five minutes each |
+| [docs/howto.md](https://github.com/haest-werk/haest/blob/main/docs/howto.md) | one recipe per task, as a config entry, a mod file and Rust: guard a tool, keep a turn going, a mod file's tool, reload mod files, tools that change, compaction, the prompt cache, a URL hook |
 | [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md) | every setting: what it does, what it takes, its default, where it may be set, and an example in all three spellings; the built-in profiles. Written from the registry, so it is always the code's |
 | [docs/environment.md](https://github.com/haest-werk/haest/blob/main/docs/environment.md) | the variables haest reads (`HAEST_*`, `HOME`, the XDG dirs, provider keys), what a process haest starts gets (`env_passthrough`), passing a variable on purpose (`-E`, `[env]`), `${NAME}` in config files, recipes |
 | [docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md) | every way to change the agent while it runs: the host's `AgentHooks`, mods and their events, `Hooks` bound per event, tools that change (`LiveTools`), compaction from a hook (an auto-compact mod file and its Rust twin), the prompt cache policy, mod files and their reloading, hooks in another process (`ShellHook`, `HttpHook`); which form to use |
-| [docs/examples/](https://github.com/haest-werk/haest/tree/main/docs/examples/) | a whole `config.toml`, a project's `.haest/config.toml`, `.mcp.json`, `providers.json` and `HAEST_*` exports, each loaded by a test |
+| [docs/examples/](https://github.com/haest-werk/haest/tree/main/docs/examples/) | every runnable example, one line each, and the files: a whole `config.toml`, a project's `.haest/config.toml`, `.mcp.json`, `providers.json`, `HAEST_*` exports, a Claude Code hook script, a mod file; each run or loaded by a test |
 
 ### Trust
 
@@ -177,7 +183,9 @@ skill catalog, every built-in tool, subagents, native web search, the project's
 MCP servers (in a trusted dir), the real workspace, and your whole environment
 for what haest starts (`env_passthrough = all`). It is NOT parity: haest
 does not read Claude Code's agents, commands, hooks, permissions, user or
-plugin MCP servers, `@` imports, rules, memory or output styles.
+plugin MCP servers, `@` imports, rules, memory or output styles. Claude
+Code's hook scripts do run as they are when you bind them with the `hooks`
+setting (`dialect = "claude"`).
 
 That context costs tokens on every call. One "reply ok" turn on this machine
 (2026-11-10, claude-sonnet-5.5): bare sent 179 input tokens ($0.0004),
