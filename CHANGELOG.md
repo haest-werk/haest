@@ -15,6 +15,11 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 
 ### Breaking changes
 
+- haest-mods' `Before`, `Step` and `TurnEnd`, haest-settings' `ModReload`,
+  and haest-bridges' `ModCaps` are `#[non_exhaustive]`, so each can grow
+  without another break: a `match` outside haest needs a `_` arm, and a
+  `ModCaps` is built with `ModCaps::default().with_slice(..)`,
+  `.with_memory_bytes(..)`, `.with_load_timeout(..)`.
 - `Usage` gains `cache_write_1h` and `CompactionOptions` gains
   `instructions`. A struct literal that names every field no longer
   compiles: end it with `..Default::default()` (`Usage`) or
