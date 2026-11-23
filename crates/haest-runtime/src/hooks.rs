@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use haest_core::{
     Agent, AgentHooks, Effort,
     caps::{TurnCaps, TurnCapsSource},
-    catalog::{InputModality, ModelFacts, ModelInfo, Reasoning},
+    catalog::{CacheFacts, InputModality, ModelFacts, ModelInfo, ModelPricing, Reasoning},
     compaction::{CompactionResult, needs_compaction},
     error::BoxError,
     ledger::{LedgerHooks, LedgerSnapshot},
@@ -26,7 +26,7 @@ use haest_core::{
     session::{JsonlSessionFile, SessionRecord, SessionSink},
     tool::ToolServices,
 };
-use haest_providers::Catalog;
+use haest_providers::{Catalog, CatalogFacts};
 use haest_settings::Settings;
 use tokio_util::sync::CancellationToken;
 
@@ -69,6 +69,8 @@ struct Shared {
     effort: Mutex<Option<Effort>>,
     /// The models the human was told once that they do not take an effort.
     effort_notes: Mutex<HashSet<String>>,
+    /// What each model is: the built-in catalog with providers.json over it.
+    facts: CatalogFacts,
 }
 
 /// Every lock here is held only while this file's own code runs (never the
@@ -79,13 +81,19 @@ fn held<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl RuntimeHooks {
     /// Hooks on `settings` that tell the human through `ui` and write to the
-    /// session file `store`, starting on the settings' model and effort.
+    /// session file `store`, starting on the settings' model and effort, and
+    /// answering what a model is from `facts`.
     ///
     /// Create `store`'s file first ([`JsonlSessionFile::create`] writes its
     /// header): a record appended before that lands in a file with no header,
     /// or nowhere. [`build`](crate::build) sees to that. Needs a tokio
     /// runtime, as the session file does.
-    pub(crate) fn new(settings: Settings, ui: Arc<dyn Ui>, store: JsonlSessionFile) -> Self {
+    pub(crate) fn new(
+        settings: Settings,
+        ui: Arc<dyn Ui>,
+        store: JsonlSessionFile,
+        facts: CatalogFacts,
+    ) -> Self {
         let (model_spec, effort) = (settings.model_spec.clone(), settings.effort);
         Self(Arc::new(Shared {
             settings,
@@ -94,6 +102,7 @@ impl RuntimeHooks {
             model_spec: Mutex::new(model_spec),
             effort: Mutex::new(effort),
             effort_notes: Mutex::default(),
+            facts,
         }))
     }
 
@@ -267,18 +276,28 @@ impl TurnCapsSource for RuntimeHooks {
 }
 
 /// The facts are the built-in catalog's rows.
+/// The catalog's answers, with providers.json's prices and cache facts over
+/// them ([`CatalogFacts`]).
+#[warn(clippy::missing_trait_methods)]
 impl ModelFacts for RuntimeHooks {
     fn model_info(&self, spec: &str) -> Option<ModelInfo> {
-        Catalog::builtin().model(spec).cloned()
+        self.0.facts.model_info(spec)
     }
 
-    // Answered from the catalog without cloning the whole row.
     fn input_modalities(&self, spec: &str) -> Option<HashSet<InputModality>> {
-        Catalog::builtin().input_modalities(spec)
+        self.0.facts.input_modalities(spec)
     }
 
     fn reasoning(&self, spec: &str) -> Option<Reasoning> {
-        Catalog::builtin().reasoning(spec).cloned()
+        self.0.facts.reasoning(spec)
+    }
+
+    fn pricing(&self, spec: &str) -> Option<ModelPricing> {
+        self.0.facts.pricing(spec)
+    }
+
+    fn cache_facts(&self, spec: &str) -> Option<CacheFacts> {
+        self.0.facts.cache_facts(spec)
     }
 }
 

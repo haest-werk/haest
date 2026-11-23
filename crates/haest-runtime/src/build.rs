@@ -17,7 +17,7 @@ use haest_core::{
     threshold::Thresholds,
 };
 use haest_mods::{ApprovalGate, ModHooks, ModSystemPrompt, Prompter};
-use haest_providers::ProviderRegistry;
+use haest_providers::{CatalogFacts, ProviderRegistry};
 use haest_tools::DeferredTools;
 
 use crate::{
@@ -151,6 +151,7 @@ where
     // known, its key there), or the build fails with nothing written: a run
     // that cannot start leaves no session for a resume to pick up.
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
+    let facts = CatalogFacts::new(providers.clone());
     let models = models.unwrap_or_else(|| {
         let registry = ProviderRegistry::new(keys.clone())
             .with_custom(providers)
@@ -162,7 +163,7 @@ where
     });
     models.resolve(&model)?;
     let spill = settings.spill_dir(session.store.session_id());
-    let hooks = RuntimeHooks::new(settings, ui.clone(), session.store);
+    let hooks = RuntimeHooks::new(settings, ui.clone(), session.store, facts);
     let s = hooks.settings();
 
     // Whatever can fail runs before anything starts, so a failed build has

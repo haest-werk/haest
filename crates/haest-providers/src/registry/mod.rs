@@ -21,6 +21,8 @@ mod error;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_cache_facts;
+#[cfg(test)]
 mod tests_custom;
 #[cfg(test)]
 mod tests_file;

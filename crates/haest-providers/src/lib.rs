@@ -207,6 +207,7 @@ mod cache;
 mod catalog;
 mod compat;
 mod driver;
+mod facts;
 mod openai_media;
 mod registry;
 mod responses;
@@ -231,6 +232,7 @@ mod media_tests;
 pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
 pub use compat::{CompatFlavor, CompatOptions, CompatProvider};
+pub use facts::CatalogFacts;
 pub use registry::{
     CustomProviderConfig, CustomProviders, Dialect, EntryProblem, ProviderRegistry,
     ProvidersFileError, UnknownKey, load_custom_providers,

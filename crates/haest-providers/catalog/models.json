@@ -25,6 +25,12 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 1,
+            "toolChanges": false
           }
         },
         {
@@ -48,6 +54,12 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 1,
+            "toolChanges": false
           }
         },
         {
@@ -71,6 +83,12 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 1,
+            "toolChanges": false
           }
         },
         {
@@ -95,6 +113,12 @@
               "low",
               "none"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 1,
+            "toolChanges": false
           }
         }
       ]
@@ -123,6 +147,11 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -146,6 +175,11 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -169,6 +203,11 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -193,6 +232,11 @@
               "low",
               "none"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -216,6 +260,11 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -240,6 +289,11 @@
               "low",
               "none"
             ]
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         }
       ]
@@ -268,6 +322,10 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -291,6 +349,10 @@
               "medium",
               "low"
             ]
+          },
+          "cache": {
+            "ttl1h": false,
+            "toolChanges": false
           }
         }
       ]
@@ -884,6 +946,12 @@
             "output": 20,
             "cacheWrite": 5,
             "cacheWrite1h": 8
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 0,
+            "toolChanges": true
           }
         },
         {
@@ -904,6 +972,12 @@
             "output": 10,
             "cacheWrite": 2.5,
             "cacheWrite1h": 4
+          },
+          "cache": {
+            "minCacheableTokens": 512,
+            "ttl1h": true,
+            "prewarmMaxTokens": 0,
+            "toolChanges": true
           }
         },
         {
@@ -923,6 +997,11 @@
             "cachedInput": 0.1,
             "output": 10,
             "cacheWrite": 2.5
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {
@@ -942,6 +1021,11 @@
             "cachedInput": 0.01,
             "output": 0.5,
             "cacheWrite": 0.125
+          },
+          "cache": {
+            "minCacheableTokens": 1024,
+            "ttl1h": false,
+            "toolChanges": false
           }
         },
         {

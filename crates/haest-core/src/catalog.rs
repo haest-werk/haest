@@ -1,6 +1,6 @@
 //! The shapes of a model catalog row: who makes a model and which one it is,
-//! what it takes as input, how it reasons, what it costs and how big its
-//! context is. The rows themselves live
+//! what it takes as input, how it reasons, what it costs, what its prompt
+//! cache can do and how big its context is. The rows themselves live
 //! with the providers (`haest-providers`' `Catalog`, bundled from a JSON file);
 //! a host may bring its own rows in the same shape.
 //!
@@ -31,9 +31,17 @@
 //! # Ok::<(), serde_json::Error>(())
 //! ```
 
+mod cache_facts;
+mod pricing;
+mod reasoning;
+
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
+
+pub use cache_facts::CacheFacts;
+pub use pricing::ModelPricing;
+pub use reasoning::{OpenRouterEffort, Reasoning};
 
 /// PLUG POINT: what the host knows about a model spec
 /// ([`Agent::model_spec`](crate::Agent::model_spec)), set on
@@ -62,6 +70,18 @@ pub trait ModelFacts: Send + Sync {
     /// effort sent as asked.
     fn reasoning(&self, spec: &str) -> Option<Reasoning> {
         self.model_info(spec)?.reasoning
+    }
+
+    /// The spec's price; None = unpriced, and nothing that weighs a cost
+    /// (keeping the cache warm, compacting before it expires) runs.
+    fn pricing(&self, spec: &str) -> Option<ModelPricing> {
+        self.model_info(spec)?.pricing
+    }
+
+    /// What the spec's prompt cache can do; None = unknown, a request's
+    /// cache breakpoints sent as planned.
+    fn cache_facts(&self, spec: &str) -> Option<CacheFacts> {
+        self.model_info(spec)?.cache
     }
 }
 
@@ -94,139 +114,9 @@ crate::word_enum! {
     }
 }
 
-crate::word_enum! {
-/// A reasoning level in OpenRouter's vocabulary (`reasoning.supported_efforts`).
-///
-/// Wider than haest's own [`Effort`](crate::Effort): `none` and `minimal` have
-/// no haest name; each of haest's levels but `off` has one of the same name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[non_exhaustive]
-pub enum OpenRouterEffort ("reasoning effort") {
-    /// Reasoning off.
-    None = "none",
-    /// Less than `low`; haest never asks for it.
-    Minimal = "minimal",
-    /// `low`.
-    Low = "low",
-    /// `medium`.
-    Medium = "medium",
-    /// `high`.
-    High = "high",
-    /// `xhigh`.
-    Xhigh = "xhigh",
-    /// `max`.
-    Max = "max",
-}
-}
-
-/// How a model reasons: whether it can stop, and the levels it accepts.
-///
-/// Built with [`new`](Self::new) and [`with_mandatory`](Self::with_mandatory),
-/// so a part it gains later breaks no host; its fields read as they are.
-///
-/// ```
-/// use haest_core::catalog::{OpenRouterEffort, Reasoning};
-///
-/// let r = Reasoning::new([OpenRouterEffort::Low, OpenRouterEffort::High]).with_mandatory(true);
-/// assert!(r.mandatory);
-/// assert_eq!(r.efforts.len(), 2);
-/// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Reasoning {
-    /// The model cannot turn reasoning off: `enabled: false` is a 400, not a cheaper turn.
-    pub mandatory: bool,
-    /// The levels the model accepts, in any order.
-    pub efforts: Vec<OpenRouterEffort>,
-}
-
-impl Reasoning {
-    /// A model that accepts `efforts` and may turn reasoning off.
-    pub fn new(efforts: impl IntoIterator<Item = OpenRouterEffort>) -> Self {
-        Self {
-            mandatory: false,
-            efforts: efforts.into_iter().collect(),
-        }
-    }
-
-    /// Whether the model cannot turn reasoning off.
-    #[must_use]
-    pub fn with_mandatory(mut self, mandatory: bool) -> Self {
-        self.mandatory = mandatory;
-        self
-    }
-}
-
-/// A model's price in USD per 1M tokens, for a provider whose API returns no
-/// cost of its own ([`book_priced_cost`](crate::provider::book_priced_cost)).
-///
-/// Built with [`new`](Self::new), [`with_cache_write`](Self::with_cache_write)
-/// and [`with_cache_write_1h`](Self::with_cache_write_1h), so a price it gains
-/// later (for reasoning, for a search) breaks no host; its fields read as they
-/// are. In a file (the catalog, providers.json) it is `{input, cachedInput,
-/// output, cacheWrite?, cacheWrite1h?}`.
-///
-/// ```
-/// use haest_core::catalog::ModelPricing;
-///
-/// // $3 in, $0.30 from the cache, $15 out; a cache write costs $3.75 for
-/// // five minutes and $6 for an hour.
-/// let price = ModelPricing::new(3.0, 0.3, 15.0).with_cache_write(3.75).with_cache_write_1h(6.0);
-/// assert_eq!((price.cache_write, price.cache_write_1h), (Some(3.75), Some(6.0)));
-/// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[non_exhaustive]
-pub struct ModelPricing {
-    /// Uncached input tokens.
-    pub input: f64,
-    /// Input tokens read from the provider's prompt cache.
-    pub cached_input: f64,
-    /// Output tokens.
-    pub output: f64,
-    /// Input tokens written to the prompt cache for the provider's default
-    /// time (Anthropic's five minutes, OpenAI's 30); absent = billed as
-    /// `input`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_write: Option<f64>,
-    /// Input tokens written to the prompt cache to live an hour (Anthropic's
-    /// `ttl: "1h"`, [`Usage::cache_write_1h`](crate::Usage::cache_write_1h));
-    /// absent = billed as `cache_write`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_write_1h: Option<f64>,
-}
-
-impl ModelPricing {
-    /// `input`, `cached_input` and `output` USD per 1M tokens, in that
-    /// order; a cache write is billed as input.
-    pub const fn new(input: f64, cached_input: f64, output: f64) -> Self {
-        Self {
-            input,
-            cached_input,
-            output,
-            cache_write: None,
-            cache_write_1h: None,
-        }
-    }
-
-    /// Cache writes at `usd` per 1M tokens, not as input.
-    #[must_use]
-    pub const fn with_cache_write(mut self, usd: f64) -> Self {
-        self.cache_write = Some(usd);
-        self
-    }
-
-    /// Cache writes that live an hour at `usd` per 1M tokens, not as the
-    /// default write.
-    #[must_use]
-    pub const fn with_cache_write_1h(mut self, usd: f64) -> Self {
-        self.cache_write_1h = Some(usd);
-        self
-    }
-}
-
 /// One model as a catalog lists it: its spec, who makes it and which one it
-/// is, what it takes, and what is known about its reasoning and price.
+/// is, what it takes, and what is known about its reasoning, price and
+/// prompt cache.
 ///
 /// Built with [`new`](Self::new) and the `with_*` setters, so a part it gains
 /// later breaks no host; its fields read as they are.
@@ -283,12 +173,16 @@ pub struct ModelInfo {
     /// Absent = unpriced: haest books the provider's own cost, or none. Never guessed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<ModelPricing>,
+    /// What its prompt cache can do; absent = unknown: haest sends a
+    /// request's cache breakpoints as planned and keeps nothing warm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<CacheFacts>,
 }
 
 impl ModelInfo {
     /// The model `spec` serving `context_window` tokens: labelled with its
-    /// spec, taking text only, its family, tier, generation and reasoning
-    /// unknown, and unpriced.
+    /// spec, taking text only, its family, tier, generation, reasoning and
+    /// cache unknown, and unpriced.
     pub fn new(spec: impl Into<String>, context_window: u64) -> Self {
         let spec = spec.into();
         Self {
@@ -301,6 +195,7 @@ impl ModelInfo {
             context_window,
             reasoning: None,
             pricing: None,
+            cache: None,
         }
     }
 
@@ -352,6 +247,13 @@ impl ModelInfo {
         self.pricing = Some(pricing);
         self
     }
+
+    /// What its prompt cache can do.
+    #[must_use]
+    pub fn with_cache(mut self, cache: CacheFacts) -> Self {
+        self.cache = Some(cache);
+        self
+    }
 }
 
 /// A labelled group of models, as a picker shows them (by vendor, say).
@@ -388,16 +290,23 @@ mod tests {
                 ModelInfo::new(spec, 8_000)
                     .with_input([InputModality::Text, InputModality::Image])
                     .with_reasoning(Reasoning::new([OpenRouterEffort::High]).with_mandatory(true))
+                    .with_pricing(ModelPricing::new(1.0, 0.1, 2.0))
+                    .with_cache(CacheFacts::new().with_min_cacheable_tokens(1_024))
             })
         }
     }
 
     #[test]
-    fn a_host_with_rows_answers_inputs_and_reasoning_from_them() {
+    fn a_host_with_rows_answers_every_fact_from_them() {
         let inputs = Rows.input_modalities("local:m").unwrap();
         assert!(inputs.contains(&InputModality::Image));
         assert!(Rows.reasoning("local:m").unwrap().mandatory);
+        assert_eq!(Rows.pricing("local:m").map(|p| p.input), Some(1.0));
+        let cache = Rows.cache_facts("local:m").unwrap();
+        assert_eq!(cache.min_cacheable_tokens, Some(1_024));
         assert_eq!(Rows.input_modalities("local:other"), None);
         assert_eq!(Rows.reasoning("local:other"), None);
+        assert_eq!(Rows.pricing("local:other"), None);
+        assert_eq!(Rows.cache_facts("local:other"), None);
     }
 }

@@ -8,6 +8,7 @@ use std::{
 use async_trait::async_trait;
 use haest_core::{fs::MemFs, session::JsonlSessionFile};
 use haest_mods::{ApprovalAnswer, ApprovalRequest, Prompter};
+use haest_providers::CatalogFacts;
 use haest_settings::Settings;
 
 use crate::{RuntimeHooks, Ui};
@@ -40,7 +41,7 @@ impl Ui for Recorded {
 pub(crate) fn hooks(settings: Settings) -> (RuntimeHooks, Arc<Recorded>) {
     let ui = Arc::new(Recorded::default());
     let store = JsonlSessionFile::new(MemFs::new(), Path::new("/d"), "t").unwrap();
-    let hooks = RuntimeHooks::new(settings, ui.clone(), store);
+    let hooks = RuntimeHooks::new(settings, ui.clone(), store, CatalogFacts::default());
     (hooks, ui)
 }
 

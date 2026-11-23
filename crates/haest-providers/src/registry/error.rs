@@ -72,6 +72,16 @@ pub enum EntryProblem {
         /// What reading the row failed with.
         source: serde_json::Error,
     },
+    /// A `cache` row is not `{minCacheableTokens?, ttl1h?, prewarmMaxTokens?,
+    /// toolChanges?}` ([`CacheFacts`](haest_core::catalog::CacheFacts)), or
+    /// has a key it does not list.
+    #[error("providers.json cache.{model} cannot be read")]
+    Cache {
+        /// The model id the row is for.
+        model: String,
+        /// What reading the row failed with.
+        source: serde_json::Error,
+    },
 }
 
 /// A key a providers.json entry has that no entry takes

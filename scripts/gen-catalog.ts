@@ -17,7 +17,9 @@
  * `pricing` is kept the same way: a row the TypeScript side has no price for
  * (the direct `anthropic:` and `openai:` rows, priced by hand from the
  * providers' pricing pages, `cacheWrite1h` included) keeps the one in
- * models.json; a TypeScript row with a price wins, whole.
+ * models.json; a TypeScript row with a price wins, whole. So is `cache`, what
+ * the model's prompt cache can do (haest-core's `CacheFacts`, written by hand
+ * from the providers' prompt-caching pages).
  */
 
 import { join, resolve } from 'node:path'
@@ -41,6 +43,16 @@ interface Facts {
   generation?: number
 }
 
+/** What a model's prompt cache can do: haest-core's `CacheFacts`. */
+interface Cache {
+  minCacheableTokens?: number
+  ttl1h?: boolean
+  prewarmMaxTokens?: number
+  toolChanges?: boolean
+}
+
+const CACHE_KEYS = new Set(['minCacheableTokens', 'ttl1h', 'prewarmMaxTokens', 'toolChanges'])
+
 interface Row extends Facts {
   spec: string
   label: string
@@ -48,11 +60,13 @@ interface Row extends Facts {
   contextWindow: number
   reasoning?: { mandatory: boolean; efforts: string[] }
   pricing?: Pricing
+  cache?: Cache
 }
 
-/** What a run keeps of a row in models.json: haest's facts, and its price. */
+/** What a run keeps of a row in models.json: haest's facts, its price and its cache facts. */
 interface Kept extends Facts {
   pricing?: Pricing
+  cache?: Cache
 }
 
 interface Group {
@@ -71,6 +85,13 @@ function problems(row: Row): string[] {
   const p = row.pricing
   const optional = p ? [p.cacheWrite, p.cacheWrite1h].filter(n => n !== undefined) : []
   if (p && ![p.input, p.cachedInput, p.output, ...optional].every(n => typeof n === 'number')) out.push('pricing')
+  const c = row.cache
+  if (c) {
+    const numbers = [c.minCacheableTokens, c.prewarmMaxTokens].filter(n => n !== undefined)
+    const flags = [c.ttl1h, c.toolChanges].filter(b => b !== undefined)
+    const known = Object.keys(c).every(k => CACHE_KEYS.has(k))
+    if (!known || !numbers.every(Number.isInteger) || !flags.every(b => typeof b === 'boolean')) out.push('cache')
+  }
   for (const key of ['family', 'tier'] as const) {
     if (row[key] !== undefined && (typeof row[key] !== 'string' || !row[key])) out.push(key)
   }
@@ -86,19 +107,25 @@ async function keptFacts(path: string): Promise<Map<string, Kept>> {
   return new Map(
     groups
       .flatMap(g => g.models)
-      .map(r => [r.spec, { family: r.family, tier: r.tier, generation: r.generation, pricing: r.pricing }]),
+      .map(r => [
+        r.spec,
+        { family: r.family, tier: r.tier, generation: r.generation, pricing: r.pricing, cache: r.cache },
+      ]),
   )
 }
 
-/** `row` with haest's facts after its label and its price last: the TypeScript row's, else the kept ones. */
+/**
+ * `row` with haest's facts after its label, then its price and its cache facts last: the
+ * TypeScript row's, else the kept ones.
+ */
 function withFacts(row: Row, kept: Kept | undefined): Row {
-  const { spec, label, family, tier, generation, pricing, ...rest } = row
+  const { spec, label, family, tier, generation, pricing, cache, ...rest } = row
   const facts: Facts = {
     family: family ?? kept?.family,
     tier: tier ?? kept?.tier,
     generation: generation ?? kept?.generation,
   }
-  return { spec, label, ...facts, ...rest, pricing: pricing ?? kept?.pricing }
+  return { spec, label, ...facts, ...rest, pricing: pricing ?? kept?.pricing, cache: cache ?? kept?.cache }
 }
 
 const source = process.argv[2]

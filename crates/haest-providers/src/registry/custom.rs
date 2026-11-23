@@ -8,10 +8,10 @@ use std::{
 
 use haest_core::{
     KeySource,
-    catalog::{ModelPricing, OpenRouterEffort, Reasoning},
+    catalog::{CacheFacts, ModelPricing, OpenRouterEffort, Reasoning},
     fs::{Fs, read_text_if_present},
 };
-use serde::{Deserialize, Deserializer, de::Error as _};
+use serde::{Deserialize, Deserializer, de::DeserializeOwned, de::Error as _};
 use serde_json::Value;
 
 use super::{EntryProblem, ProvidersFileError, UnknownKey};
@@ -53,6 +53,7 @@ pub enum Dialect ("provider type") {
 /// | `headers` | [`headers`](Self::headers) | an object of headers sent on every request |
 /// | `reasoningEffort` | [`reasoning_effort`](Self::reasoning_effort) | `{ "efforts": [...], "mandatory": bool }` |
 /// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"?, "cacheWrite1h"? } }` |
+/// | `cache` | [`cache`](Self::cache) | `{ "<model id>": { "minCacheableTokens"?, "ttl1h"?, "prewarmMaxTokens"?, "toolChanges"? } }` |
 ///
 /// A key this table does not list is refused
 /// ([`EntryProblem::UnknownKeys`], naming each, and the key meant when one
@@ -69,7 +70,11 @@ pub enum Dialect ("provider type") {
 /// `pricing` applies to both types: USD per 1M tokens per model id, for an
 /// API that returns no cost (the Messages API never does); a catalog row's
 /// `pricing` fills in for a model not listed here. `cacheWrite1h` prices a
-/// cache write that lives an hour ([`ModelPricing`]).
+/// cache write that lives an hour ([`ModelPricing`]). `cache` says what a
+/// model's prompt cache can do ([`CacheFacts`]), in place of the catalog
+/// row's for that model: haest checks a request's cache breakpoints
+/// against it and keeps a conversation warm only where it says a pre-warm
+/// goes out ([`CatalogFacts`](crate::CatalogFacts) answers with both).
 ///
 /// A host builds one in Rust as well ([`openai`](Self::openai),
 /// [`anthropic`](Self::anthropic), or the fields over `Default`, which is an
@@ -119,6 +124,8 @@ pub struct CustomProviderConfig {
     pub reasoning_effort: Option<Reasoning>,
     /// `pricing`: USD per 1M tokens, by model id (the spec without `name:`).
     pub pricing: HashMap<String, ModelPricing>,
+    /// `cache`: what each model's prompt cache can do, by model id.
+    pub cache: HashMap<String, CacheFacts>,
 }
 
 impl fmt::Debug for CustomProviderConfig {
@@ -131,6 +138,7 @@ impl fmt::Debug for CustomProviderConfig {
             .field("headers", &HeaderNames(&self.headers))
             .field("reasoning_effort", &self.reasoning_effort)
             .field("pricing", &self.pricing)
+            .field("cache", &self.cache)
             .finish()
     }
 }
@@ -147,7 +155,7 @@ impl<'de> Deserialize<'de> for CustomProviderConfig {
 const NO_KEY: &str = "none";
 
 /// The keys a providers.json entry has, in the order its docs list them.
-pub(super) const ENTRY_KEYS: [&str; 7] = [
+pub(super) const ENTRY_KEYS: [&str; 8] = [
     "type",
     "baseURL",
     "apiKey",
@@ -155,6 +163,7 @@ pub(super) const ENTRY_KEYS: [&str; 7] = [
     "headers",
     "reasoningEffort",
     "pricing",
+    "cache",
 ];
 
 /// The entry key `key` is a misspelling of, if one is close: the same
@@ -234,16 +243,18 @@ fn reasoning(v: Option<&Value>) -> Result<Option<Reasoning>, EntryProblem> {
     Ok(Some(Reasoning::new(efforts).with_mandatory(mandatory)))
 }
 
-fn pricing(v: Option<&Value>) -> Result<HashMap<String, ModelPricing>, EntryProblem> {
+/// A `{ "<model id>": row }` object (`pricing`, `cache`), each row read as
+/// `T`; one that does not read is `problem(model, why)`.
+fn by_model<T: DeserializeOwned>(
+    v: Option<&Value>,
+    problem: fn(String, serde_json::Error) -> EntryProblem,
+) -> Result<HashMap<String, T>, EntryProblem> {
     v.and_then(Value::as_object)
         .into_iter()
         .flatten()
-        .map(|(model, price)| {
-            let row =
-                serde_json::from_value(price.clone()).map_err(|source| EntryProblem::Pricing {
-                    model: model.clone(),
-                    source,
-                })?;
+        .map(|(model, row)| {
+            let row = serde_json::from_value(row.clone())
+                .map_err(|source| problem(model.clone(), source))?;
             Ok((model.clone(), row))
         })
         .collect()
@@ -282,9 +293,11 @@ impl CustomProviderConfig {
     /// delete `apiKey` or `apiKeyEnv` to leave it unset; a `baseURL` takes the
     /// server's URL, since an entry with none is one for the dialect's own
     /// API),
-    /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
+    /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean,
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
-    /// has a `cacheWrite` or `cacheWrite1h` that is not a number.
+    /// has a `cacheWrite` or `cacheWrite1h` that is not a number, or a
+    /// `cache` row has a key [`CacheFacts`] does not list or a value of the
+    /// wrong kind.
     ///
     /// ```
     /// use haest_providers::{CustomProviderConfig, Dialect, EntryProblem};
@@ -330,7 +343,14 @@ impl CustomProviderConfig {
             api_key_env: opt_string(v, "apiKeyEnv")?,
             headers,
             reasoning_effort: reasoning(v.get("reasoningEffort"))?,
-            pricing: pricing(v.get("pricing"))?,
+            pricing: by_model(v.get("pricing"), |model, source| EntryProblem::Pricing {
+                model,
+                source,
+            })?,
+            cache: by_model(v.get("cache"), |model, source| EntryProblem::Cache {
+                model,
+                source,
+            })?,
         })
     }
 
