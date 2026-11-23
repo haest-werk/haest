@@ -35,7 +35,7 @@ fn session(n: u8) -> SessionView {
 async fn every_event_binds_from_the_config_through_each_bridge() {
     for via in VIAS {
         for event in ModEvent::ALL {
-            let remote = Remote::answering(*via, "").await;
+            let remote = Remote::answering(*via, "");
             let setting = json!({ event.as_str(): [remote.entry()] });
             let mods = bound_mods(setting, &host(&remote), TestUi::new());
             effect(*event, mods, "[hooks]").await;
@@ -51,7 +51,7 @@ async fn every_event_binds_from_the_config_through_each_bridge() {
 #[tokio::test]
 async fn a_claude_entry_names_the_session_as_of_each_event() {
     for via in VIAS {
-        let remote = Remote::answering(*via, "").await;
+        let remote = Remote::answering(*via, "");
         let mut entry = remote.entry();
         entry["dialect"] = json!("claude");
         let mods = bound_mods(
@@ -89,7 +89,7 @@ async fn a_claude_entry_names_the_session_as_of_each_event() {
 async fn an_entrys_matcher_timeout_and_on_error_are_its_bindings() {
     use haest_core::{Tools, tool::input};
 
-    let remote = Remote::answering(Via::Shell, r#"{"deny": "not Bash"}"#).await;
+    let remote = Remote::answering(Via::Shell, r#"{"deny": "not Bash"}"#);
     let setting = json!({ "tool.before": [{ "command": "sh hook.sh", "matcher": "Bash" }] });
     let mods = bound_mods(setting, &host(&remote), TestUi::new());
     let (echo, bash) = (Probe::new("Echo"), Probe::new("Bash"));

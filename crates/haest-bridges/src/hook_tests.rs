@@ -126,11 +126,7 @@ if [ ! -e answered ]; then : > answered; cat answer; fi
 
 impl Remote {
     /// A hook over `via` that answers `answer` the first time.
-    #[expect(
-        clippy::unused_async,
-        reason = "every bridge's tests await it (the config tests too); the HTTP server starts at once"
-    )]
-    pub(crate) async fn answering(via: Via, answer: &str) -> Self {
+    pub(crate) fn answering(via: Via, answer: &str) -> Self {
         let dir = tempfile::tempdir().expect("a temporary directory");
         match via {
             #[cfg(feature = "shell")]

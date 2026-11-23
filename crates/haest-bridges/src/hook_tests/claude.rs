@@ -52,7 +52,7 @@ async fn every_claude_code_event_hands_a_shell_and_an_http_hook_claude_codes_inp
             if claude_event(*event).is_none() {
                 continue;
             }
-            let remote = Remote::answering(*via, "").await;
+            let remote = Remote::answering(*via, "");
             let mods = Mods::new(
                 env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1)),
                 [remote.claude_hooks(*event)],
@@ -75,7 +75,7 @@ async fn every_claude_code_event_hands_a_shell_and_an_http_hook_claude_codes_inp
 #[tokio::test]
 async fn a_claude_hook_a_rust_host_binds_names_the_new_session_after_a_clear() {
     for via in VIAS {
-        let remote = Remote::answering(*via, "").await;
+        let remote = Remote::answering(*via, "");
         let env = env(TestUi::new(), WorkspaceMode::Sandbox).with_session(session(1));
         let mods = Mods::new(env, [remote.claude_hooks(ModEvent::SystemPrompt)]);
         mods.system_append().await;
@@ -210,7 +210,7 @@ async fn a_claude_code_answer_takes_the_effect_of_the_haest_decision_it_maps_to(
         )
         .await;
         for via in VIAS {
-            let remote = Remote::answering(*via, claude).await;
+            let remote = Remote::answering(*via, claude);
             let mods = Mods::new(
                 env(TestUi::new(), WorkspaceMode::Sandbox),
                 [remote.claude_hooks(event)],
@@ -224,7 +224,7 @@ async fn a_claude_code_answer_takes_the_effect_of_the_haest_decision_it_maps_to(
 #[tokio::test]
 async fn a_refused_prompt_is_a_failure_the_human_sees_since_haest_cannot_refuse_one() {
     for via in VIAS {
-        let remote = Remote::answering(*via, r#"{"decision":"block","reason":"not today"}"#).await;
+        let remote = Remote::answering(*via, r#"{"decision":"block","reason":"not today"}"#);
         let ui = TestUi::new();
         let mods = Mods::new(
             env(ui.clone(), WorkspaceMode::Sandbox),

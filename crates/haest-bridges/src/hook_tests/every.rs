@@ -31,7 +31,7 @@ impl<E: Event> Hook<E> for Noting {
 async fn every_event_hands_a_shell_and_an_http_hook_its_name_and_the_payload_a_rust_hook_gets() {
     for via in VIAS {
         for event in ModEvent::ALL {
-            let remote = Remote::answering(*via, "").await;
+            let remote = Remote::answering(*via, "");
             let rust = Noting(Arc::default());
             let mods = Mods::new(
                 env(TestUi::new(), WorkspaceMode::Sandbox),
@@ -87,7 +87,7 @@ async fn every_decision_takes_the_same_effect_from_a_shell_hook_an_http_hook_and
         )
         .await;
         for via in VIAS {
-            let remote = Remote::answering(*via, &printed(&answer)).await;
+            let remote = Remote::answering(*via, &printed(&answer));
             let mods = Mods::new(
                 env(TestUi::new(), WorkspaceMode::Sandbox),
                 [remote.hooks(event)],
@@ -107,7 +107,7 @@ async fn every_decision_takes_the_same_effect_from_a_shell_hook_an_http_hook_and
 #[tokio::test]
 async fn a_system_prompt_answer_of_false_adds_nothing_and_is_no_failure() {
     for via in VIAS {
-        let remote = Remote::answering(*via, "false").await;
+        let remote = Remote::answering(*via, "false");
         let ui = TestUi::new();
         let mods = Mods::new(
             env(ui.clone(), WorkspaceMode::Sandbox),
