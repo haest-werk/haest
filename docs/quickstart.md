@@ -74,8 +74,11 @@ haest --mods -p "say hi in three words"
 # Hello there, friend. BANANA
 ```
 
-`mods = true` in `config.toml` turns them on for good, and `mod_reload = "auto"` (or `"ask"`)
-reloads a file you edit before the next model call, its tools included.
+A handler is also handed the session the conversation is on, `{ id, transcriptPath }`, as its
+last argument (here its only one, `(session) => ...`); [howto.md](howto.md#know-the-session)
+lists where each event's handler gets it. `mods = true` in `config.toml` turns mod files on for
+good, and `mod_reload = "auto"` (or `"ask"`) reloads a file you edit before the next model
+call, its tools included.
 [auto-compact.ts](examples/mods/auto-compact.ts) is a longer one: it compacts the
 conversation as a turn ends, once the context is past 60% of the window.
 

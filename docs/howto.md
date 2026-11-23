@@ -11,6 +11,7 @@ New to haest? Start with [quickstart.md](quickstart.md).
 |---|---|
 | Refuse or rewrite a tool call | [Guard a tool](#guard-a-tool) |
 | Send a turn back until a check passes | [Keep a turn going](#keep-a-turn-going) |
+| Tell which session a hook runs in | [Know the session](#know-the-session) |
 | Give the model a tool from a mod file | [Add a tool from a mod file](#add-a-tool-from-a-mod-file) |
 | Edit a mod file while haest runs | [Reload mod files as they change](#reload-mod-files-as-they-change) |
 | Add, replace or hide a host tool mid-conversation | [Change the host's tools while it runs](#change-the-hosts-tools-while-it-runs) |
@@ -71,6 +72,38 @@ with the text on stderr; in the `claude` dialect it is Claude Code's `Stop` hook
 (`{ "decision": "block", "reason": ... }`).
 [external_hooks.rs](../crates/haest/examples/external_hooks.rs) runs a reviewer service that
 does it, against a scripted model.
+
+## Know the session
+
+Every hook is told the session the conversation is on, `{ id, transcriptPath }`: a way to
+key what a mod keeps per conversation, or to read the transcript. The `haest` command names
+its session file (its id and path), and the new one after a /clear. A host that embeds haest
+names it on the mods' `ModEnv` (`with_session`, `set_session`); when it names none, a handler
+gets `undefined`, and `transcriptPath` is `undefined` when the host keeps no transcript.
+
+A mod file's handler gets it as its last argument, or, on a loop event, as a field of the one
+object it gets:
+
+| Event | Handler |
+|---|---|
+| `tool.before` | `(call, ctx, session)` |
+| `tool.after` | `(call, output, ctx, session)` |
+| `prompt.submit` | `(text, session)` |
+| `system.prompt` | `(session)` |
+| `model.before`, `model.after`, `turn.end` | `(turn)`, as `turn.session` |
+
+```ts
+export default function (haest: any): void {
+  haest.on('tool.after', (call: any, _output: any, _ctx: any, session: any) => {
+    if (session) haest.notice(`${call.name} ran in session ${session.id}`)
+  })
+}
+```
+
+Every handler of one event, in every mod, gets the session the event began on, even when the
+host names a new one while the event runs. A command or URL hook gets it as `session` in its
+JSON (`session_id` and `transcript_path` in the `claude` dialect), and a Rust hook as
+`payload.session`. [extending.md](extending.md#what-each-event-may-decide) has every payload.
 
 ## Add a tool from a mod file
 
