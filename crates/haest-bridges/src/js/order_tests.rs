@@ -26,13 +26,14 @@ async fn with_mod(ui: &Arc<TestUi>, file: &str, source: &str) -> Mods {
     Mods::new(haest, [m])
 }
 
-/// What a turn on "go" left: the user messages, and the model calls made.
-async fn turn(mods: &Mods) -> (Vec<String>, usize) {
+/// What a turn on "go" left: the user messages, the model calls made, and
+/// the turn's error.
+async fn turn(mods: &Mods) -> (Vec<String>, usize, Option<String>) {
     let p = ScriptedProvider::new(["a", "b"].map(text_answer));
     let mut agent = looped(&p, NoHooks, mods, Tools::new());
-    agent.run("go", &mut Vec::new()).await;
+    let end = agent.run("go", &mut Vec::new()).await;
     let users = agent.history().iter().filter_map(user_text).collect();
-    (users, p.requests().len())
+    (users, p.requests().len(), end.error)
 }
 
 /// The next one sees the input the one before rewrote, every steer goes in
@@ -60,11 +61,11 @@ async fn a_mod_files_handlers_chain_and_none_is_asked_after_the_first_deny_or_st
     );
     assert!(echo.ran().is_empty());
 
-    // The steers queued between two calls go in as one message, in order.
-    assert_eq!(
-        turn(&mods).await,
-        (vec!["go".into(), "one\n\ntwo".into()], 2)
-    );
+    // The steers queued between two calls go in as one message, in order,
+    // and the stop after the second answer ends the turn.
+    let (users, calls, error) = turn(&mods).await;
+    assert_eq!((users, calls), (vec!["go".into(), "one\n\ntwo".into()], 2));
+    assert!(error.is_some_and(|e| e.contains("enough")));
     assert!(ui.infos().is_empty(), "{:?}", ui.infos());
 }
 
@@ -86,7 +87,7 @@ async fn a_later_handler_that_throws_drops_its_files_event_where_a_failed_bindin
     let ui = TestUi::new();
     let mods = with_mod(&ui, "throws.ts", source).await;
     assert_eq!(mods.rewrite_prompt("hi").await, "hi");
-    assert_eq!(turn(&mods).await, (vec!["go".into()], 1));
+    assert_eq!(turn(&mods).await, (vec!["go".into()], 1, None));
     assert!(ui.infos().is_empty(), "{:?}", ui.infos());
     let errors = ui.errors();
     assert_eq!(errors.len(), 2, "{errors:?}");
@@ -108,7 +109,7 @@ async fn a_later_handler_that_throws_drops_its_files_event_where_a_failed_bindin
     let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Sandbox), [hooks]);
     assert_eq!(
         turn(&mods).await,
-        (vec!["go".into(), "from the first".into()], 2)
+        (vec!["go".into(), "from the first".into()], 2, None)
     );
     assert!(
         asked.load(Ordering::SeqCst),
