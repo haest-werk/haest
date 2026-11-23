@@ -58,7 +58,9 @@ the build's gates.
 prompt ("keep every file path"). Each payload's JSON shape is on its type in
 [payload.rs](../crates/haest-mods/src/payload.rs): `tool.before` gets
 `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`, the loop events get
-`{ modelSpec, effort, historyLength, .. }` plus their own fields (`model.before`: `lastMessage`;
+`{ modelSpec, effort, historyLength, contextTokens, contextWindow }` (`contextTokens` is what
+the last answer's request held, the number to compact on; `contextWindow` is `null` when the
+host does not know it) plus their own fields (`model.before`: `lastMessage`;
 `model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
 `turn.end` decision already kept this turn going).
 

@@ -107,7 +107,10 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
         .with_effort(Effort::High)
         .with_history(history.clone());
     let mut agent = Agent::new(deps, opts);
-    let view = json!({ "modelSpec": "scripted:m", "effort": "high", "historyLength": 2 });
+    let view = json!({
+        "modelSpec": "scripted:m", "effort": "high", "historyLength": 2,
+        "contextTokens": answer.usage.context_tokens(), "contextWindow": agent.context_window(),
+    });
     let with = |key: &str, v: Value| {
         let mut out = view.clone();
         out[key] = v;

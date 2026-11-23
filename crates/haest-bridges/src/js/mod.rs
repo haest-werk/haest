@@ -95,9 +95,14 @@ use tool::JsTool;
 /// | `tool.after` | `call`, `output`, `ctx` | a new output (`{ content, isError }`), or nothing to keep it |
 /// | `prompt.submit` | `text` | the new text, or nothing |
 /// | `system.prompt` | nothing | text to append, or nothing |
-/// | `model.before` | `{ modelSpec, effort, historyLength, lastMessage }` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; anything else passes |
-/// | `model.after` | `{ modelSpec, effort, historyLength, answer }` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
-/// | `turn.end` | `{ modelSpec, effort, historyLength, stopReason, error, answer, continued }` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
+/// | `model.before` | the agent, `lastMessage` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; anything else passes |
+/// | `model.after` | the agent, `answer` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
+/// | `turn.end` | the agent, `stopReason`, `error`, `answer`, `continued` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
+///
+/// "The agent" is one object's fields, the same in every loop event
+/// ([`AgentView`](haest_mods::AgentView)): `modelSpec`, `effort`,
+/// `historyLength`, `contextTokens` (what the last answer's request held)
+/// and `contextWindow` (`null` when the host does not know it).
 ///
 /// What a handler gets is its event's payload and what it returns is read
 /// as its event's decision, the types [`Event`] ties together

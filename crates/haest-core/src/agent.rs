@@ -247,6 +247,22 @@ impl Agent {
         self.effort = effort;
     }
 
+    /// What the last successful model call put in the context window, in
+    /// tokens ([`Usage::context_tokens`] of the newest answer that did not
+    /// fail); 0 before any. The number compaction's trigger reads.
+    pub fn context_tokens(&self) -> u64 {
+        crate::compaction::last_context_tokens(&self.history)
+    }
+
+    /// The context window of the model the next call resolves, in tokens, as
+    /// the host's turn caps know it
+    /// ([`TurnCapsSource`](crate::TurnCapsSource)); None when they do not.
+    pub fn context_window(&self) -> Option<u64> {
+        (self.deps().shared().turn_caps().turn_caps(&self.model_spec))
+            .map(|c| c.context_window)
+            .filter(|w| *w > 0)
+    }
+
     /// A model call made for this conversation outside the loop (compaction's
     /// summary, a cache pre-warm) came back: what it cost goes on the
     /// conversation's ledger now, and toward the running turn's caps before

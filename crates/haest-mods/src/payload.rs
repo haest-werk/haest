@@ -136,8 +136,10 @@ impl SystemPromptPayload {
 }
 
 /// What a loop event's payload says of the running agent: its model, its
-/// effort and how long its history is. The history itself never crosses: a
-/// loop event fires at every step.
+/// effort, how long its history is and how full its context window. The
+/// history itself never crosses: a loop event fires at every step.
+///
+/// JSON: `{ modelSpec, effort, historyLength, contextTokens, contextWindow }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -148,6 +150,15 @@ pub struct AgentView {
     pub effort: Option<Effort>,
     /// How many messages the history holds.
     pub history_length: usize,
+    /// What the last successful model call put in the context window, in
+    /// tokens ([`Agent::context_tokens`]); 0 before any. A hook that
+    /// compacts on size reads this, not `historyLength`.
+    #[serde(default)]
+    pub context_tokens: u64,
+    /// The model's context window, in tokens, when the host knows it
+    /// ([`Agent::context_window`]); `null` when it does not.
+    #[serde(default)]
+    pub context_window: Option<u64>,
 }
 
 impl AgentView {
@@ -157,6 +168,8 @@ impl AgentView {
             model_spec: agent.model_spec().to_string(),
             effort: agent.effort(),
             history_length: agent.history().len(),
+            context_tokens: agent.context_tokens(),
+            context_window: agent.context_window(),
         }
     }
 }
@@ -164,7 +177,7 @@ impl AgentView {
 /// `model.before`: a model call is about to be made. A hook answers a
 /// [`ModelBeforeDecision`](crate::ModelBeforeDecision).
 ///
-/// JSON: `{ modelSpec, effort, historyLength, lastMessage }`.
+/// JSON: the [`AgentView`]'s fields, then `lastMessage`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -191,7 +204,7 @@ impl ModelBeforePayload {
 /// `model.after`: an answer landed, its tool calls have not run. A hook
 /// answers a [`ModelAfterDecision`](crate::ModelAfterDecision).
 ///
-/// JSON: `{ modelSpec, effort, historyLength, answer }`.
+/// JSON: the [`AgentView`]'s fields, then `answer`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -217,8 +230,8 @@ impl ModelAfterPayload {
 /// `turn.end`: a turn is about to end on its own. A hook answers a
 /// [`TurnEndDecision`](crate::TurnEndDecision).
 ///
-/// JSON: `{ modelSpec, effort, historyLength, stopReason, error, answer,
-/// continued }`.
+/// JSON: the [`AgentView`]'s fields, then `stopReason`, `error`, `answer`
+/// and `continued`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]

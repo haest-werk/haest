@@ -11,10 +11,7 @@ use crate::{
     agent::Agent,
     caps::estimate_request_tokens,
     catalog::ModelPricing,
-    compaction::{
-        CompactionError, CompactionOptions, CompactionResult, compact, cut_index,
-        last_context_tokens,
-    },
+    compaction::{CompactionError, CompactionOptions, CompactionResult, compact, cut_index},
 };
 
 /// The summary [`compact_pays`] weighs when the host has no better guess:
@@ -174,13 +171,10 @@ impl Agent {
         }
         let pricing = shared.facts().pricing(&spec);
         let facts = shared.facts().cache_facts(&spec);
-        let window = (shared.turn_caps().turn_caps(&spec))
-            .map(|c| c.context_window)
-            .filter(|w| *w > 0);
-        let prefix = last_context_tokens(self.history());
+        let prefix = self.context_tokens();
         let mut idle =
             IdleState::new(&spec, since(now, call), ttl, prefix).with_messages(self.history());
-        idle.context_window = window;
+        idle.context_window = self.context_window();
         idle.pricing = pricing.as_ref();
         idle.facts = facts.as_ref();
         match self.cache.policy.on_idle(&idle) {
