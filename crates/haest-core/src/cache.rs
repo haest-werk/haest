@@ -30,9 +30,17 @@
 //! of reads stays cheaper than letting the entry expire and writing it again.
 //! Only a provider whose [`Provider::check_prewarm`](crate::Provider::check_prewarm)
 //! says yes takes one.
+//!
+//! **Idle ticks.** [`Agent::next_cache_tick`](crate::Agent::next_cache_tick)
+//! says when an idle conversation's cache is about to expire, and
+//! [`Agent::cache_tick`](crate::Agent::cache_tick) asks the policy what to
+//! do then ([`CachePolicy::on_idle`]): nothing, a ping, or a compaction
+//! while the cache is still warm, which haest runs only when it pays
+//! ([`compact_pays`]). haest-session's driver ticks between turns.
 
 mod check;
 mod fix;
+mod idle;
 mod plan;
 mod policy;
 mod prefs;
@@ -41,9 +49,12 @@ mod warm;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_idle;
+#[cfg(test)]
 mod tests_plan;
 
 pub use fix::{Breakpoint, MAX_BREAKPOINTS, PlanFix, TOOL_PROMPT_ALLOWANCE};
+pub use idle::{CacheTick, SUMMARY_TOKENS, compact_pays};
 pub use plan::CachePlan;
 pub use policy::{CachePolicy, CachePolicyRef, IdleAction, IdleState, RequestShape};
 pub(crate) use prefs::{CachePrefs, CacheState};

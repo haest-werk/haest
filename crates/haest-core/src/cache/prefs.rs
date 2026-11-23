@@ -32,12 +32,22 @@ impl PartialEq for CachePrefs {
 }
 
 /// An agent's prompt cache: its policy and key, the plan its last loop
-/// request sent, and the fixes the human was already told of.
+/// request sent, when the cache was last used, whether idle ticks are due,
+/// and what the human was already told.
 #[derive(Debug)]
 pub(crate) struct CacheState {
     pub(crate) policy: CachePolicyRef,
     pub(crate) key: Option<String>,
     pub(crate) last_plan: Option<CachePlan>,
+    /// When the loop's last answered model call started (ms since the
+    /// epoch): where the human's idle time is counted from.
+    pub(crate) last_call_ms: Option<u64>,
+    /// When the last request that read or wrote the cache started: where
+    /// its lifetime is counted from.
+    pub(crate) last_refresh_ms: Option<u64>,
+    /// Idle ticks are due: set by each answered loop call, cleared when a
+    /// tick ends them.
+    pub(crate) ticking: bool,
     told: HashSet<String>,
 }
 
@@ -47,8 +57,24 @@ impl CacheState {
             policy: prefs.policy.unwrap_or_else(|| CachePlan::default().into()),
             key: prefs.key,
             last_plan: None,
+            last_call_ms: None,
+            last_refresh_ms: None,
+            ticking: false,
             told: HashSet::new(),
         }
+    }
+
+    /// A loop call that started at `ms` was answered: the cache was used
+    /// then, and the idle ticks start over.
+    pub(crate) fn answered(&mut self, ms: u64) {
+        self.last_call_ms = Some(ms);
+        self.last_refresh_ms = Some(ms);
+        self.ticking = true;
+    }
+
+    /// Whether `text` is new to this agent: each note is told once.
+    pub(crate) fn first_time(&mut self, text: &str) -> bool {
+        self.told.insert(text.to_string())
     }
 }
 
@@ -183,15 +209,25 @@ impl Agent {
     }
 
     fn tell(&mut self, spec: &str, fix: &PlanFix) {
-        let text = format!("Prompt cache of {spec}: {fix}.");
-        if !self.cache.told.insert(text.clone()) {
-            return;
+        self.note(&format!("Prompt cache of {spec}: {fix}."), fix.is_warning());
+    }
+
+    /// `text`, once per agent: to the human when `warn`, else to the
+    /// diagnostic log.
+    pub(crate) fn note(&mut self, text: &str, warn: bool) {
+        if self.cache.first_time(text) {
+            self.say(text, warn);
         }
+    }
+
+    /// `text`, every time: to the human when `warn`, else to the diagnostic
+    /// log.
+    pub(crate) fn say(&self, text: &str, warn: bool) {
         let shared = self.deps().shared();
-        if fix.is_warning() {
-            shared.hooks().on_warning(&text);
+        if warn {
+            shared.hooks().on_warning(text);
         } else {
-            shared.services().debug(&text);
+            shared.services().debug(text);
         }
     }
 }

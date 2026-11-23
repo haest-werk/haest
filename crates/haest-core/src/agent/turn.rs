@@ -264,6 +264,7 @@ impl Agent {
         let mut req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
         self.plan_cache(&mut req);
         self.cache.last_plan = Some(req.cache.clone());
+        let sent_at = self.deps.shared().clock().now_ms();
         let mut msg = resolved
             .complete_streaming(req, |ev| match ev {
                 ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),
@@ -282,6 +283,8 @@ impl Agent {
             // history with no result, and the next request would be refused.
             msg.content
                 .retain(|part| !matches!(part, AssistantPart::ToolCall(_)));
+        } else {
+            self.cache.answered(sent_at);
         }
         append(
             &mut self.history,

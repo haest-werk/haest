@@ -2,7 +2,7 @@
 
 use tokio_util::sync::CancellationToken;
 
-use super::{WarmError, WarmOutcome};
+use super::{WarmCache, WarmError, WarmOutcome};
 use crate::{
     agent::Agent,
     deps::NoHooks,
@@ -111,6 +111,7 @@ impl Agent {
                 source,
             });
         }
+        let sent_at = self.deps().shared().clock().now_ms();
         let answer = resolved.complete(req).await;
         self.spent_outside_the_loop(&answer.usage);
         match answer.stop_reason {
@@ -120,7 +121,14 @@ impl Agent {
                     .unwrap_or_else(|| "cancelled".to_string()),
                 usage: answer.usage,
             }),
-            _ => Ok(WarmOutcome::from_usage(answer.usage)),
+            _ => {
+                let outcome = WarmOutcome::from_usage(answer.usage);
+                if outcome.cache != WarmCache::Uncached {
+                    // Read or written, the entry lives from this request on.
+                    self.cache.last_refresh_ms = Some(sent_at);
+                }
+                Ok(outcome)
+            }
         }
     }
 }

@@ -165,7 +165,7 @@ async fn nothing_is_sent_without_a_request_to_warm() {
 
 /// A provider that takes no pre-warm (the default) and counts what it is sent.
 #[derive(Clone, Default)]
-struct Cold(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+pub(super) struct Cold(pub(super) std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
 impl Provider for Cold {
     fn id(&self) -> &str {
