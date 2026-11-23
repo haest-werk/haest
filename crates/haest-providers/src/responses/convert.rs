@@ -12,9 +12,11 @@ use haest_core::{
 };
 use serde_json::{Map, Value, json};
 
+use super::ResponsesOptions;
 use crate::{
     openai_media::{RESPONSES, with_tool_media},
     result_text,
+    send::is_openai_api,
 };
 
 /// gpt-5.5 accepts none|low|medium|high|xhigh ('max' and 'minimal' are 400s), so ours clamp onto those.
@@ -112,15 +114,17 @@ pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec
     out
 }
 
-/// The streaming request body for `req`, as [`ResponsesProvider`](super::ResponsesProvider)
-/// named `provider_id` sends it.
+/// The streaming request body for `req`, as a [`ResponsesProvider`](super::ResponsesProvider)
+/// with `opts` sends it.
 ///
 /// `model`, the system prompt as `instructions`, the messages as `input`
 /// ([`to_responses_input`]), the tools when there are any,
 /// `max_output_tokens` when `req.max_tokens` is above 0, `reasoning` for the
-/// effort ([`reasoning_params`]), and `store: false` with the encrypted
-/// reasoning included, so the next request can replay it.
-pub(crate) fn build_responses_body(provider_id: &str, req: &ProviderRequest) -> Value {
+/// effort ([`reasoning_params`]), `store: false` with the encrypted
+/// reasoning included, so the next request can replay it, and the cache key
+/// as `prompt_cache_key` when `opts` reach OpenAI's own API ([`is_openai_api`]).
+pub(crate) fn build_responses_body(opts: &ResponsesOptions, req: &ProviderRequest) -> Value {
+    let provider_id = opts.id();
     let mut body = Map::new();
     body.insert("model".into(), json!(req.model));
     body.insert("instructions".into(), json!(req.system));
@@ -140,5 +144,12 @@ pub(crate) fn build_responses_body(provider_id: &str, req: &ProviderRequest) -> 
     body.insert("store".into(), json!(false));
     body.insert("include".into(), json!(["reasoning.encrypted_content"]));
     body.insert("stream".into(), json!(true));
+    if let Some(key) = req
+        .cache_key
+        .as_deref()
+        .filter(|_| is_openai_api(opts.base_url()))
+    {
+        body.insert("prompt_cache_key".into(), json!(key));
+    }
     Value::Object(body)
 }

@@ -2,7 +2,8 @@
 //! cut the body into SSE events, hand each to the dialect's fold, and end with
 //! exactly one `Done`. A failure anywhere -- refused request, broken body, an
 //! error event, cancellation -- still ends with `Done`; the fold decides what
-//! of the half-built message survives.
+//! of the half-built message survives. A call answered with one JSON body
+//! ([`drive_json`]) and one never sent ([`not_sent`]) end the same way.
 
 use futures::StreamExt;
 use haest_core::{
@@ -99,6 +100,52 @@ pub(crate) fn drive<F: StreamFold>(
         }
         yield ProviderEvent::Done(fold.finish(failure.as_deref(), &cancel));
     })
+}
+
+/// A fold that also reads a call answered with one JSON body instead of a
+/// stream ([`drive_json`]).
+pub(crate) trait JsonFold: StreamFold {
+    /// The whole response body; an error fails the call.
+    fn on_response(&mut self, body: Value) -> Result<(), String>;
+}
+
+/// The most a JSON answer's body is read: far more than a message holds.
+const JSON_BODY_CAP: usize = 16 * 1024 * 1024;
+
+/// [`drive`] for a call that does not stream (Anthropic's cache pre-warm):
+/// send `request` with `sender`, read its whole body, hand it to `fold`, and
+/// end with exactly one `Done`.
+pub(crate) fn drive_json<F: JsonFold>(
+    sender: &Sender,
+    request: Request,
+    cancel: CancellationToken,
+    mut fold: F,
+) -> ProviderStream {
+    let sender = sender.clone();
+    Box::pin(futures::stream::once(async move {
+        let failure = match sender.send(&request, &cancel).await {
+            Err(e) => Some(e),
+            Ok(resp) => match send::read_body(resp, JSON_BODY_CAP, &cancel).await {
+                (_, Some(short)) => Some(short),
+                (body, None) => serde_json::from_slice(&body)
+                    .map_err(|e| format!("could not parse the response as JSON: {e}"))
+                    .and_then(|body| fold.on_response(body))
+                    .err(),
+            },
+        };
+        ProviderEvent::Done(fold.finish(failure.as_deref(), &cancel))
+    }))
+}
+
+/// A call that is not sent: its stream is one `Done`, failed for `why`
+/// (or aborted, if `cancel` already fired).
+pub(crate) fn not_sent<F: StreamFold>(
+    fold: F,
+    why: &str,
+    cancel: &CancellationToken,
+) -> ProviderStream {
+    let done = ProviderEvent::Done(fold.finish(Some(why), cancel));
+    Box::pin(futures::stream::iter([done]))
 }
 
 /// An OpenAI-shaped event's JSON. Like the SDK, a payload with an `error` ends the stream.

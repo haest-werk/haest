@@ -92,6 +92,23 @@ impl FakeReply {
         }
     }
 
+    /// A 200 JSON `body` that does not stream (Anthropic's cache pre-warm),
+    /// cut into small chunks.
+    pub fn json(body: &Value) -> Self {
+        let body = body.to_string();
+        let chunks = body
+            .as_bytes()
+            .chunks(CHUNK)
+            .map(Bytes::copy_from_slice)
+            .collect();
+        FakeReply::Response {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            chunks,
+            end: FakeEnd::Close,
+        }
+    }
+
     /// A refusal: `status` with `body`.
     pub fn status(status: u16, body: impl Into<String>) -> Self {
         FakeReply::Response {
@@ -278,4 +295,21 @@ pub fn kinds(events: &[ProviderEvent]) -> Vec<&'static str> {
             _ => "other",
         })
         .collect()
+}
+
+/// Every prompt-cache breakpoint (`cache_control`) in a request body,
+/// wherever it sits, in the order the body serializes.
+#[cfg(test)]
+pub(crate) fn breakpoints(body: &Value) -> Vec<Value> {
+    match body {
+        Value::Object(map) => map
+            .iter()
+            .flat_map(|(k, v)| match k.as_str() {
+                "cache_control" => vec![v.clone()],
+                _ => breakpoints(v),
+            })
+            .collect(),
+        Value::Array(items) => items.iter().flat_map(breakpoints).collect(),
+        _ => Vec::new(),
+    }
 }

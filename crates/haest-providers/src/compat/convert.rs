@@ -6,28 +6,81 @@
 //! applied here and nowhere else.
 
 use haest_core::{
+    cache::CacheTtl,
     catalog::Reasoning,
     messages::{AssistantMessage, Message},
     provider::{Effort, ToolSpec, nearest_accepted_effort},
 };
 use serde_json::{Map, Value, json};
 
-use super::CompatFlavor;
+use super::{CompatFlavor, CompatOptions};
 use crate::{
+    cache::cache_control,
     openai_media::{CHAT, with_tool_media},
     result_text,
     routing::RoutingScopes,
+    send::is_openai_api,
 };
 
-/// OpenRouter passes `cache_control` through to providers that need explicit
-/// breakpoints (Anthropic, Gemini); everyone else caches automatically.
-fn wants_cache_control(flavor: CompatFlavor, model: &str) -> bool {
-    flavor == CompatFlavor::OpenRouter
-        && (model.starts_with("anthropic/") || model.starts_with("google/"))
+/// An Anthropic model on OpenRouter: it takes `cache_control` with a TTL,
+/// and on a function tool too.
+fn openrouter_anthropic(flavor: CompatFlavor, model: &str) -> bool {
+    flavor == CompatFlavor::OpenRouter && model.starts_with("anthropic/")
 }
 
-fn ephemeral() -> Value {
-    json!({"type": "ephemeral"})
+/// The `cache_control` a breakpoint for `model` carries, or None where the
+/// model caches by itself. OpenRouter passes it through to the providers
+/// that need explicit breakpoints: Anthropic's, with `ttl` (OpenRouter
+/// documents `5m` and `1h` for them), and Google's, at the default.
+fn cache_marker(flavor: CompatFlavor, model: &str, ttl: CacheTtl) -> Option<Value> {
+    if openrouter_anthropic(flavor, model) {
+        Some(cache_control(ttl))
+    } else if flavor == CompatFlavor::OpenRouter && model.starts_with("google/") {
+        Some(cache_control(CacheTtl::FiveMinutes))
+    } else {
+        None
+    }
+}
+
+/// The last of `tools` (the function tools, before any server tool) with a
+/// breakpoint, for an Anthropic model on OpenRouter: the tool list then
+/// reads from the cache when the system prompt changes but the tools do
+/// not, as on Anthropic's own API.
+pub(super) fn mark_last_tool(
+    tools: &mut [Value],
+    flavor: CompatFlavor,
+    model: &str,
+    ttl: CacheTtl,
+) {
+    if let Some(last) = tools
+        .last_mut()
+        .filter(|_| openrouter_anthropic(flavor, model))
+    {
+        last["cache_control"] = cache_control(ttl);
+    }
+}
+
+/// OpenRouter's documented limit on a `session_id`.
+const SESSION_ID_MAX: usize = 256;
+
+/// The cache `key` as the server named by `opts` takes it: OpenRouter's
+/// `session_id` (its sticky routing key, at most 256 characters; a longer
+/// key is not sent), OpenAI's own API's `prompt_cache_key`; nothing for any
+/// other server, which may refuse a field it does not know.
+pub(super) fn cache_key_extras(opts: &CompatOptions, key: Option<&str>) -> Map<String, Value> {
+    let mut extras = Map::new();
+    let Some(key) = key else { return extras };
+    match opts.flavor {
+        CompatFlavor::OpenRouter if key.chars().count() <= SESSION_ID_MAX => {
+            extras.insert("session_id".into(), json!(key));
+        }
+        CompatFlavor::OpenRouter => {}
+        _ if is_openai_api(opts.base_url()) => {
+            extras.insert("prompt_cache_key".into(), json!(key));
+        }
+        _ => {}
+    }
+    extras
 }
 
 fn assistant_msg(msg: &AssistantMessage, provider_id: &str) -> Value {
@@ -97,20 +150,21 @@ fn replayed_reasoning(data: Option<&Value>) -> Map<String, Value> {
 /// other provider goes as text and tool calls only. A tool result's media,
 /// which a `tool` message cannot hold, follows the run of tool results as a
 /// user message. On OpenRouter, an `anthropic/` or `google/` model gets cache
-/// breakpoints on the system prompt and the newest user or tool message.
+/// breakpoints on the system prompt and the newest user or tool message,
+/// an `anthropic/` one's living `ttl` ([`cache_marker`]).
 pub(crate) fn to_chat_messages(
     system: &str,
     messages: &[Message],
     flavor: CompatFlavor,
     model: &str,
+    ttl: CacheTtl,
     provider_id: &str,
 ) -> Vec<Value> {
-    let cache = wants_cache_control(flavor, model);
+    let cache = cache_marker(flavor, model, ttl);
     let mut out = Vec::new();
-    let system_content = if cache {
-        json!([{"type": "text", "text": system, "cache_control": ephemeral()}])
-    } else {
-        json!(system)
+    let system_content = match &cache {
+        Some(marker) => json!([{"type": "text", "text": system, "cache_control": marker}]),
+        None => json!(system),
     };
     out.push(json!({"role": "system", "content": system_content}));
     with_tool_media(messages, &CHAT, &mut out, |m, out| match m {
@@ -123,13 +177,13 @@ pub(crate) fn to_chat_messages(
         Message::Assistant(a) if !a.content.is_empty() => out.push(assistant_msg(a, provider_id)),
         Message::Assistant(_) => {}
     });
-    if cache {
-        mark_last_user_cacheable(&mut out);
+    if let Some(marker) = cache {
+        mark_last_user_cacheable(&mut out, marker);
     }
     out
 }
 
-fn mark_last_user_cacheable(out: &mut [Value]) {
+fn mark_last_user_cacheable(out: &mut [Value], marker: Value) {
     for m in out.iter_mut().skip(1).rev() {
         let role = m.get("role").and_then(Value::as_str);
         if role != Some("user") && role != Some("tool") {
@@ -138,8 +192,7 @@ fn mark_last_user_cacheable(out: &mut [Value]) {
         match m.get_mut("content") {
             Some(Value::String(text)) => {
                 let text = std::mem::take(text);
-                m["content"] =
-                    json!([{"type": "text", "text": text, "cache_control": ephemeral()}]);
+                m["content"] = json!([{"type": "text", "text": text, "cache_control": marker}]);
                 return;
             }
             Some(Value::Array(parts)) => {
@@ -148,7 +201,7 @@ fn mark_last_user_cacheable(out: &mut [Value]) {
                     .rev()
                     .find(|p| p.get("type").and_then(Value::as_str) == Some("text"));
                 if let Some(part) = last_text {
-                    part["cache_control"] = ephemeral();
+                    part["cache_control"] = marker;
                     return;
                 }
             }

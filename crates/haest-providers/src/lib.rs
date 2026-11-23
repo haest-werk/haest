@@ -203,6 +203,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod anthropic;
+mod cache;
 mod catalog;
 mod compat;
 mod driver;

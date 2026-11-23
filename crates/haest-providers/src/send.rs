@@ -17,7 +17,8 @@ use std::{
 use futures::StreamExt;
 use haest_core::error::report;
 use haest_http::{
-    __private::join_path, HttpClientRef, HttpError, Request, Response, check_endpoint_url,
+    __private::{authority, join_path},
+    HttpClientRef, HttpError, Request, Response, check_endpoint_url,
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -119,22 +120,38 @@ async fn sleep(delay: Duration, cancel: &CancellationToken) -> Result<(), String
 /// The most an error body is read for its message.
 const ERROR_BODY_CAP: usize = 64 * 1024;
 
-/// `"<status> <the API's own message>"`, like the SDKs say it.
-async fn refusal_message(resp: Response, cancel: &CancellationToken) -> String {
-    let status = resp.status;
+/// `resp`'s body read to its end, and None; or, when it stopped short, why:
+/// it broke off, `cancel` fired, or it ran past `cap` bytes. The bytes read
+/// come back either way.
+pub(crate) async fn read_body(
+    resp: Response,
+    cap: usize,
+    cancel: &CancellationToken,
+) -> (Vec<u8>, Option<String>) {
     let mut body = Vec::new();
     let mut stream = resp.body;
-    while body.len() < ERROR_BODY_CAP {
+    loop {
         let next = tokio::select! {
             biased;
-            _ = cancel.cancelled() => None,
+            _ = cancel.cancelled() => return (body, Some(ABORTED.into())),
             next = stream.next() => next,
         };
         match next {
+            None => return (body, None),
+            Some(Err(e)) => return (body, Some(report(&e))),
             Some(Ok(chunk)) => body.extend_from_slice(&chunk),
-            _ => break,
+        }
+        if body.len() > cap {
+            return (body, Some(format!("the response ran past {cap} bytes")));
         }
     }
+}
+
+/// `"<status> <the API's own message>"`, like the SDKs say it.
+async fn refusal_message(resp: Response, cancel: &CancellationToken) -> String {
+    let status = resp.status;
+    // A body cut short still says what it said so far.
+    let (body, _) = read_body(resp, ERROR_BODY_CAP, cancel).await;
     let text = String::from_utf8_lossy(&body);
     match error_detail(text.trim()) {
         Some(detail) => format!("{status} {detail}"),
@@ -170,6 +187,20 @@ pub(crate) fn random_hex(n: usize) -> String {
 
 /// OpenAI's own API: where both OpenAI dialects go when no base URL is set.
 pub(crate) const OPENAI_URL: &str = "https://api.openai.com/v1";
+
+/// Whether an OpenAI dialect with `base_url` reaches OpenAI's own API: none
+/// set ([`OPENAI_URL`]), or a host of `api.openai.com` or under it (a
+/// regional one such as `eu.api.openai.com`). Only there does a field that
+/// only OpenAI documents (`prompt_cache_key`) go out; an unknown server may
+/// refuse a field it does not know.
+pub(crate) fn is_openai_api(base_url: Option<&str>) -> bool {
+    let Some(url) = base_url else { return true };
+    let authority = &url[authority(url)];
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = host_port.split(':').next().unwrap_or(host_port);
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "api.openai.com" || host.ends_with(".api.openai.com")
+}
 
 /// `path` under `base` (None = `default`), however many slashes its path
 /// ends in, and before its query: a gateway's key or an `api-version` there
@@ -219,6 +250,27 @@ mod tests {
         assert_eq!(error_detail(r#"{"message":"top"}"#).as_deref(), Some("top"));
         assert_eq!(error_detail("plain").as_deref(), Some("plain"));
         assert_eq!(error_detail(""), None);
+    }
+
+    #[test]
+    fn only_openai_hosts_count_as_openais_api() {
+        for ours in [
+            None,
+            Some("https://api.openai.com/v1"),
+            Some("https://eu.api.openai.com/v1/"),
+            Some("https://API.OpenAI.com:443/v1?x=1"),
+        ] {
+            assert!(is_openai_api(ours), "{ours:?}");
+        }
+        for theirs in [
+            "https://openrouter.ai/api/v1",
+            "http://localhost:1234/v1",
+            "https://api.openai.com.evil.example/v1",
+            "https://evil.example/api.openai.com/v1",
+            "https://api.openai.com@evil.example/v1",
+        ] {
+            assert!(!is_openai_api(Some(theirs)), "{theirs}");
+        }
     }
 
     #[test]

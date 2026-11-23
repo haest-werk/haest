@@ -58,7 +58,7 @@ fn carries_function_tools_and_reasoning_effort_together_stateless_system_in_inst
         description: "read a file".into(),
         parameters: json!({"type": "object", "properties": {}}),
     }];
-    let body = build_responses_body("openai", &req);
+    let body = build_responses_body(&ResponsesOptions::new("openai", "k"), &req);
     assert_eq!(
         body["tools"],
         json!([{
@@ -80,7 +80,7 @@ fn carries_function_tools_and_reasoning_effort_together_stateless_system_in_inst
 
 #[test]
 fn no_tools_and_no_effort_send_neither_key() {
-    let body = build_responses_body("openai", &request("gpt-5.5"));
+    let body = build_responses_body(&ResponsesOptions::new("openai", "k"), &request("gpt-5.5"));
     assert!(body.get("tools").is_none());
     assert!(body.get("reasoning").is_none());
     assert!(body.get("max_output_tokens").is_none());

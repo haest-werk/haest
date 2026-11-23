@@ -64,7 +64,7 @@ pub enum EntryProblem {
     /// `reasoningEffort` lacks its `efforts` array or its `mandatory` boolean.
     #[error("providers.json reasoningEffort needs \"efforts\" (array) and \"mandatory\" (boolean)")]
     ReasoningEffort,
-    /// A `pricing` row is not `{input, cachedInput, output, cacheWrite?}`, in numbers.
+    /// A `pricing` row is not `{input, cachedInput, output, cacheWrite?, cacheWrite1h?}`, in numbers.
     #[error("providers.json pricing.{model} cannot be read")]
     Pricing {
         /// The model id the row is for.

@@ -8,17 +8,14 @@
 //!     provider (the endpoint) that signed them.
 
 use haest_core::{
+    cache::CacheTtl,
     media::dropped_note,
     messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolResultMessage},
     provider::{Effort, ToolSpec},
 };
 use serde_json::{Map, Value, json};
 
-use crate::result_text;
-
-fn cache() -> Value {
-    json!({"type": "ephemeral"})
-}
+use crate::{cache::cache_control, result_text};
 
 fn safe_tool_id(id: &str) -> String {
     let safe: String = id
@@ -127,8 +124,13 @@ fn blocks_of(msg: &Message, provider_id: &str) -> (&'static str, Vec<Value>) {
 /// queued user message become one user turn). Thinking replays only from a
 /// message whose provider is `provider_id`, and only with its signature. Images
 /// and PDFs go as base64 blocks; audio and video, which the API does not take,
-/// become a text note. The newest block gets a prompt-cache breakpoint.
-pub(crate) fn to_anthropic_messages(messages: &[Message], provider_id: &str) -> Vec<Value> {
+/// become a text note. The newest block gets a prompt-cache breakpoint that
+/// lives `ttl`.
+pub(crate) fn to_anthropic_messages(
+    messages: &[Message],
+    provider_id: &str,
+    ttl: CacheTtl,
+) -> Vec<Value> {
     let mut out: Vec<(&'static str, Vec<Value>)> = Vec::new();
     for msg in messages {
         let (role, blocks) = blocks_of(msg, provider_id);
@@ -145,7 +147,7 @@ pub(crate) fn to_anthropic_messages(messages: &[Message], provider_id: &str) -> 
     if let Some(tail) = out.last_mut().and_then(|(_, c)| c.last_mut()) {
         let kind = tail.get("type").and_then(Value::as_str);
         if kind != Some("thinking") && kind != Some("redacted_thinking") {
-            tail["cache_control"] = cache();
+            tail["cache_control"] = cache_control(ttl);
         }
     }
     out.into_iter()
@@ -153,8 +155,9 @@ pub(crate) fn to_anthropic_messages(messages: &[Message], provider_id: &str) -> 
         .collect()
 }
 
-/// `tools` as Messages API tool definitions, the last with a prompt-cache breakpoint.
-pub(crate) fn to_anthropic_tools(tools: &[ToolSpec]) -> Vec<Value> {
+/// `tools` as Messages API tool definitions, the last with a prompt-cache
+/// breakpoint that lives `ttl`.
+pub(crate) fn to_anthropic_tools(tools: &[ToolSpec], ttl: CacheTtl) -> Vec<Value> {
     tools
         .iter()
         .enumerate()
@@ -165,7 +168,7 @@ pub(crate) fn to_anthropic_tools(tools: &[ToolSpec]) -> Vec<Value> {
                 "input_schema": t.parameters,
             });
             if i + 1 == tools.len() {
-                tool["cache_control"] = cache();
+                tool["cache_control"] = cache_control(ttl);
             }
             tool
         })

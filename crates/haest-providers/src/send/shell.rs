@@ -1,13 +1,13 @@
 //! What the providers over a [`Sender`](super::Sender) have in common,
-//! written once: the options of the dialects that take only a key, a base URL
-//! and headers ([`endpoint_options`]), and every provider's constructor,
-//! setters, id and [`Provider`](haest_core::Provider) impl
+//! written once: the options of the dialects that take only a key, a base URL,
+//! headers and prices ([`endpoint_options`]), and every provider's
+//! constructor, setters, id and [`Provider`](haest_core::Provider) impl
 //! ([`sender_provider`]).
 
-/// The options type `$name` of a dialect that takes an id, a key, a base URL
-/// and headers: the struct, `new`, `id`, `base_url`, `with_base_url`,
-/// `with_header`, and a Debug that shows neither the key, nor a header's
-/// value, nor a `user:password@` in the base URL.
+/// The options type `$name` of a dialect that takes an id, a key, a base URL,
+/// headers and prices: the struct, `new`, `id`, `base_url`, `with_base_url`,
+/// `with_header`, `with_pricing`, and a Debug that shows neither the key, nor
+/// a header's value, nor a `user:password@` in the base URL.
 ///
 /// `api` names the dialect's own API in prose, `url` is its base URL, `path`
 /// the path a request goes to under the base URL, and `key` the header the
@@ -29,6 +29,7 @@ macro_rules! endpoint_options {
             pub(crate) api_key: String,
             pub(crate) base_url: Option<String>,
             pub(crate) headers: Vec<(String, String)>,
+            pub(crate) pricing: ::std::collections::HashMap<String, ::haest_core::catalog::ModelPricing>,
         }
 
         impl $name {
@@ -40,6 +41,7 @@ macro_rules! endpoint_options {
                     api_key: api_key.into(),
                     base_url: None,
                     headers: Vec::new(),
+                    pricing: ::std::collections::HashMap::new(),
                 }
             }
 
@@ -80,6 +82,19 @@ macro_rules! endpoint_options {
                 self.headers.push((name.into(), value.into()));
                 self
             }
+
+            /// These options with `pricing` added, by model id, over the prices
+            #[doc = concat!("already set: the cost of an answer, which ", $api, " does not")]
+            /// report. A model with no price is booked by its tokens only.
+            #[must_use]
+            pub fn with_pricing(
+                mut self,
+                pricing: impl IntoIterator<Item = (impl Into<String>, ::haest_core::catalog::ModelPricing)>,
+            ) -> Self {
+                let rows = pricing.into_iter().map(|(model, row)| (model.into(), row));
+                self.pricing.extend(rows);
+                self
+            }
         }
 
         impl ::std::fmt::Debug for $name {
@@ -90,6 +105,7 @@ macro_rules! endpoint_options {
                     .field("api_key", &REDACTED)
                     .field("base_url", &self.base_url.as_deref().map(UrlDebug))
                     .field("headers", &HeaderNames(&self.headers))
+                    .field("pricing", &self.pricing)
                     .finish()
             }
         }
@@ -99,7 +115,8 @@ macro_rules! endpoint_options {
 /// For the provider `$name`, a struct holding its options `$opts` as `opts`
 /// and a [`Sender`](super::Sender) as `sender`: `new`, `with_retry`,
 /// `with_headers_timeout`, `id`, and the [`Provider`](haest_core::Provider)
-/// impl that forwards to `id` and its own inherent `stream`.
+/// impl that forwards to `id` and its own inherent `stream` and
+/// `check_prewarm`.
 macro_rules! sender_provider {
     ($name:ident, $opts:ty) => {
         impl $name {
@@ -137,7 +154,8 @@ macro_rules! sender_provider {
             }
         }
 
-        #[doc = concat!("[`", stringify!($name), "::id`] and [`", stringify!($name), "::stream`].")]
+        #[doc = concat!("[`", stringify!($name), "::id`], [`", stringify!($name), "::stream`] and")]
+        #[doc = concat!("[`", stringify!($name), "::check_prewarm`].")]
         impl ::haest_core::provider::Provider for $name {
             fn id(&self) -> &str {
                 $name::id(self)
@@ -148,6 +166,13 @@ macro_rules! sender_provider {
                 req: ::haest_core::provider::ProviderRequest,
             ) -> ::haest_core::provider::ProviderStream {
                 $name::stream(self, req)
+            }
+
+            fn check_prewarm(
+                &self,
+                req: &::haest_core::provider::ProviderRequest,
+            ) -> Result<(), ::haest_core::cache::PrewarmRefused> {
+                $name::check_prewarm(self, req)
             }
         }
     };

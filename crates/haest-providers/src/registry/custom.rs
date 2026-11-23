@@ -52,7 +52,7 @@ pub enum Dialect ("provider type") {
 /// | `apiKeyEnv` | [`api_key_env`](Self::api_key_env) | the name to ask the host for the key |
 /// | `headers` | [`headers`](Self::headers) | an object of headers sent on every request |
 /// | `reasoningEffort` | [`reasoning_effort`](Self::reasoning_effort) | `{ "efforts": [...], "mandatory": bool }` |
-/// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"? } }` |
+/// | `pricing` | [`pricing`](Self::pricing) | `{ "<model id>": { "input", "cachedInput", "output", "cacheWrite"?, "cacheWrite1h"? } }` |
 ///
 /// A key this table does not list is refused
 /// ([`EntryProblem::UnknownKeys`], naming each, and the key meant when one
@@ -63,11 +63,13 @@ pub enum Dialect ("provider type") {
 /// ([`EntryProblem::NotAString`]), `null` included: an entry leaves one
 /// unset by not having the key.
 ///
-/// `reasoningEffort` and `pricing` apply to `type: "openai"` only.
-/// `reasoningEffort`: send a top-level `reasoning_effort`, fitted to the listed
-/// levels ([`CompatOptions::with_reasoning_effort`]). Absent = no effort is sent.
-/// `pricing`: USD per 1M tokens per model id, for an API that returns no cost; a
-/// catalog row's `pricing` fills in for a model not listed here.
+/// `reasoningEffort` applies to `type: "openai"` only: send a top-level
+/// `reasoning_effort`, fitted to the listed levels
+/// ([`CompatOptions::with_reasoning_effort`]). Absent = no effort is sent.
+/// `pricing` applies to both types: USD per 1M tokens per model id, for an
+/// API that returns no cost (the Messages API never does); a catalog row's
+/// `pricing` fills in for a model not listed here. `cacheWrite1h` prices a
+/// cache write that lives an hour ([`ModelPricing`]).
 ///
 /// A host builds one in Rust as well ([`openai`](Self::openai),
 /// [`anthropic`](Self::anthropic), or the fields over `Default`, which is an
@@ -282,7 +284,7 @@ impl CustomProviderConfig {
     /// API),
     /// `reasoningEffort` lacks an `efforts` array or a `mandatory` boolean, or
     /// a `pricing` row lacks a numeric `input`, `cachedInput` or `output`, or
-    /// has a `cacheWrite` that is not a number.
+    /// has a `cacheWrite` or `cacheWrite1h` that is not a number.
     ///
     /// ```
     /// use haest_providers::{CustomProviderConfig, Dialect, EntryProblem};
@@ -353,13 +355,16 @@ impl CustomProviderConfig {
     }
 
     /// A `type: "anthropic"` entry as the options of the provider `name`: the
-    /// entry's URL, key ([`key`](Self::key)) and headers.
+    /// entry's URL, key ([`key`](Self::key)) and headers. Its prices are the
+    /// built-in catalog's for `name:` models, then the entry's own over them.
     pub(crate) fn anthropic_options(&self, name: &str, keys: &dyn KeySource) -> AnthropicOptions {
-        AnthropicOptions {
+        let opts = AnthropicOptions {
             base_url: self.base_url.clone(),
             headers: self.headers.clone(),
+            pricing: Catalog::builtin().provider_pricing(name),
             ..AnthropicOptions::new(name, self.sent_key(keys))
-        }
+        };
+        opts.with_pricing(self.pricing.clone())
     }
 
     /// A `type: "openai"` entry as the options of the provider `name`, the

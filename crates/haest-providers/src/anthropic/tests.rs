@@ -1,4 +1,5 @@
 use haest_core::{
+    cache::CacheTtl,
     messages::{
         AssistantMessage, AssistantPart, Message, StopReason, ToolCall, ToolResultMessage, Usage,
     },
@@ -220,6 +221,7 @@ fn tool_results_and_queued_input_merge_into_one_user_turn_ids_sanitised_tail_cac
             Message::user("also this"),
         ],
         "anthropic",
+        CacheTtl::FiveMinutes,
     );
     let roles: Vec<_> = msgs.iter().map(|m| m["role"].as_str().unwrap()).collect();
     assert_eq!(roles, ["user", "assistant", "user"]);
@@ -233,7 +235,11 @@ fn tool_results_and_queued_input_merge_into_one_user_turn_ids_sanitised_tail_cac
 #[test]
 fn thinking_is_replayed_only_to_the_provider_that_signed_it() {
     let replayed = |from: &str, to: &str| {
-        let msgs = to_anthropic_messages(&[Message::user("a"), assistant(from)], to);
+        let msgs = to_anthropic_messages(
+            &[Message::user("a"), assistant(from)],
+            to,
+            CacheTtl::FiveMinutes,
+        );
         types(&msgs[1]["content"]) == ["thinking", "tool_use"]
     };
     assert!(replayed("anthropic", "anthropic"));
@@ -311,7 +317,7 @@ fn the_last_tool_carries_the_cache_breakpoint() {
         description: "d".into(),
         parameters: json!({"type": "object"}),
     };
-    let tools = to_anthropic_tools(&[spec("A"), spec("B")]);
+    let tools = to_anthropic_tools(&[spec("A"), spec("B")], CacheTtl::FiveMinutes);
     assert!(tools[0].get("cache_control").is_none());
     assert_eq!(tools[1]["cache_control"], json!({"type": "ephemeral"}));
     assert_eq!(tools[1]["input_schema"], json!({"type": "object"}));

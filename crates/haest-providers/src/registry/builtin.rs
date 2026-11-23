@@ -24,20 +24,24 @@ fn need(keys: &dyn KeySource, key: &str, provider: &str) -> Result<String, Model
 }
 
 /// `anthropic`: the Messages API at `ANTHROPIC_BASE_URL` (else Anthropic's),
-/// with the key `ANTHROPIC_API_KEY`.
+/// with the key `ANTHROPIC_API_KEY` and the catalog's prices (the API
+/// reports no cost).
 pub(super) fn anthropic_options(keys: &dyn KeySource) -> Result<AnthropicOptions, ModelError> {
     let mut opts =
         AnthropicOptions::new("anthropic", need(keys, "ANTHROPIC_API_KEY", "anthropic")?);
     opts.base_url = keys.key("ANTHROPIC_BASE_URL");
+    opts.pricing = Catalog::builtin().provider_pricing("anthropic");
     Ok(opts)
 }
 
 /// `openai`: the Responses API at `OPENAI_BASE_URL` (else OpenAI's), with the
-/// key `OPENAI_API_KEY`. Responses, not Chat Completions: OpenAI refuses
-/// function tools + reasoning effort there.
+/// key `OPENAI_API_KEY` and the catalog's prices (the API reports no cost).
+/// Responses, not Chat Completions: OpenAI refuses function tools +
+/// reasoning effort there.
 pub(super) fn openai_options(keys: &dyn KeySource) -> Result<ResponsesOptions, ModelError> {
     let mut opts = ResponsesOptions::new("openai", need(keys, "OPENAI_API_KEY", "openai")?);
     opts.base_url = keys.key("OPENAI_BASE_URL");
+    opts.pricing = Catalog::builtin().provider_pricing("openai");
     Ok(opts)
 }
 

@@ -11,16 +11,21 @@ mod stream;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_cache;
+#[cfg(test)]
 mod tests_convert;
 
-use haest_core::provider::{ProviderRequest, ProviderStream};
+use haest_core::{
+    cache::PrewarmRefused,
+    provider::{ProviderRequest, ProviderStream},
+};
 
 use convert::build_responses_body;
 
 use haest_http::Request;
 
 use crate::{
-    driver::drive,
+    driver::{drive, not_sent},
     send::{OPENAI_URL, Sender, bearer_post, endpoint, endpoint_options, sender_provider},
 };
 
@@ -59,6 +64,14 @@ endpoint_options! {
 /// with [`StopReason::Refusal`](haest_core::StopReason::Refusal), running out of
 /// output tokens with `MaxTokens`.
 ///
+/// OpenAI caches the prompt by itself, for its own time: a request's
+/// [`cache_ttl`](haest_core::ProviderRequest::cache_ttl) is not sent. Its
+/// [`cache_key`](haest_core::ProviderRequest::cache_key) goes out as
+/// `prompt_cache_key` when the base URL is OpenAI's own API, and not to any
+/// other server. The Responses API reports no cost: an answer is priced from
+/// [`ResponsesOptions::with_pricing`] (the registry sets the catalog's). It
+/// sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
+///
 /// ```
 /// use haest_core::Provider;
 /// use haest_providers::{ResponsesOptions, ResponsesProvider, http::HttpClientRef};
@@ -82,15 +95,44 @@ impl ResponsesProvider {
     /// [`Provider`](haest_core::Provider) method, callable without importing
     /// the trait).
     pub fn stream(&self, req: ProviderRequest) -> ProviderStream {
-        let fold = stream::ResponsesFold::new(&self.opts.id, &req.model);
+        let price = self.opts.pricing.get(&req.model).cloned();
+        let fold = stream::ResponsesFold::new(&self.opts.id, &req.model, price);
+        if let Some(Err(refused)) = req.prewarm.then(|| self.check_prewarm(&req)) {
+            return not_sent(fold, &refused.to_string(), &req.cancel);
+        }
         drive(&self.sender, self.http_request(&req), req.cancel, fold)
+    }
+
+    /// Whether [`stream`](Self::stream) sends `req` as a cache pre-warm:
+    /// never yet. OpenAI documents `prompt_cache_options.prewarm` for
+    /// GPT-5.6 and later, but not what such a response streams nor whether
+    /// a hit restarts an entry's lifetime, and a model id does not say its
+    /// generation. A pre-warm request ends with this refusal as its error,
+    /// and nothing is sent.
+    ///
+    /// ```
+    /// use haest_core::ProviderRequest;
+    /// use haest_providers::{ResponsesOptions, ResponsesProvider, http::HttpClientRef};
+    ///
+    /// let provider = ResponsesProvider::new(ResponsesOptions::new("openai", "sk-..."), HttpClientRef::default());
+    /// let warm = ProviderRequest::new("gpt-6.1-sol", vec![]).with_prewarm(true);
+    /// assert!(provider.check_prewarm(&warm).is_err());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Always [`PrewarmRefused::Unsupported`].
+    pub fn check_prewarm(&self, _req: &ProviderRequest) -> Result<(), PrewarmRefused> {
+        Err(PrewarmRefused::Unsupported {
+            provider: self.opts.id.clone(),
+        })
     }
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
         bearer_post(
             endpoint(self.opts.base_url(), OPENAI_URL, "responses"),
             &self.opts.api_key,
-            &build_responses_body(&self.opts.id, req),
+            &build_responses_body(&self.opts, req),
             &self.opts.headers,
         )
     }

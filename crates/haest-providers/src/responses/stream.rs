@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use haest_core::{
+    catalog::ModelPricing,
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall},
-    provider::{ProviderEvent, mark_stream_failed},
+    provider::{ProviderEvent, book_priced_cost, mark_stream_failed},
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -30,15 +31,18 @@ pub(crate) struct ResponsesFold {
     /// Set once a message item carried a refusal instead of text.
     refused: bool,
     incomplete: Option<String>,
+    /// The configured price of the model asked for: the API reports no cost.
+    price: Option<ModelPricing>,
 }
 
 impl ResponsesFold {
-    pub(super) fn new(provider_id: &str, model: &str) -> Self {
+    pub(super) fn new(provider_id: &str, model: &str, price: Option<ModelPricing>) -> Self {
         Self {
             msg: AssistantMessage::start(provider_id, model),
             items: BTreeMap::new(),
             refused: false,
             incomplete: None,
+            price,
         }
     }
 
@@ -257,6 +261,7 @@ impl StreamFold for ResponsesFold {
             .into_iter()
             .filter(|p| keep(p) && (complete || !matches!(p, AssistantPart::ToolCall(_))))
             .collect();
+        book_priced_cost(&mut self.msg.usage, self.price.as_ref());
         if let Some(err) = failure {
             mark_stream_failed(&mut self.msg, cancel, err);
             return self.msg;
