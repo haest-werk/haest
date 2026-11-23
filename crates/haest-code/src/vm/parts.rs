@@ -23,9 +23,20 @@ pub(crate) fn as_function(code: &str) -> String {
     )
 }
 
+/// What a run out of memory says: QuickJS's own error, which it throws when
+/// it has the room to build it.
+const OUT_OF_MEMORY: &str = "InternalError: out of memory";
+
 /// `Name: message (line N)` -- the line in the model's own code, the way Claude
-/// Code's REPL reports it. A thrown non-object is its string form.
+/// Code's REPL reports it. A thrown non-object is its string form, except
+/// `null`: QuickJS throws `null` when it runs out of memory and has no room
+/// left to build the error (`JS_ThrowError2`), so `null` reads as
+/// [`OUT_OF_MEMORY`]. A guest's own `throw null` reads the same; nothing
+/// tells the two apart once the run has failed.
 pub(crate) fn error_text(e: &Value<'_>, filename: &str) -> String {
+    if e.is_null() {
+        return OUT_OF_MEMORY.into();
+    }
     let Some(obj) = e.as_object() else {
         return e
             .get::<Coerced<String>>()

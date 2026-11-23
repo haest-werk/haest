@@ -128,6 +128,26 @@ async fn memory_is_capped() {
     assert_eq!(r.stopped, None);
 }
 
+/// Out of memory, QuickJS throws `null` when it has no room left to build
+/// the error: the run says what happened, whichever it threw.
+#[tokio::test]
+async fn a_run_out_of_memory_says_so() {
+    let tight = caps(10_000).with_memory_bytes(8 << 20);
+    let hogs = [
+        "const a = []; for (;;) a.push('x'.repeat(1024) + a.length)",
+        "const a = []; for (let i = 0; i < 256; i++) a.push('x'.repeat(1 << 16) + i); return a.length",
+        "const a = []; for (;;) a.push({ n: a.length })",
+    ];
+    for code in hogs {
+        let r = run(code, &VmSpec::default(), tight, &CancellationToken::new()).await;
+        let error = r.error.unwrap_or_default();
+        assert!(
+            error.starts_with("InternalError: out of memory"),
+            "{code}: {error}"
+        );
+    }
+}
+
 /// The longest `by` that `at + by` can hold, to the millisecond.
 fn reach(at: Instant) -> Duration {
     let (mut lo, mut hi) = (Duration::ZERO, Duration::MAX);
