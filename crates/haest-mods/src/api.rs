@@ -121,9 +121,10 @@ pub trait Mod: Send + Sync {
     }
 
     /// `tool.after`: after the call ran; Some replaces the output the model
-    /// reads. Every mod sees the output as the mods before it left it. An
-    /// `Err` leaves the output as it was: the call happened, and the model
-    /// must not retry it.
+    /// reads, but not what the call spent (its `cost_usd` and
+    /// `child_cost_usd` stay the tool's). Every mod sees the output as the
+    /// mods before it left it. An `Err` leaves the output as it was: the call
+    /// happened, and the model must not retry it.
     async fn tool_after(
         &self,
         _call: &ModToolCall,

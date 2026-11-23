@@ -77,6 +77,8 @@ impl Mods {
 
     /// `tool.after` across every mod. The tool DID run: a mod that fails leaves
     /// the output as it was, so the model never retries a call that happened.
+    /// A rewrite changes what the model reads, never what the call spent: the
+    /// tool's `cost_usd` and `child_cost_usd` stay, whatever the mod's output says.
     pub(crate) async fn after(
         &self,
         call: &ModToolCall,
@@ -85,7 +87,13 @@ impl Mods {
     ) -> ToolOutput {
         for m in self.list() {
             match m.tool_after(call, &output, ctx, self.env()).await {
-                Ok(Some(replaced)) => output = replaced,
+                Ok(Some(replaced)) => {
+                    output = ToolOutput {
+                        cost_usd: output.cost_usd,
+                        child_cost_usd: output.child_cost_usd,
+                        ..replaced
+                    };
+                }
                 Ok(None) => {}
                 Err(_) if ctx.cancel().is_cancelled() => {}
                 Err(e) => self.report(m.as_ref(), ModEvent::ToolAfter.as_str(), &e),

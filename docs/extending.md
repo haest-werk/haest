@@ -46,7 +46,7 @@ The gates hold the lists equal: `JsMod` and `Hooks` implement every `Mod` method
 | Event | Decision (Rust) | As JSON | Several hooks |
 |---|---|---|---|
 | `tool.before` | `Before::{Pass, Deny, Input}` | `{ deny: reason }`, `{ input: {..} }`, anything else passes | rewrites chain; the first deny wins and refuses the call (the model reads the reason) |
-| `tool.after` | `Option<ToolOutput>` | `{ content, isError, .. }` or nothing | each sees the output the one before left |
+| `tool.after` | `Option<ToolOutput>` | `{ content, isError, .. }` or nothing | each sees the output the one before left; what the call spent stays the tool's |
 | `prompt.submit` | `Option<String>` | a string or nothing | rewrites chain |
 | `system.prompt` | `Option<String>` | a string or nothing | the texts are joined |
 | `model.before` | `ModelBeforeDecision { compact, steer, stop }` | `{ compact, steer, stop }` | the first stop wins; every steer is kept; the first compact counts |

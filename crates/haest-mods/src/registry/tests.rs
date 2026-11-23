@@ -247,6 +247,54 @@ async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     assert!(ui.errors().is_empty());
 }
 
+/// A tool that bills: what it spent itself, and what an agent it ran spent.
+struct Billed;
+
+#[async_trait]
+impl haest_core::Tool for Billed {
+    fn name(&self) -> &str {
+        "Render"
+    }
+    fn description(&self) -> String {
+        "render an image".into()
+    }
+    fn parameters(&self) -> Value {
+        json!({"type": "object"})
+    }
+    fn kind(&self) -> &str {
+        "agent.unknown"
+    }
+    async fn execute(
+        &self,
+        _input: haest_core::tool::JsonMap,
+        _ctx: &ToolContext,
+    ) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput {
+            cost_usd: Some(0.25),
+            child_cost_usd: Some(0.5),
+            ..ToolOutput::text("rendered")
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_tool_after_rewrite_keeps_what_the_tool_spent() {
+    // The hook rewrites what the model reads; it cannot erase the bill.
+    let hooks = crate::Hooks::new().on_tool_after(
+        |_: crate::ToolAfterPayload, _: tokio_util::sync::CancellationToken| async {
+            Ok::<_, BoxError>(Some(ToolOutput {
+                cost_usd: Some(0.0),
+                ..ToolOutput::text("replaced")
+            }))
+        },
+    );
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [hooks]);
+    let tools = wrapped(mods, Tools::new().with(Billed));
+    let out = tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    assert_eq!(out.content, "replaced");
+    assert_eq!((out.cost_usd, out.child_cost_usd), (Some(0.25), Some(0.5)));
+}
+
 #[tokio::test]
 async fn mods_is_a_handle_its_clones_run_the_same_mods() {
     let shared = Mods::new(

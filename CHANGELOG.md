@@ -118,6 +118,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 
 - haest-mods: when a `tool.before` guard failed, the refusal the model
   read carried the guard's error but not its causes. It now carries both.
+- haest-mods: a `tool.after` hook that replaced a tool's output dropped what
+  the call spent (`cost_usd`, `child_cost_usd`), so the turn's cost, its
+  caps and the ledger missed it. A rewrite now keeps the tool's spend.
 
 ## 0.4.1 (2026-11-20)
 
