@@ -100,6 +100,11 @@ async fn a_url_a_parser_misreads_fails_its_server_before_anything_is_sent() {
     let (hub, logs) = connect(format!("http://127.0.0.1:{port}/s3cret@mcp.example/mcp")).await;
     let sent = misread_host.seen();
     assert!(sent.is_empty(), "the misread host was sent {sent:?}");
+    assert_eq!(
+        misread_host.connections(),
+        0,
+        "the misread host was connected to"
+    );
     let failures = hub.failures();
     assert!(
         matches!(

@@ -68,6 +68,8 @@ async fn a_name_that_resolves_to_a_blocked_address_when_connecting_is_never_reac
         .await;
     assert!(sent.is_err());
     assert!(server.seen().is_empty(), "the server was reached");
+    // Not even a connection that sent nothing: the guard refuses before connecting.
+    assert_eq!(server.connections(), 0, "the server was connected to");
 }
 
 #[tokio::test]

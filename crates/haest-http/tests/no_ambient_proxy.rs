@@ -36,4 +36,5 @@ async fn the_default_client_goes_direct_whatever_the_proxy_variables_say() {
     assert_eq!(resp.status, 200);
     assert_eq!(server.seen().len(), 1, "the request reached its server");
     assert!(proxy.seen().is_empty(), "and never the proxy");
+    assert_eq!(proxy.connections(), 0, "not even a connection to the proxy");
 }

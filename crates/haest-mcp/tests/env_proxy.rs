@@ -39,6 +39,7 @@ async fn an_http_server_and_its_headers_are_never_sent_through_an_env_proxy() {
         proxy.seen().is_empty(),
         "the env proxy was sent the MCP server's requests"
     );
+    assert_eq!(proxy.connections(), 0, "the env proxy was connected to");
     let direct = server.seen();
     assert!(!direct.is_empty(), "the MCP server was never reached");
     assert_eq!(direct[0].header("authorization"), Some("Bearer mcp-key"));

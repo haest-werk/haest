@@ -3,7 +3,8 @@
 //! server on 127.0.0.1 for one test, written by hand over a socket. It
 //! writes down each request and answers it, from a script in order
 //! ([`Server::start`]) or as a closure that reads the request decides
-//! ([`Server::answering`]).
+//! ([`Server::answering`]). It counts every connection it accepts
+//! ([`Server::connections`]), one that sent nothing included.
 //!
 //! Not part of the API and not covered by semver, like every `testing`
 //! module and feature in haest: it changes in any release.
@@ -40,7 +41,7 @@ use std::{
     net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread::JoinHandle,
 };
@@ -102,6 +103,7 @@ type Responder = Box<dyn FnMut(&Seen) -> Respond + Send>;
 pub struct Server {
     addr: SocketAddr,
     seen: Arc<Mutex<Vec<Seen>>>,
+    connections: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
 }
@@ -132,15 +134,19 @@ impl Server {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a free port on 127.0.0.1");
         let addr = listener.local_addr().expect("the bound port");
         let seen = Arc::new(Mutex::new(Vec::new()));
+        let connections = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let respond: Arc<Mutex<Responder>> = Arc::new(Mutex::new(Box::new(respond)));
-        let (log, stopping) = (seen.clone(), stop.clone());
+        let (log, accepted, stopping) = (seen.clone(), connections.clone(), stop.clone());
         let accept = std::thread::spawn(move || {
             for stream in listener.incoming() {
+                // The drop sets the flag before its wake-up connects, so that
+                // connection is never counted.
                 if stopping.load(Ordering::SeqCst) {
                     return;
                 }
                 let Ok(stream) = stream else { continue };
+                accepted.fetch_add(1, Ordering::SeqCst);
                 let (log, respond) = (log.clone(), respond.clone());
                 std::thread::spawn(move || serve(stream, &log, &respond));
             }
@@ -148,6 +154,7 @@ impl Server {
         Self {
             addr,
             seen,
+            connections,
             stop,
             accept: Some(accept),
         }
@@ -170,6 +177,18 @@ impl Server {
     /// When a thread serving a request panicked while it wrote one down.
     pub fn seen(&self) -> Vec<Seen> {
         self.seen.lock().expect("the server's log").clone()
+    }
+
+    /// How many connections it has accepted, counting one whose client sent
+    /// nothing or hung up mid-request (which [`seen`](Self::seen) never
+    /// shows): a test that something never reached it asserts 0 here as well
+    /// as an empty `seen`. The connection its own drop makes to stop it is
+    /// never counted.
+    ///
+    /// Its thread counts a connection a moment after the client's connect
+    /// returns: a test waiting for one polls.
+    pub fn connections(&self) -> usize {
+        self.connections.load(Ordering::SeqCst)
     }
 }
 
@@ -274,3 +293,6 @@ fn write_answer(mut stream: TcpStream, status: u16, headers: &[(String, String)]
     let _ = stream.write_all(body.as_bytes());
     let _ = stream.shutdown(Shutdown::Write);
 }
+
+#[cfg(test)]
+mod tests;

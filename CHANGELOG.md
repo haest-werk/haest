@@ -187,7 +187,10 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   127.0.0.1 for a test (of an HTTP hook, a client, an MCP server), on
   threads of its own. It writes down each request and answers from a
   script (`Server::start`) or as a closure that reads the request decides
-  (`Server::answering`). The facade's `testing` turns it on with `http`.
+  (`Server::answering`), and counts every connection it accepts
+  (`Server::connections`), one that sent nothing included, for a test that
+  something never reached it. The facade's `testing` turns it on with
+  `http`.
 
 ### Fixed
 
