@@ -4,7 +4,7 @@ use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
 use haest_mods::{CommandOutcome, Decision, Mod, ModToolCall, Mods};
 use serde_json::json;
 
-use super::{JsMod, ModCaps, ModLoadError};
+use super::{JsMod, ModLoadError};
 use crate::testkit::*;
 
 const GUARD_TS: &str = r#"
@@ -179,10 +179,7 @@ async fn a_mod_that_fails_to_load_says_why() {
 async fn a_default_export_that_never_returns_is_stopped_at_the_hosts_load_timeout() {
     let haest = env(TestUi::new(), WorkspaceMode::Sandbox);
     let wait = Duration::from_millis(200);
-    let caps = ModCaps {
-        load_timeout: wait,
-        ..test_caps()
-    };
+    let caps = test_caps().with_timeout(wait);
     let hangs = "export default () => new Promise(() => {})";
     let loaded = JsMod::load_with(Path::new("hangs.js"), hangs.into(), &haest, caps).await;
     assert!(matches!(loaded, Err(ModLoadError::Timeout(t)) if t == wait));

@@ -16,18 +16,26 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 ### Breaking changes
 
 - haest-mods' `Before`, `Step` and `TurnEnd`, haest-settings' `ModReload`,
-  and haest-bridges' `ModCaps` are `#[non_exhaustive]`, so each can grow
+  and haest-code's `VmCaps` are `#[non_exhaustive]`, so each can grow
   without another break: a `match` outside haest needs a `_` arm, and a
-  `ModCaps` is built with `ModCaps::default().with_slice(..)`,
-  `.with_memory_bytes(..)`, `.with_load_timeout(..)`.
+  `VmCaps` is built with its setters (`VmCaps::default().with_timeout(..)`,
+  `.with_memory_bytes(..)`, `.with_slice(..)`, `.with_max_log_chars(..)`).
+- One engine runs all of haest's JavaScript: a mod file runs on
+  haest-code's, the one the Code tool runs on, and takes its caps type.
+  `ModCaps` is gone: `JsMod::load_with` and `ModFileOptions::with_caps`
+  take a `VmCaps` (`haest::code::VmCaps`, also `haest::bridges::VmCaps`).
+  `ModCaps::default()` is `VmCaps::mod_file()`, `slice` and `memory_bytes`
+  keep their names, and `load_timeout` is `timeout`. `VmCaps::timeout_ms`
+  is `timeout`, a `Duration`, and `slice` is new (a Code run does not read
+  it). haest-bridges' `js` links haest-code in place of its own rquickjs.
 - `Usage` gains `cache_write_1h` and `CompactionOptions` gains
   `instructions`. A struct literal that names every field no longer
   compiles: end it with `..Default::default()` (`Usage`) or
   `..CompactionOptions::new(window)`.
 - Mod files moved from haest-mods to the new crate haest-bridges (feature
-  `js`; the facade's `bridge-js`, on by default): `haest::mods::JsMod`,
-  `ModCaps` and `ModLoadError` are now `haest::bridges::*`. haest-mods links
-  no QuickJS.
+  `js`; the facade's `bridge-js`, on by default): `haest::mods::JsMod` and
+  `ModLoadError` are now `haest::bridges::*`, and `ModCaps` is `VmCaps`
+  (above). haest-mods links no QuickJS.
 - `load_mods` loads the built-ins and the host's mods only, and is no
   longer async: `load_mods(ModOptions::new(cwd, workspace), ui)`. The mod
   directories, `with_user_mods`, `with_project_mods` and `with_caps` moved

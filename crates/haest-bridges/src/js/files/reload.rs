@@ -7,15 +7,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use haest_code::VmCaps;
 use haest_core::{error::report, fs::FsRef};
 use haest_mods::{ApprovalRequest, Decision, ModEnv, ModRef, Mods};
 use haest_settings::ModReload;
 use tokio_util::sync::CancellationToken;
 
-use super::{
-    super::{JsMod, ModCaps},
-    mod_files,
-};
+use super::{super::JsMod, mod_files};
 
 /// When a look happens.
 #[derive(Clone, Copy)]
@@ -69,7 +67,7 @@ enum OnDisk {
 /// Every mod file of a conversation, and how to load one.
 pub(super) struct Files {
     dirs: Vec<PathBuf>,
-    caps: ModCaps,
+    caps: VmCaps,
     fs: FsRef,
     env: ModEnv,
     reload: ModReload,
@@ -79,7 +77,7 @@ pub(super) struct Files {
 impl Files {
     pub(super) fn new(
         dirs: Vec<PathBuf>,
-        caps: ModCaps,
+        caps: VmCaps,
         fs: FsRef,
         env: ModEnv,
         reload: ModReload,

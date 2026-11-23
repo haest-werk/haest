@@ -19,7 +19,7 @@
   `RuntimeHooks` is haest-runtime's own implementation of the loop's hooks.
   The words haest settled on:
   - **cap**: a maximum that stops something (`TurnCaps`, `ConversationCaps`,
-    `VmCaps`, `ModCaps`, the settings' `CapSettings`). "Limit" is only
+    `VmCaps`, the settings' `CapSettings`). "Limit" is only
     `remedy::Limit`, which also covers `SandboxEdits`, no cap.
   - **`model_spec`**: the `provider:model` string, in every field, parameter
     and setter; `model` is the provider's own id (`ResolvedModel::model`).

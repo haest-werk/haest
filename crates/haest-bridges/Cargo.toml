@@ -18,7 +18,7 @@ workspace = true
 [features]
 # TypeScript and JavaScript mod files in embedded QuickJS (`JsMod`), and a
 # conversation's mod files as one mod that reloads them (`ModFiles`).
-js = ["_bridge", "dep:rquickjs", "dep:haest-ts", "dep:haest-settings"]
+js = ["_bridge", "dep:haest-code", "dep:haest-ts", "dep:haest-settings"]
 # A command per event (`ShellHook`): the event as JSON on its stdin, the
 # decision on its stdout, run on the host by haest-workspace's real exec.
 shell = ["_bridge", "dep:haest-workspace"]
@@ -47,8 +47,9 @@ tokio-util = { workspace = true, optional = true }
 # request goes through the host's HttpClient (no client of its own), and
 # `HttpHook`'s Debug hides a URL's credentials (`redacted_url`).
 haest-http = { workspace = true, optional = true }
-# js: the engine (the same build the Code tool links).
-rquickjs = { version = "0.14", default-features = false, features = ["std"], optional = true }
+# js: the engine, the one the Code tool runs on (haest-code's `JsEngine`), and
+# its caps type, `VmCaps`.
+haest-code = { workspace = true, optional = true }
 # js: `.ts` mod files, through the same type stripper as the sandbox `js` command.
 haest-ts = { workspace = true, optional = true }
 # js: the `mod_reload` setting's word, `ModReload` (haest-settings links haest-core only).

@@ -952,13 +952,13 @@ name = "haest-bridges"
 version = "0.4.1"
 dependencies = [
  "async-trait",
+ "haest-code",
  "haest-core",
  "haest-http",
  "haest-mods",
  "haest-settings",
  "haest-ts",
  "haest-workspace",
- "rquickjs",
  "serde",
  "serde_json",
  "tempfile",

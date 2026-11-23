@@ -220,6 +220,13 @@ pub use http::HttpHook;
 #[cfg_attr(docsrs, doc(cfg(feature = "shell")))]
 pub use shell::ShellHook;
 
+/// The caps a mod file runs in, haest-code's own: a mod file runs on the
+/// engine the Code tool runs on, held to the same caps type
+/// ([`VmCaps::mod_file`] by default).
+#[cfg(feature = "js")]
+#[cfg_attr(docsrs, doc(cfg(feature = "js")))]
+#[doc(no_inline)]
+pub use haest_code::VmCaps;
 /// The `mod_reload` setting's word, haest-settings' own: whether
 /// [`ModFiles`] reloads the files as they change.
 #[cfg(feature = "js")]
@@ -228,4 +235,4 @@ pub use shell::ShellHook;
 pub use haest_settings::ModReload;
 #[cfg(feature = "js")]
 #[cfg_attr(docsrs, doc(cfg(feature = "js")))]
-pub use js::{JsMod, ModCaps, ModFileOptions, ModFiles, ModLoadError};
+pub use js::{JsMod, ModFileOptions, ModFiles, ModLoadError};

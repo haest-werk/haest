@@ -12,7 +12,7 @@ use haest_mods::{ModEnv, ModOptions, load_mods};
 use serde_json::json;
 
 use super::*;
-use crate::{ModCaps, testkit::*};
+use crate::testkit::*;
 
 const HOME: &str = "/home/cfg";
 const HOME_MODS: &str = "/home/cfg/mods";
@@ -63,10 +63,7 @@ async fn the_hosts_limits_bound_every_mod_file_it_loads() {
         "export default () => new Promise(() => {})",
     )]);
     let ui = TestUi::new();
-    let caps = ModCaps {
-        load_timeout: Duration::from_millis(200),
-        ..test_caps()
-    };
+    let caps = test_caps().with_timeout(Duration::from_millis(200));
     let started = Instant::now();
     let files = ModFiles::load(opts().with_caps(caps), fs, sandbox(&ui)).await;
     assert!(started.elapsed() < Duration::from_secs(5));

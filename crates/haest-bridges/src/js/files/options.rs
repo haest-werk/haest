@@ -3,10 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
+use haest_code::VmCaps;
 use haest_core::fs::Fs;
 use haest_settings::ModReload;
-
-use super::super::ModCaps;
 
 /// Where a conversation's mod files are, the bounds they run in, and
 /// whether they reload as they change.
@@ -28,19 +27,19 @@ pub struct ModFileOptions {
     config_dir: PathBuf,
     user_mods: bool,
     project_mods: bool,
-    pub(super) caps: ModCaps,
+    pub(super) caps: VmCaps,
     pub(super) reload: ModReload,
 }
 
 impl ModFileOptions {
-    /// No mod directory, the default [`ModCaps`], no reload, for a host whose
-    /// own config directory is `config_dir`.
+    /// No mod directory, a mod file's caps ([`VmCaps::mod_file`]), no
+    /// reload, for a host whose own config directory is `config_dir`.
     pub fn new(config_dir: impl Into<PathBuf>) -> Self {
         Self {
             config_dir: config_dir.into(),
             user_mods: false,
             project_mods: false,
-            caps: ModCaps::default(),
+            caps: VmCaps::mod_file(),
             reload: ModReload::Off,
         }
     }
@@ -63,9 +62,9 @@ impl ModFileOptions {
         self
     }
 
-    /// The bounds every mod file runs in, in place of [`ModCaps::default`].
+    /// The bounds every mod file runs in, in place of [`VmCaps::mod_file`].
     #[must_use]
-    pub fn with_caps(mut self, caps: ModCaps) -> Self {
+    pub fn with_caps(mut self, caps: VmCaps) -> Self {
         self.caps = caps;
         self
     }

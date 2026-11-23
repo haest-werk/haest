@@ -1,35 +1,43 @@
-//! The thread a file mod's QuickJS runtime lives on. QuickJS is single-threaded
-//! and its calls block, so it never runs on the async runtime's workers: the
-//! async half sends a request over a channel and awaits a oneshot reply.
-//! After every request the thread runs the job queue (the mod's promises) and
-//! forwards what the mod sent out (outbox.rs).
+//! The thread a file mod's engine lives on: haest-code's [`JsEngine`], the
+//! one the Code tool runs on, on a thread of its own ([`spawn_thread`]).
+//! QuickJS is single-threaded and its calls block, so it never runs on the
+//! async runtime's workers: the async half sends a request over a channel
+//! and awaits a oneshot reply. After every request the thread runs the job
+//! queue (the mod's promises) and forwards what the mod sent out (outbox.rs).
 
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, mpsc},
-    time::{Duration, Instant},
+    sync::{Arc, Mutex, mpsc},
+    time::Duration,
 };
 
+use haest_code::{
+    __private::{
+        engine::{JsEngine, spawn_thread},
+        rquickjs::{self, Ctx, Function, Module, Object, Value},
+    },
+    VmCaps,
+};
 use haest_mods::ModUiRef;
-use rquickjs::{Context, Ctx, Function, Module, Object, Runtime, Value};
 use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use super::{
     channel::{JsMeta, Reply, ToJs},
-    load::{ModCaps, ModLoadError},
+    load::ModLoadError,
 };
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
-const STACK_BYTES: usize = 4 << 20;
+/// QuickJS's stack cap for a mod file: QuickJS's own default.
+const STACK_BYTES: usize = 1 << 20;
 
 pub(crate) struct Setup {
     pub path: PathBuf,
     pub source: String,
     pub ui: ModUiRef,
     pub meta: Arc<Mutex<JsMeta>>,
-    pub caps: ModCaps,
+    pub caps: VmCaps,
     pub runtime: Handle,
 }
 
@@ -38,10 +46,10 @@ pub(crate) async fn start(setup: Setup) -> Result<mpsc::Sender<ToJs>, ModLoadErr
     let (tx, rx) = mpsc::channel();
     let (ready_tx, ready_rx) = oneshot::channel();
     let own = tx.clone();
-    std::thread::Builder::new()
-        .name("haest-mod".into())
-        .stack_size(STACK_BYTES)
-        .spawn(move || serve(setup, &rx, own, ready_tx))
+    // A panic drops the thread's ends of the channels on its way out: the
+    // load hears `Stopped`, and so does every call in flight.
+    let ended = |_: Result<(), String>| {};
+    spawn_thread("haest-mod", move || serve(setup, &rx, own, ready_tx), ended)
         .map_err(ModLoadError::Thread)?;
     match ready_rx.await {
         Ok(Ok(())) => Ok(tx),
@@ -79,34 +87,6 @@ fn serve(
     }
 }
 
-/// How long the mod's code has run without pausing; the interrupt handler stops it past the limit.
-struct Slice {
-    limit: Duration,
-    since: Mutex<Option<Instant>>,
-}
-
-impl Slice {
-    fn begin(&self) {
-        *self.since() = Some(Instant::now());
-    }
-    /// How long that slice ran.
-    fn end(&self) -> Duration {
-        let since = self.since().take();
-        since.map_or(Duration::ZERO, |t| t.elapsed())
-    }
-    fn over(&self) -> bool {
-        let since = *self.since();
-        since.is_some_and(|t| t.elapsed() > self.limit)
-    }
-    /// When the running slice began. Held only to stamp or read an instant,
-    /// so a poisoned one is a bug here.
-    fn since(&self) -> MutexGuard<'_, Option<Instant>> {
-        self.since
-            .lock()
-            .expect("the mod's time slice lock poisoned")
-    }
-}
-
 /// What a thrown value says.
 pub(super) fn error_text(ctx: &Ctx<'_>, e: &rquickjs::Error) -> String {
     if !e.is_exception() {
@@ -141,10 +121,10 @@ fn runnable(path: &Path, source: String) -> Result<String, ModLoadError> {
 }
 
 pub(super) struct Js {
-    // Field order is drop order: the context goes before its runtime.
-    ctx: Context,
-    rt: Runtime,
-    slice: Arc<Slice>,
+    engine: JsEngine,
+    /// The longest the mod's code may run without pausing: each stretch of
+    /// it runs [`JsEngine::timed`] to this.
+    slice: Duration,
     pub(super) ui: ModUiRef,
     pub(super) meta: Arc<Mutex<JsMeta>>,
     pub(super) runtime: Handle,
@@ -163,21 +143,14 @@ enum Loaded {
 
 impl Js {
     fn init(setup: Setup, own: mpsc::Sender<ToJs>) -> Result<Js, ModLoadError> {
-        let engine = |e: rquickjs::Error| ModLoadError::Evaluate(e.to_string());
         let code = runnable(&setup.path, setup.source)?;
-        let rt = Runtime::new().map_err(engine)?;
-        rt.set_memory_limit(setup.caps.memory_bytes);
-        let slice = Arc::new(Slice {
-            limit: setup.caps.slice,
-            since: Mutex::default(),
-        });
-        let watch = slice.clone();
-        rt.set_interrupt_handler(Some(Box::new(move || watch.over())));
-        let ctx = Context::full(&rt).map_err(engine)?;
+        // Nothing else holds the engine's stop flag: a mod file stops
+        // between requests (`ToJs::Stop`), and its slice stops a CPU loop.
+        let engine = JsEngine::new(&setup.caps, STACK_BYTES, Arc::default())
+            .map_err(|e| ModLoadError::Evaluate(e.to_string()))?;
         let js = Js {
-            ctx,
-            rt,
-            slice,
+            engine,
+            slice: setup.caps.slice,
             ui: setup.ui,
             meta: setup.meta,
             runtime: setup.runtime,
@@ -210,12 +183,9 @@ impl Js {
 
     /// Run `f` in the mod's context, timing it as one slice.
     fn enter<T>(&self, f: impl FnOnce(&Ctx<'_>) -> rquickjs::Result<T>) -> Result<T, String> {
-        self.slice.begin();
-        let out = self
-            .ctx
-            .with(|ctx| f(&ctx).map_err(|e| error_text(&ctx, &e)));
-        self.slice.end();
-        out
+        let context = self.engine.context();
+        let entered = || context.with(|ctx| f(&ctx).map_err(|e| error_text(&ctx, &e)));
+        self.engine.timed(self.slice, entered).0
     }
 
     fn dispatch(
@@ -272,10 +242,11 @@ impl Js {
     /// The job queue, to empty. Some = a job was stopped (it ran too long, or out of memory).
     fn run_jobs(&self) -> Option<String> {
         let mut stopped = None;
+        let runtime = self.engine.runtime();
         loop {
-            self.slice.begin();
-            let ran = self.rt.execute_pending_job();
-            let took = self.slice.end();
+            let (ran, took) = self
+                .engine
+                .timed(self.slice, || runtime.execute_pending_job());
             match ran {
                 Ok(true) => {}
                 Ok(false) => return stopped,
@@ -283,10 +254,10 @@ impl Js {
                     let thrown = job
                         .0
                         .with(|ctx| error_text(&ctx, &rquickjs::Error::Exception));
-                    stopped = Some(if took > self.slice.limit {
+                    stopped = Some(if took > self.slice {
                         format!(
                             "its code ran over {:.1}s without pausing and was stopped",
-                            self.slice.limit.as_secs_f64()
+                            self.slice.as_secs_f64()
                         )
                     } else {
                         format!("its code was stopped: {thrown}")

@@ -1,6 +1,6 @@
 //! FILE MODS: a `.js` or `.ts` file whose default export receives the `haest`
-//! API, run in embedded QuickJS -- one runtime and one thread per file. The API
-//! mirrors the TypeScript haest's:
+//! API, run in embedded QuickJS on haest-code's engine (the Code tool's) --
+//! one engine and one thread per file. The API mirrors the TypeScript haest's:
 //!
 //! ```js
 //! export default function (haest) {
@@ -56,7 +56,7 @@ use tokio_util::sync::CancellationToken;
 use channel::{JsMeta, JsThread, ToolChange};
 pub use files::{ModFileOptions, ModFiles};
 use handlers::JsHandlers;
-pub use load::{ModCaps, ModLoadError};
+pub use load::ModLoadError;
 use returns::text_of;
 use tool::JsTool;
 
@@ -138,12 +138,15 @@ use tool::JsTool;
 ///
 /// There is no `node:` API, no `import`, no timer, no network and no file
 /// access: a mod reaches the world through the `haest` API alone. Each file
-/// has its own QuickJS runtime on its own thread, so mods share nothing.
-/// [`ModCaps`] bounds it: by default the runtime has 128 MiB of memory,
-/// code that runs 10 s without a pause (awaiting does not count) is stopped
-/// (every call into the mod in flight then fails, and the next call runs as
-/// usual), and the default export must return within 30 s. A host sets other
-/// caps with [`JsMod::load_with`] or [`ModFileOptions::with_caps`].
+/// has its own QuickJS engine on its own thread, so mods share nothing; it
+/// is the engine the Code tool runs on, held to the same caps type,
+/// [`VmCaps`](crate::VmCaps). By default
+/// ([`VmCaps::mod_file`](crate::VmCaps::mod_file)) the engine has 128 MiB of
+/// memory, code that runs 10 s without a pause (awaiting does not count) is
+/// stopped (every call into the mod in flight then fails, and the next call
+/// runs as usual), and the default export must return within 30 s. A host
+/// sets other caps with [`JsMod::load_with`] or
+/// [`ModFileOptions::with_caps`].
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {
