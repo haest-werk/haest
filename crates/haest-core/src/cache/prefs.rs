@@ -31,14 +31,15 @@ impl AgentOptions {
 
     /// The same, sending `key` as the provider's prompt-cache routing key
     /// ([`ProviderRequest::cache_key`](crate::ProviderRequest::cache_key)):
-    /// requests with the same key land where their prefix is cached. A host
-    /// passes something stable for the conversation, such as its session id.
-    /// Without it none is sent.
+    /// OpenRouter keeps requests with the same key on the provider holding
+    /// their cache. A host passes something stable for the conversation, such
+    /// as its session id. Without it none is sent. OpenAI's own API never
+    /// gets it: there a key partitions the cache.
     ///
     /// ```
     /// use haest_core::AgentOptions;
     ///
-    /// let opts = AgentOptions::new("openai:gpt-6.1-sol").with_cache_key("session-42");
+    /// let opts = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5").with_cache_key("session-42");
     /// assert_eq!(opts.cache_key(), Some("session-42"));
     /// ```
     #[must_use]

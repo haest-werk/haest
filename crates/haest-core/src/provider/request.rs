@@ -35,11 +35,21 @@ pub struct ProviderRequest {
     /// How long the provider keeps the prompt cache this request writes, on
     /// every breakpoint it places; a provider with no choice ignores it.
     pub cache_ttl: CacheTtl,
-    /// What groups this request with others for the provider's prompt cache
-    /// (a conversation's id, say); None = nothing. OpenAI's own API takes it
-    /// as `prompt_cache_key`, OpenRouter as `session_id`; every other
-    /// provider leaves it out.
+    /// What groups this request with the others of its conversation for the
+    /// provider's prompt cache (the conversation's id, say); None = nothing.
+    /// OpenRouter takes it as `session_id`, its sticky routing: the
+    /// conversation stays on the provider holding its cache. Every other
+    /// provider leaves it out; OpenAI's own API in particular, where a key
+    /// partitions the cache ([`partition_key`](Self::partition_key)).
     pub cache_key: Option<String>,
+    /// A key that partitions the provider's prompt cache: only requests with
+    /// the same key share entries. OpenAI's own API takes it as
+    /// `prompt_cache_key` (on GPT-5.6 and later it partitions the cache; on
+    /// earlier models it routes); no other provider has one. None (the
+    /// default) sends none, so every conversation that starts on the same
+    /// prompt reads what another cached. Set it only to keep apart what must
+    /// not share a cache (one customer's conversations from another's).
+    pub partition_key: Option<String>,
     /// A cache pre-warm: the provider reads the request into its prompt
     /// cache and generates nothing. A provider sends one only when
     /// [`Provider::check_prewarm`](super::Provider::check_prewarm) says it
@@ -51,7 +61,8 @@ pub struct ProviderRequest {
 impl ProviderRequest {
     /// A call to `model` with `messages`: no system prompt, no tools, a fresh
     /// cancel token, the model's own effort, output cap and search, the
-    /// five-minute cache TTL, no cache key, and not a pre-warm.
+    /// five-minute cache TTL, no cache key or partition key, and not a
+    /// pre-warm.
     pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
@@ -64,6 +75,7 @@ impl ProviderRequest {
             web_search: None,
             cache_ttl: CacheTtl::default(),
             cache_key: None,
+            partition_key: None,
             prewarm: false,
         }
     }
@@ -131,12 +143,27 @@ impl ProviderRequest {
     /// ```
     /// use haest_core::ProviderRequest;
     ///
-    /// let req = ProviderRequest::new("gpt-6.1-sol", vec![]).with_cache_key("session-42");
+    /// let req = ProviderRequest::new("anthropic/claude-sonnet-5.5", vec![]).with_cache_key("session-42");
     /// assert_eq!(req.cache_key.as_deref(), Some("session-42"));
     /// ```
     #[must_use]
     pub fn with_cache_key(mut self, key: impl Into<String>) -> Self {
         self.cache_key = Some(key.into());
+        self
+    }
+
+    /// Its prompt cache kept apart from requests under any other `key`
+    /// ([`partition_key`](Self::partition_key)).
+    ///
+    /// ```
+    /// use haest_core::ProviderRequest;
+    ///
+    /// let req = ProviderRequest::new("gpt-6.1-sol", vec![]).with_partition_key("customer-7");
+    /// assert_eq!(req.partition_key.as_deref(), Some("customer-7"));
+    /// ```
+    #[must_use]
+    pub fn with_partition_key(mut self, key: impl Into<String>) -> Self {
+        self.partition_key = Some(key.into());
         self
     }
 

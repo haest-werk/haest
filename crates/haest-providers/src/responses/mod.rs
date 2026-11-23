@@ -65,8 +65,11 @@ endpoint_options! {
 /// output tokens with `MaxTokens`.
 ///
 /// OpenAI caches the prompt by itself, for its own time: a request's
-/// [`cache_ttl`](haest_core::ProviderRequest::cache_ttl) is not sent. Its
-/// [`cache_key`](haest_core::ProviderRequest::cache_key) goes out as
+/// [`cache_ttl`](haest_core::ProviderRequest::cache_ttl) is not sent, nor its
+/// [`cache_key`](haest_core::ProviderRequest::cache_key) (on GPT-5.6 and
+/// later a key partitions the cache, so one per conversation would keep
+/// conversations from sharing it). Its
+/// [`partition_key`](haest_core::ProviderRequest::partition_key) goes out as
 /// `prompt_cache_key` when the base URL is OpenAI's own API, and not to any
 /// other server. The Responses API reports no cost: an answer is priced from
 /// [`ResponsesOptions::with_pricing`] (the registry sets the catalog's). It

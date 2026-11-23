@@ -12,21 +12,30 @@ use super::{convert::build_responses_body, *};
 use crate::testing::{FakeHttp, FakeReply, collect, request, typed_sse};
 
 #[test]
-fn the_cache_key_goes_out_only_to_openais_own_api() {
+fn a_conversations_cache_key_is_not_sent_to_openai() {
     let keyed = request("gpt-6.1-sol").with_cache_key("session-1");
     let own = build_responses_body(&ResponsesOptions::new("openai", "k"), &keyed);
-    assert_eq!(own["prompt_cache_key"], "session-1");
+    assert!(own.get("prompt_cache_key").is_none());
+    assert_eq!(
+        own,
+        build_responses_body(
+            &ResponsesOptions::new("openai", "k"),
+            &request("gpt-6.1-sol")
+        )
+    );
+}
+
+#[test]
+fn an_explicit_partition_key_goes_out_only_to_openais_own_api() {
+    let parted = request("gpt-6.1-sol").with_partition_key("customer-7");
+    let own = build_responses_body(&ResponsesOptions::new("openai", "k"), &parted);
+    assert_eq!(own["prompt_cache_key"], "customer-7");
     let proxy = ResponsesOptions::new("openai", "k").with_base_url("https://proxy.example/v1");
     assert!(
-        build_responses_body(&proxy, &keyed)
+        build_responses_body(&proxy, &parted)
             .get("prompt_cache_key")
             .is_none()
     );
-    let unkeyed = build_responses_body(
-        &ResponsesOptions::new("openai", "k"),
-        &request("gpt-6.1-sol"),
-    );
-    assert!(unkeyed.get("prompt_cache_key").is_none());
 }
 
 #[test]

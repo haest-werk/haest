@@ -121,8 +121,11 @@ pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec
 /// ([`to_responses_input`]), the tools when there are any,
 /// `max_output_tokens` when `req.max_tokens` is above 0, `reasoning` for the
 /// effort ([`reasoning_params`]), `store: false` with the encrypted
-/// reasoning included, so the next request can replay it, and the cache key
-/// as `prompt_cache_key` when `opts` reach OpenAI's own API ([`is_openai_api`]).
+/// reasoning included, so the next request can replay it, and the partition
+/// key as `prompt_cache_key` when `opts` reach OpenAI's own API
+/// ([`is_openai_api`]). The request's `cache_key` is never sent: here a key
+/// partitions the cache, and a key per conversation would keep one
+/// conversation from reading what another cached.
 pub(crate) fn build_responses_body(opts: &ResponsesOptions, req: &ProviderRequest) -> Value {
     let provider_id = opts.id();
     let mut body = Map::new();
@@ -145,7 +148,7 @@ pub(crate) fn build_responses_body(opts: &ResponsesOptions, req: &ProviderReques
     body.insert("include".into(), json!(["reasoning.encrypted_content"]));
     body.insert("stream".into(), json!(true));
     if let Some(key) = req
-        .cache_key
+        .partition_key
         .as_deref()
         .filter(|_| is_openai_api(opts.base_url()))
     {

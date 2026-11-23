@@ -58,8 +58,8 @@ fn a_google_model_keeps_its_two_default_breakpoints_and_others_get_none() {
     assert!(breakpoints(&direct).is_empty());
 }
 
-fn key_fields(opts: &CompatOptions, key: &str) -> Vec<(String, Value)> {
-    let body = build_compat_body(opts, &request("m").with_cache_key(key));
+fn key_fields(opts: &CompatOptions, req: &ProviderRequest) -> Vec<(String, Value)> {
+    let body = build_compat_body(opts, req);
     ["session_id", "prompt_cache_key"]
         .into_iter()
         .filter_map(|f| body.get(f).map(|v| (f.to_string(), v.clone())))
@@ -67,18 +67,39 @@ fn key_fields(opts: &CompatOptions, key: &str) -> Vec<(String, Value)> {
 }
 
 #[test]
-fn the_cache_key_goes_only_where_the_server_documents_one() {
+fn the_cache_key_routes_on_openrouter_and_never_partitions_openai() {
     let field = |f: &str, v: &str| vec![(f.to_string(), json!(v))];
-    assert_eq!(key_fields(&openrouter(), "s-1"), field("session_id", "s-1"));
-    assert_eq!(key_fields(&openrouter(), &"x".repeat(257)), []);
+    let keyed = |key: &str| request("m").with_cache_key(key);
+    assert_eq!(
+        key_fields(&openrouter(), &keyed("s-1")),
+        field("session_id", "s-1")
+    );
+    assert_eq!(key_fields(&openrouter(), &keyed(&"x".repeat(257))), []);
     let openai = CompatOptions::new("direct", "k");
-    assert_eq!(key_fields(&openai, "s-1"), field("prompt_cache_key", "s-1"));
     let eu = CompatOptions::new("eu", "k").with_base_url("https://eu.api.openai.com/v1");
-    assert_eq!(key_fields(&eu, "s-1"), field("prompt_cache_key", "s-1"));
     let local = CompatOptions::new("local", "k").with_base_url("http://localhost:1234/v1");
-    assert_eq!(key_fields(&local, "s-1"), []);
+    for opts in [&openai, &eu, &local] {
+        assert_eq!(key_fields(opts, &keyed("s-1")), [], "{opts:?}");
+    }
     let body = build_compat_body(&openrouter(), &request("m"));
     assert!(body.get("session_id").is_none() && body.get("prompt_cache_key").is_none());
+}
+
+#[test]
+fn an_explicit_partition_key_goes_to_openais_own_api_only() {
+    let field = |f: &str, v: &str| vec![(f.to_string(), json!(v))];
+    let parted = request("m").with_partition_key("customer-7");
+    let openai = CompatOptions::new("direct", "k");
+    let eu = CompatOptions::new("eu", "k").with_base_url("https://eu.api.openai.com/v1");
+    for opts in [&openai, &eu] {
+        assert_eq!(
+            key_fields(opts, &parted),
+            field("prompt_cache_key", "customer-7")
+        );
+    }
+    let local = CompatOptions::new("local", "k").with_base_url("http://localhost:1234/v1");
+    assert_eq!(key_fields(&local, &parted), []);
+    assert_eq!(key_fields(&openrouter(), &parted), []);
 }
 
 #[tokio::test]

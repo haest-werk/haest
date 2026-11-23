@@ -50,6 +50,7 @@ impl RequestPrefix {
             web_search: self.web_search,
             cache_ttl: self.cache_ttl,
             cache_key: self.cache_key,
+            partition_key: None,
             prewarm: false,
         }
     }

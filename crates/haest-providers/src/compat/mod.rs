@@ -84,8 +84,9 @@ pub enum CompatFlavor {
 /// its last function tool gets one too. A request's
 /// [`cache_key`](haest_core::ProviderRequest::cache_key) goes to OpenRouter
 /// as `session_id` (its sticky routing; a key over 256 characters is not
-/// sent), and to OpenAI's own API as `prompt_cache_key`; any other server
-/// gets neither. It sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
+/// sent), and its [`partition_key`](haest_core::ProviderRequest::partition_key)
+/// to OpenAI's own API as `prompt_cache_key`; any other server gets
+/// neither. It sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
 ///
 /// # Examples
 ///
@@ -165,8 +166,8 @@ impl CompatProvider {
 /// one ([`mark_last_tool`]), then the web search server tool when
 /// `req.web_search` is set and the flavor is OpenRouter), `max_tokens` when
 /// above 0, the flavor's extras ([`flavor_extras`]), a `reasoning_effort`
-/// fitted to [`CompatOptions::with_reasoning_effort`], and the cache key
-/// where the server takes one ([`cache_key_extras`]).
+/// fitted to [`CompatOptions::with_reasoning_effort`], and the cache keys
+/// where the server takes them ([`cache_key_extras`]).
 pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
     mark_last_tool(&mut tools, opts.flavor, &req.model, req.cache_ttl);
@@ -204,7 +205,7 @@ pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> 
         opts.reasoning_effort.as_ref(),
         req.effort,
     ));
-    map.extend(cache_key_extras(opts, req.cache_key.as_deref()));
+    map.extend(cache_key_extras(opts, req));
     body
 }
 

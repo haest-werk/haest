@@ -191,8 +191,8 @@ pub(crate) const OPENAI_URL: &str = "https://api.openai.com/v1";
 /// Whether an OpenAI dialect with `base_url` reaches OpenAI's own API: none
 /// set ([`OPENAI_URL`]), or a host of `api.openai.com` or under it (a
 /// regional one such as `eu.api.openai.com`). Only there does a field that
-/// only OpenAI documents (`prompt_cache_key`) go out; an unknown server may
-/// refuse a field it does not know.
+/// only OpenAI documents (`prompt_cache_key`, from a request's partition key)
+/// go out; an unknown server may refuse a field it does not know.
 pub(crate) fn is_openai_api(base_url: Option<&str>) -> bool {
     let Some(url) = base_url else { return true };
     let authority = &url[authority(url)];

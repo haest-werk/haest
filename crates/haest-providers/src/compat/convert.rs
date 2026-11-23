@@ -9,7 +9,7 @@ use haest_core::{
     cache::CacheTtl,
     catalog::Reasoning,
     messages::{AssistantMessage, Message},
-    provider::{Effort, ToolSpec, nearest_accepted_effort},
+    provider::{Effort, ProviderRequest, ToolSpec, nearest_accepted_effort},
 };
 use serde_json::{Map, Value, json};
 
@@ -63,19 +63,20 @@ pub(super) fn mark_last_tool(
 /// OpenRouter's documented limit on a `session_id`.
 const SESSION_ID_MAX: usize = 256;
 
-/// The cache `key` as the server named by `opts` takes it: OpenRouter's
-/// `session_id` (its sticky routing key, at most 256 characters; a longer
-/// key is not sent), OpenAI's own API's `prompt_cache_key`; nothing for any
-/// other server, which may refuse a field it does not know.
-pub(super) fn cache_key_extras(opts: &CompatOptions, key: Option<&str>) -> Map<String, Value> {
+/// The request's cache keys as the server named by `opts` takes them:
+/// `cache_key` as OpenRouter's `session_id` (its sticky routing key, at most
+/// 256 characters; a longer key is not sent), and `partition_key` as OpenAI's
+/// own API's `prompt_cache_key`. Nothing for any other server, which may
+/// refuse a field it does not know; OpenAI's own API never gets `cache_key`,
+/// since there a key partitions the cache instead of routing to it.
+pub(super) fn cache_key_extras(opts: &CompatOptions, req: &ProviderRequest) -> Map<String, Value> {
     let mut extras = Map::new();
-    let Some(key) = key else { return extras };
-    match opts.flavor {
-        CompatFlavor::OpenRouter if key.chars().count() <= SESSION_ID_MAX => {
+    match (opts.flavor, &req.cache_key, &req.partition_key) {
+        (CompatFlavor::OpenRouter, Some(key), _) if key.chars().count() <= SESSION_ID_MAX => {
             extras.insert("session_id".into(), json!(key));
         }
-        CompatFlavor::OpenRouter => {}
-        _ if is_openai_api(opts.base_url()) => {
+        (CompatFlavor::OpenRouter, _, _) => {}
+        (_, _, Some(key)) if is_openai_api(opts.base_url()) => {
             extras.insert("prompt_cache_key".into(), json!(key));
         }
         _ => {}
