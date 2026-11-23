@@ -7,10 +7,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -26,7 +23,7 @@ use super::{
     parts::{Logs, as_function, later},
     path::path_op,
     thread::VmPort,
-    types::{VmBeat, VmJob, VmStop},
+    types::{VmBeat, VmJob},
 };
 
 /// A heartbeat at most this often.
@@ -61,11 +58,12 @@ impl Shared {
 }
 
 /// The run's clock and its heartbeat: read by the loop AND, through the
-/// engine's watch, the interrupt.
+/// engine's watch, the interrupt. Whether the run must stop is the watch's
+/// to say ([`crate::engine::Watch::expired`]); the deadline here only bounds
+/// how long the loop waits.
 pub(crate) struct Clock {
     pub started: Instant,
     pub deadline: Instant,
-    stop: Arc<AtomicBool>,
     last_beat: Cell<Instant>,
     shared: Rc<Shared>,
     send: Box<dyn Fn(VmBeat)>,
@@ -77,21 +75,10 @@ impl Clock {
         Rc::new(Self {
             started,
             deadline: later(started, job.caps.timeout),
-            stop: job.stop.clone(),
             last_beat: Cell::new(started),
             shared,
             send,
         })
-    }
-
-    pub(super) fn stop_reason(&self) -> Option<VmStop> {
-        if self.stop.load(Ordering::SeqCst) {
-            Some(VmStop::Interrupted)
-        } else if Instant::now() > self.deadline {
-            Some(VmStop::Timeout)
-        } else {
-            None
-        }
     }
 
     pub(super) fn beat_if_due(&self) {

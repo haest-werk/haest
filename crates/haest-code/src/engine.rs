@@ -31,7 +31,7 @@ use std::{
 use haest_core::__private::panic_message;
 use rquickjs::{Context, Runtime};
 
-use crate::vm::VmCaps;
+use crate::vm::{VmCaps, VmStop};
 
 /// An engine thread's stack: room for QuickJS's own stack cap plus the Rust
 /// frames around it.
@@ -148,15 +148,27 @@ impl Watch {
         *self.on_poll.borrow_mut() = Some(Box::new(f));
     }
 
-    /// True = stop the guest now.
+    /// Why the guest must stop, if it must: the stop flag is set
+    /// ([`VmStop::Interrupted`]), or the armed stretch has run past its limit
+    /// ([`VmStop::Timeout`]). The one check, for the interrupt and for a run's
+    /// own loop alike.
+    pub(crate) fn expired(&self) -> Option<VmStop> {
+        if self.stop.load(Ordering::SeqCst) {
+            return Some(VmStop::Interrupted);
+        }
+        let (since, limit) = self.armed.get()?;
+        (since.elapsed() > limit).then_some(VmStop::Timeout)
+    }
+
+    /// True = stop the guest now. A disarmed watch never stops it.
     fn poll(&self) -> bool {
-        let Some((since, limit)) = self.armed.get() else {
+        if self.armed.get().is_none() {
             return false;
-        };
+        }
         if let Some(f) = &*self.on_poll.borrow() {
             f();
         }
-        self.stop.load(Ordering::SeqCst) || since.elapsed() > limit
+        self.expired().is_some()
     }
 }
 
@@ -237,6 +249,26 @@ mod tests {
         assert_eq!(eval(&engine, "for (let i = 0; i < 2e6; i++) {}"), Ok(()));
         engine.watch().arm(Instant::now(), Duration::from_secs(60));
         assert!(eval(&engine, "for (;;) {}").is_err());
+    }
+
+    #[test]
+    fn expired_says_why_the_guest_must_stop() {
+        let (engine, stop) = engine(&VmCaps::default());
+        let watch = engine.watch();
+        assert_eq!(watch.expired(), None);
+        watch.arm(Instant::now(), Duration::from_secs(60));
+        assert_eq!(watch.expired(), None);
+        watch.arm(
+            Instant::now() - Duration::from_secs(2),
+            Duration::from_secs(1),
+        );
+        assert_eq!(watch.expired(), Some(VmStop::Timeout));
+        watch.arm(Instant::now(), Duration::MAX);
+        assert_eq!(watch.expired(), None);
+        stop.store(true, Ordering::SeqCst);
+        assert_eq!(watch.expired(), Some(VmStop::Interrupted));
+        watch.disarm();
+        assert_eq!(watch.expired(), Some(VmStop::Interrupted));
     }
 
     #[test]

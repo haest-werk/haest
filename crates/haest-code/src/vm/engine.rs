@@ -97,7 +97,7 @@ impl Run<'_> {
     }
 
     fn finish(mut self) -> VmRun {
-        self.out.stopped = self.out.stopped.or(self.clock.stop_reason());
+        self.out.stopped = self.out.stopped.or(self.engine.watch().expired());
         // Every value haest still holds goes before the runtime does.
         self.shared.pending.borrow_mut().clear();
         let Run {
@@ -127,7 +127,7 @@ impl Run<'_> {
             if let Some(settled) = self.settled(promise, keep_value) {
                 return settled.err();
             }
-            self.out.stopped = self.clock.stop_reason();
+            self.out.stopped = self.engine.watch().expired();
             if self.out.stopped.is_some() {
                 return None;
             }
@@ -167,7 +167,7 @@ impl Run<'_> {
     /// Calls the code started and never awaited: let them answer (and their
     /// callbacks run) before the run ends.
     fn drain(&mut self) {
-        while self.shared.inflight() > 0 && self.clock.stop_reason().is_none() {
+        while self.shared.inflight() > 0 && self.engine.watch().expired().is_none() {
             self.wait_once();
             self.pump();
         }
@@ -219,7 +219,7 @@ impl Run<'_> {
     fn pump(&self) {
         self.engine.context().with(|ctx| {
             while ctx.execute_pending_job() {
-                if self.clock.stop_reason().is_some() {
+                if self.engine.watch().expired().is_some() {
                     break;
                 }
             }
