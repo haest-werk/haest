@@ -282,7 +282,7 @@ timeout = 10
 | `url` | an `http://` or `https://` URL, POSTed per event: an `HttpHook` | |
 | `dialect` | `haest` (every event) or `claude` (Claude Code's JSON, on the events Claude Code has: never `model.before` or `model.after`) | `haest` |
 | `matcher` | on `tool.before` and `tool.after` only: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`). Claude Code's `Edit\|Write` and `Bash.*` are regular expressions, which haest does not read, and `Edit,Write` is a list: write one entry per tool | every tool |
-| `timeout` | seconds (`10`, `2.5`); past them the hook failed. The one time setting in seconds rather than minutes: Claude Code's key, as it is | 60 |
+| `timeout` | seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes, and the cache's TTLs are the words `5m` and `1h` | 60 |
 | `on_error` | what a failure does: `block` or `continue` | `block` on `tool.before`, else `continue` |
 | `headers` | a `url`'s headers, `{ name = "value" }`; `${NAME}` and `${NAME:-default}` in a value are filled in from haest's environment | none |
 

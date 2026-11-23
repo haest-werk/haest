@@ -126,6 +126,8 @@ fn a_misspelt_key_or_a_value_it_does_not_take_is_refused() {
         why.contains("models.\"a*b\"") && why.contains("prefix ending in `*`"),
         "{why}"
     );
+    let why = read("keep_warm_minutes = 1e300").unwrap_err().to_string();
+    assert!(why.contains("1e300 minutes is too long"), "{why}");
     assert_eq!(
         read("compact_before_expire = false")
             .unwrap()

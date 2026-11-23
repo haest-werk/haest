@@ -36,7 +36,8 @@ async fn caps_and_subagents_follow_their_variables() {
 }
 
 /// Both wall-clock caps read and write minutes, a fraction too; one too long
-/// for a `Duration` is the longest there is, and a negative one is refused.
+/// for a `Duration` is refused as too long, as `keep_warm_minutes` is (one
+/// rule for every time setting), and so is a negative one.
 #[tokio::test]
 async fn the_wall_clock_caps_are_minutes_either_way() {
     let s = settings(
@@ -52,9 +53,21 @@ async fn the_wall_clock_caps_are_minutes_either_way() {
     let mut c = crate::Config::from(s);
     assert_eq!(c.get("max_turn_minutes").as_deref(), Some("0.5"));
     assert_eq!(c.get("subagent_minutes").as_deref(), Some("2.5"));
-    c.set("max_turn_minutes", "1e300").unwrap();
-    assert_eq!(c.settings.caps.max_turn_time, std::time::Duration::MAX);
+    let too_long = c.set("max_turn_minutes", "1e300").unwrap_err().to_string();
+    assert!(too_long.contains("1e300 minutes is too long"), "{too_long}");
+    assert_eq!(c.get("max_turn_minutes").as_deref(), Some("0.5"), "kept");
     assert!(c.set("subagent_minutes", "-1").is_err());
+    for key in ["max_turn_minutes", "subagent_minutes"] {
+        let text = format!("{key} = 1e300");
+        let err = run("/w", &[(USER_FILE, &text)], &[], &[])
+            .await
+            .unwrap_err();
+        assert_eq!(refused(&err), Some((&file(USER_FILE), key)), "{err}");
+        assert!(
+            err.to_string().contains("1e300 minutes is too long"),
+            "{err}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -47,8 +47,9 @@ impl Serialize for CacheSettings {
     }
 }
 
-/// A duration spelled in minutes (`120`, `1.5`), as every time setting is
-/// but a hook's `timeout` (seconds): haest-core's one reader and writer.
+/// A duration spelled in minutes (`120`, `1.5`), as every time setting that
+/// takes a number is but a hook's `timeout` (seconds): haest-core's one
+/// reader and writer.
 pub(super) mod minutes {
     use super::*;
 

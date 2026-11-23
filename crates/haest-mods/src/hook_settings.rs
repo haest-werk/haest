@@ -8,8 +8,8 @@ use std::{collections::BTreeMap, fmt, time::Duration};
 
 use haest_core::{
     __private::{
-        BadPattern, DurationIn, PatternOf, TimeUnit, check_pattern, deserialize_in, expand_vars,
-        unset_note,
+        BadDuration, BadPattern, DurationIn, PatternOf, TimeUnit, check_pattern, duration_in,
+        expand_vars, unset_note,
     },
     words::UnknownWord,
 };
@@ -140,7 +140,7 @@ pub struct HookSettings {
 /// | `url` | an `http://` or `https://` URL, POSTed the event's JSON per event, the response's body the decision (haest-bridges' `HttpHook`) | |
 /// | `dialect` | `haest` (the payload's own JSON, every event) or `claude` (Claude Code's hook JSON, not on `model.before` or `model.after`) | `haest` |
 /// | `matcher` | the tools it is for, on `tool.before` and `tool.after` only: a name (`Bash`) or a prefix ending in `*` (`mcp__github__*`) | every tool |
-/// | `timeout` | seconds it may take (`10`, `2.5`); past them it failed. The one time setting not in minutes: Claude Code's key, as it is | 60 |
+/// | `timeout` | seconds it may take (`10`, `2.5`); past them it failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes, and the cache's TTLs are the words `5m` and `1h` | 60 |
 /// | `on_error` | what its failure does: `block` or `continue` | `block` on `tool.before`, else `continue` |
 /// | `headers` | a `url` hook's headers, `{ name = "value" }`; `${NAME}` in a value is filled in from haest's environment when loaded ([`HookSettings::filled`]) | none |
 ///
@@ -558,11 +558,15 @@ fn check_url(url: &str) -> Result<(), String> {
 /// What a `timeout` that is not one is refused with.
 const TIMEOUT: &str = "`timeout` must be a number of seconds above 0 (10, 2.5)";
 
-/// `timeout`: seconds, a whole number or not, read as every time setting
-/// is (haest-core's [`deserialize_in`]) but in seconds, Claude Code's unit
-/// for its key; [`HookEntry::check`] refuses 0.
+/// `timeout`: seconds, a whole number or not, read by the one rule every
+/// time setting's number is (haest-core's [`duration_in`]) but in seconds,
+/// Claude Code's unit for its key; [`HookEntry::check`] refuses 0.
 fn timeout(seconds: &Value) -> Result<Duration, String> {
-    deserialize_in(seconds, TimeUnit::Seconds).map_err(|_not_seconds| TIMEOUT.to_string())
+    let n = seconds.as_f64().ok_or(TIMEOUT)?;
+    duration_in(n, TimeUnit::Seconds).map_err(|why| match why {
+        BadDuration::TooLong { .. } => format!("`timeout`: {why}"),
+        _below_zero => TIMEOUT.to_string(),
+    })
 }
 
 /// `headers`: a table of names to text. An error names the header, never

@@ -231,9 +231,10 @@ pub mod __private {
     /// told by `PatternOf` whether it names tools or models.
     pub use crate::pattern::{BadPattern, PatternOf, check as check_pattern, name_matches};
     /// The one way a duration setting is spelled as a number of a unit:
-    /// haest-settings' minutes (`keep_warm_minutes`), the `hooks`
-    /// setting's seconds (`timeout`).
-    pub use crate::time_unit::{DurationIn, TimeUnit, deserialize_in};
+    /// haest-settings' minutes (`keep_warm_minutes`), haest-config's
+    /// (`max_turn_minutes`, `subagent_minutes`), the `hooks` setting's
+    /// seconds (`timeout`). `duration_in` is the one rule for the number.
+    pub use crate::time_unit::{BadDuration, DurationIn, TimeUnit, deserialize_in, duration_in};
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }
 

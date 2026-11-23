@@ -4,8 +4,12 @@
 use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
-    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
-    wind_down::WindDown, words::UnknownWord,
+    __private::{TimeUnit, duration_in},
+    Effort, WorkspaceMode,
+    deferred_tools::DeferMode,
+    provider::WebSearchEngine,
+    wind_down::WindDown,
+    words::UnknownWord,
 };
 use haest_mods::HookSettings;
 use haest_settings::{BuiltinTools, CacheSettings, ContextSources, ModReload, SkillSources};
@@ -178,16 +182,18 @@ impl Raw for Vec<String> {
     }
 }
 
-/// A wall-clock cap, in minutes as every time setting spells it but a
-/// hook's `timeout` (seconds, Claude Code's key as it is); a fraction too,
-/// 0 = no cap. One too long for a `Duration` is the longest there is.
+/// A wall-clock cap, in minutes as every time setting that takes a number
+/// spells it but a hook's `timeout` (seconds, Claude Code's key as it is);
+/// a fraction too, 0 = no cap. The number is read by haest-core's one rule
+/// for a duration setting ([`duration_in`]): one too long for a `Duration`
+/// is refused.
 impl Raw for Duration {
     fn to_raw(&self) -> Option<String> {
         Some((self.as_secs_f64() / 60.0).to_string())
     }
     fn from_raw(raw: &str) -> Result<Self, String> {
         let minutes = number(raw, None)?;
-        Ok(Duration::try_from_secs_f64(minutes * 60.0).unwrap_or(Duration::MAX))
+        duration_in(minutes, TimeUnit::Minutes).map_err(|why| why.to_string())
     }
 }
 

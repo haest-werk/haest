@@ -93,8 +93,9 @@ pub struct CacheSettings {
     /// wrote instead of read ends it, and the human is told. Default off.
     pub keep_warm: bool,
     /// How long after the last turn keep-warm goes on: `keep_warm_minutes`
-    /// in a file, in minutes like every time setting but a hook's `timeout`
-    /// (seconds, Claude Code's key as it is). Default an hour.
+    /// in a file, in minutes like every time setting that takes a number but
+    /// a hook's `timeout` (seconds, Claude Code's key as it is). Default an
+    /// hour.
     #[serde(rename = "keep_warm_minutes", with = "serde_impls::minutes")]
     pub keep_warm_time: Duration,
     /// Compact an idle conversation while its cache is still warm, so the

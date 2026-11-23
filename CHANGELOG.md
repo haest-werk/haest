@@ -57,6 +57,11 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - Every `testing` module and feature is outside semver, as `__private` is:
   haest-core's, haest-providers', haest-mods', haest-http's and the
   facade's. They are for `dev-dependencies` only and change in any release.
+- haest-config: `max_turn_minutes` or `subagent_minutes` too long for a
+  `Duration` (`1e300`) is refused at load, naming the setting ("1e300
+  minutes is too long"), as every time setting's number is; it was read
+  as the longest duration there is. A config file, variable or flag
+  holding one no longer loads.
 
 ### Added
 

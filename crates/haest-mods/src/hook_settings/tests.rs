@@ -168,6 +168,17 @@ fn a_matcher_that_is_a_regular_expression_or_a_list_says_which() {
     }
 }
 
+/// A `timeout` too long for a `Duration` is refused as too long, not as a
+/// number below 0.
+#[test]
+fn a_timeout_too_long_is_refused_as_too_long() {
+    let why = read(json!({ "turn.end": [{ "command": "x", "timeout": 1e300 }] })).unwrap_err();
+    assert!(
+        why.contains("`timeout`: 1e300 seconds is too long"),
+        "{why}"
+    );
+}
+
 /// Neither a header's value nor a URL (which may carry a password) is in a
 /// refusal.
 #[test]
