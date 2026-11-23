@@ -50,13 +50,13 @@ pub struct ProviderRequest {
     /// partition key: the agent's [`CachePolicy`](crate::cache::CachePolicy)
     /// plans it, checked. Each provider sends what it takes of it.
     pub cache: CachePlan,
-    /// What groups this request with the others of its conversation for the
-    /// provider's prompt cache (the conversation's id, say); None = nothing.
-    /// OpenRouter takes it as `session_id`, its sticky routing: the
-    /// conversation stays on the provider holding its cache. Every other
-    /// provider leaves it out; OpenAI's own API in particular, where a key
-    /// partitions the cache ([`CachePlan::partition_key`]).
-    pub cache_key: Option<String>,
+    /// What routes this request to the same upstream as the others of its
+    /// conversation (the conversation's id, say), so it lands where its
+    /// prompt cache is; None = nothing. It is no cache key: OpenRouter takes
+    /// it as `session_id`, its sticky routing, and no other provider routes,
+    /// so none sends it. The key OpenAI's own API partitions its cache by is
+    /// the plan's [`CachePlan::partition_key`].
+    pub routing_key: Option<String>,
     /// A cache pre-warm: the provider reads the request into its prompt
     /// cache and generates as little as it can (nothing on Anthropic's own
     /// API, one token on OpenRouter). A provider sends one only when
@@ -70,7 +70,7 @@ impl ProviderRequest {
     /// A call to `model` with `messages`: no system prompt, no tools, no
     /// tool baseline, a fresh cancel token, the model's own effort, output
     /// cap and search, the default cache plan ([`CachePlan::default`]: five
-    /// minutes), no cache key or partition key, and not a pre-warm.
+    /// minutes), no routing key or partition key, and not a pre-warm.
     pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
@@ -83,7 +83,7 @@ impl ProviderRequest {
             max_tokens: None,
             web_search: None,
             cache: CachePlan::default(),
-            cache_key: None,
+            routing_key: None,
             prewarm: false,
         }
     }
@@ -190,18 +190,18 @@ impl ProviderRequest {
         self
     }
 
-    /// Grouped under `key` for the provider's prompt cache
-    /// ([`cache_key`](Self::cache_key)).
+    /// Routed with the other requests under `key`
+    /// ([`routing_key`](Self::routing_key)).
     ///
     /// ```
     /// use haest_core::ProviderRequest;
     ///
-    /// let req = ProviderRequest::new("anthropic/claude-sonnet-5.5", vec![]).with_cache_key("session-42");
-    /// assert_eq!(req.cache_key.as_deref(), Some("session-42"));
+    /// let req = ProviderRequest::new("anthropic/claude-sonnet-5.5", vec![]).with_routing_key("session-42");
+    /// assert_eq!(req.routing_key.as_deref(), Some("session-42"));
     /// ```
     #[must_use]
-    pub fn with_cache_key(mut self, key: impl Into<String>) -> Self {
-        self.cache_key = Some(key.into());
+    pub fn with_routing_key(mut self, key: impl Into<String>) -> Self {
+        self.routing_key = Some(key.into());
         self
     }
 

@@ -1,5 +1,6 @@
-//! The prompt cache on OpenAI's Responses API: the cache key only to
-//! OpenAI's own API, a price for an API that reports none, and no pre-warm.
+//! The prompt cache on OpenAI's Responses API: no routing key, the partition
+//! key only to OpenAI's own API, a price for an API that reports none, and no
+//! pre-warm.
 
 use haest_core::{
     cache::{CacheTtl, PrewarmRefused},
@@ -12,8 +13,8 @@ use super::{convert::build_responses_body, *};
 use crate::testing::{FakeHttp, FakeReply, collect, request, typed_sse};
 
 #[test]
-fn a_conversations_cache_key_is_not_sent_to_openai() {
-    let keyed = request("gpt-6.1-sol").with_cache_key("session-1");
+fn a_conversations_routing_key_is_not_sent_to_openai() {
+    let keyed = request("gpt-6.1-sol").with_routing_key("session-1");
     let own = build_responses_body(&ResponsesOptions::new("openai", "k"), &keyed);
     assert!(own.get("prompt_cache_key").is_none());
     assert_eq!(

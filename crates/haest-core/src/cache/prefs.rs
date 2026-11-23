@@ -15,11 +15,11 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 pub(crate) struct CachePrefs {
     pub(crate) policy: Option<CachePolicyRef>,
-    pub(crate) key: Option<String>,
+    pub(crate) routing_key: Option<String>,
 }
 
 /// Two options are equal when they hold the same policy (one handle a clone
-/// of the other, or both the default) and the same key.
+/// of the other, or both the default) and the same routing key.
 impl PartialEq for CachePrefs {
     fn eq(&self, other: &Self) -> bool {
         let same_policy = match (&self.policy, &other.policy) {
@@ -27,17 +27,17 @@ impl PartialEq for CachePrefs {
             (Some(a), Some(b)) => CachePolicyRef::ptr_eq(a, b),
             _ => false,
         };
-        same_policy && self.key == other.key
+        same_policy && self.routing_key == other.routing_key
     }
 }
 
-/// An agent's prompt cache: its policy and key, the plan its last loop
-/// request sent, when the cache was last used, whether idle ticks are due,
-/// and what the human was already told.
+/// An agent's prompt cache: its policy and routing key, the plan its last
+/// loop request sent, when the cache was last used, whether idle ticks are
+/// due, and what the human was already told.
 #[derive(Debug)]
 pub(crate) struct CacheState {
     pub(crate) policy: CachePolicyRef,
-    pub(crate) key: Option<String>,
+    pub(crate) routing_key: Option<String>,
     pub(crate) last_plan: Option<CachePlan>,
     /// When the loop's last answered model call started (ms since the
     /// epoch): where the human's idle time is counted from.
@@ -61,7 +61,7 @@ impl CacheState {
     pub(crate) fn new(prefs: CachePrefs) -> Self {
         Self {
             policy: prefs.policy.unwrap_or_else(|| CachePlan::default().into()),
-            key: prefs.key,
+            routing_key: prefs.routing_key,
             last_plan: None,
             last_call_ms: None,
             last_refresh_ms: None,
@@ -106,23 +106,23 @@ impl AgentOptions {
         self
     }
 
-    /// The same, sending `key` as the provider's prompt-cache routing key
-    /// ([`ProviderRequest::cache_key`](crate::ProviderRequest::cache_key)):
+    /// The same, with `key` as each model call's routing key
+    /// ([`ProviderRequest::routing_key`](crate::ProviderRequest::routing_key)):
     /// OpenRouter keeps requests with the same key on the provider holding
     /// their cache. A host passes something stable for the conversation, such
-    /// as its session id. Without it none is sent. OpenAI's own API never
-    /// gets it: there a key partitions the cache
-    /// ([`CachePlan::partition_key`]).
+    /// as its session id. Without it none is sent. It is never a cache key:
+    /// what keeps one cache apart from another on OpenAI's own API is the
+    /// policy's [`CachePlan::partition_key`].
     ///
     /// ```
     /// use haest_core::AgentOptions;
     ///
-    /// let opts = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5").with_cache_key("session-42");
-    /// assert_eq!(opts.cache_key(), Some("session-42"));
+    /// let opts = AgentOptions::new("openrouter:anthropic/claude-sonnet-5.5").with_routing_key("session-42");
+    /// assert_eq!(opts.routing_key(), Some("session-42"));
     /// ```
     #[must_use]
-    pub fn with_cache_key(mut self, key: impl Into<String>) -> Self {
-        self.cache.key = Some(key.into());
+    pub fn with_routing_key(mut self, key: impl Into<String>) -> Self {
+        self.cache.routing_key = Some(key.into());
         self
     }
 
@@ -132,15 +132,15 @@ impl AgentOptions {
         self.cache.policy.as_ref()
     }
 
-    /// The prompt-cache routing key each model call sends; None sends none.
-    /// Becomes [`Agent::cache_key`].
-    pub fn cache_key(&self) -> Option<&str> {
-        self.cache.key.as_deref()
+    /// The routing key each model call sends; None sends none. Becomes
+    /// [`Agent::routing_key`].
+    pub fn routing_key(&self) -> Option<&str> {
+        self.cache.routing_key.as_deref()
     }
 }
 
-/// The cache policy and key between turns, as [`Agent::set_effort`] changes
-/// the effort, and the plan the last request sent.
+/// The cache policy and routing key between turns, as [`Agent::set_effort`]
+/// changes the effort, and the plan the last request sent.
 ///
 /// ```
 /// # #[cfg(feature = "testing")]
@@ -155,14 +155,14 @@ impl AgentOptions {
 /// let provider = ScriptedProvider::new([text_answer("hi")]);
 /// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
 /// let deps = AgentDeps::new(shared, Tools::new(), "Be brief.");
-/// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m").with_cache_key("s-1"));
+/// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m").with_routing_key("s-1"));
 ///
 /// // The human steps away often: an hour from the next model call on.
 /// agent.set_cache_policy(CachePlan::standard(CacheTtl::OneHour));
 /// agent.run("hello", &mut Vec::<LoopEvent>::new()).await;
 /// let sent = &provider.requests()[0];
 /// assert_eq!(sent.cache.history, Some(CacheTtl::OneHour));
-/// assert_eq!(sent.cache_key.as_deref(), Some("s-1"));
+/// assert_eq!(sent.routing_key.as_deref(), Some("s-1"));
 /// assert_eq!(agent.last_cache_plan(), Some(&sent.cache));
 /// # }
 /// # #[cfg(not(feature = "testing"))]
@@ -180,14 +180,14 @@ impl Agent {
         self.cache.policy = policy.into();
     }
 
-    /// The prompt-cache routing key the next model call sends; None sends none.
-    pub fn cache_key(&self) -> Option<&str> {
-        self.cache.key.as_deref()
+    /// The routing key the next model call sends; None sends none.
+    pub fn routing_key(&self) -> Option<&str> {
+        self.cache.routing_key.as_deref()
     }
 
     /// `key` as the routing key from the next model call on.
-    pub fn set_cache_key(&mut self, key: impl Into<String>) {
-        self.cache.key = Some(key.into());
+    pub fn set_routing_key(&mut self, key: impl Into<String>) {
+        self.cache.routing_key = Some(key.into());
     }
 
     /// The cache plan the loop's last model call sent, as checked; None

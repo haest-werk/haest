@@ -97,9 +97,14 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   and compaction starts over from the tools on offer then. Every other
   model, OpenRouter's Anthropic models included, gets the current tools
   as before. `ProviderRequest::tool_baseline` carries the baseline.
-- haest-providers: OpenAI's own API gets no cache key by default (on
-  GPT-5.6 and later a key partitions the cache instead of routing to it);
-  OpenRouter gets the session id as its sticky-routing key.
+- haest-core, haest-providers: a conversation's routing key
+  (`AgentOptions::with_routing_key`, `Agent::set_routing_key`,
+  `ProviderRequest::routing_key`; the runtime sets the session id) goes to
+  OpenRouter as `session_id`, its sticky routing, so the conversation stays
+  on the provider holding its cache. No other provider gets it. OpenAI's
+  own API gets no cache key by default (on GPT-5.6 and later a key
+  partitions the cache instead of routing to it); a policy that must keep
+  caches apart sets `CachePlan::partition_key`, sent as `prompt_cache_key`.
 - haest-mods: the loop events `model.before`, `model.after` and
   `turn.end`, on `Mod` and in mod files: stop the turn, steer it, keep it
   going, or compact it (`{ compact: true }` or `{ compact: { instructions } }`

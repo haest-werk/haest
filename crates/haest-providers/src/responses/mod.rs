@@ -66,12 +66,12 @@ endpoint_options! {
 ///
 /// OpenAI caches the prompt by itself, for its own time: the breakpoints of
 /// a request's [`cache`](haest_core::ProviderRequest::cache) plan are not
-/// sent, nor its [`cache_key`](haest_core::ProviderRequest::cache_key) (on
-/// GPT-5.6 and later a key partitions the cache, so one per conversation
-/// would keep conversations from sharing it). Its plan's
-/// [`partition_key`](haest_core::cache::CachePlan::partition_key) goes out as
-/// `prompt_cache_key` when the base URL is OpenAI's own API, and not to any
-/// other server. The Responses API reports no cost: an answer is priced from
+/// sent. Its [`routing_key`](haest_core::ProviderRequest::routing_key) is
+/// dropped: the API's one key, `prompt_cache_key`, partitions the cache on
+/// GPT-5.6 and later, so a key per conversation would keep conversations
+/// from sharing it. That key is the plan's
+/// [`partition_key`](haest_core::cache::CachePlan::partition_key), sent when
+/// the base URL is OpenAI's own API, and not to any other server. The Responses API reports no cost: an answer is priced from
 /// [`ResponsesOptions::with_pricing`] (the registry sets the catalog's). It
 /// sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
 ///

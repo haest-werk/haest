@@ -252,12 +252,12 @@ where
     let system_prompt = ModSystemPrompt::new(main_prompt, mods.clone());
     let deps = AgentDeps::new(shared, tools, system_prompt);
 
-    // The session id groups the conversation's requests for the provider's
-    // prompt cache; a /clear keeps it, since the new conversation starts on
-    // the same system prompt and tools.
+    // The session id routes the conversation's requests to the upstream
+    // holding its prompt cache; a /clear keeps it, since the new
+    // conversation starts on the same system prompt and tools.
     let mut agent_opts = AgentOptions::new(model)
         .with_cache_policy(s.cache.clone())
-        .with_cache_key(hooks.store().session_id());
+        .with_routing_key(hooks.store().session_id());
     if let Some(effort) = effort {
         agent_opts = agent_opts.with_effort(effort);
     }

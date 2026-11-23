@@ -78,15 +78,14 @@ pub(super) fn mark_last_tool(
 /// OpenRouter's documented limit on a `session_id`.
 const SESSION_ID_MAX: usize = 256;
 
-/// The request's cache keys as the server named by `opts` takes them:
-/// `cache_key` as OpenRouter's `session_id` (its sticky routing key, at most
-/// 256 characters; a longer key is not sent), and `partition_key` as OpenAI's
-/// own API's `prompt_cache_key`. Nothing for any other server, which may
-/// refuse a field it does not know; OpenAI's own API never gets `cache_key`,
-/// since there a key partitions the cache instead of routing to it.
-pub(super) fn cache_key_extras(opts: &CompatOptions, req: &ProviderRequest) -> Map<String, Value> {
+/// The request's two keys as the server named by `opts` takes them: on
+/// OpenRouter the `routing_key` as `session_id` (its sticky routing, at most
+/// 256 characters; a longer key is not sent), on OpenAI's own API the plan's
+/// `partition_key` as `prompt_cache_key`. Nothing for any other server, which
+/// may refuse a field it does not know.
+pub(super) fn key_extras(opts: &CompatOptions, req: &ProviderRequest) -> Map<String, Value> {
     let mut extras = Map::new();
-    match (opts.flavor, &req.cache_key, &req.cache.partition_key) {
+    match (opts.flavor, &req.routing_key, &req.cache.partition_key) {
         (CompatFlavor::OpenRouter, Some(key), _) if key.chars().count() <= SESSION_ID_MAX => {
             extras.insert("session_id".into(), json!(key));
         }

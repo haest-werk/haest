@@ -126,8 +126,8 @@ pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec
 /// effort ([`reasoning_params`]), `store: false` with the encrypted
 /// reasoning included, so the next request can replay it, and the partition
 /// key as `prompt_cache_key` when `opts` reach OpenAI's own API
-/// ([`is_openai_api`]). The request's `cache_key` is never sent: here a key
-/// partitions the cache, and a key per conversation would keep one
+/// ([`is_openai_api`]). The request's `routing_key` is dropped: the API's
+/// one key partitions the cache, and a key per conversation would keep one
 /// conversation from reading what another cached.
 pub(crate) fn build_responses_body(opts: &ResponsesOptions, req: &ProviderRequest) -> Value {
     let provider_id = opts.id();

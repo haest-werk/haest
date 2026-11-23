@@ -80,8 +80,8 @@ endpoint_options! {
 /// the plan chose gets one on its last block that is not thinking. Each
 /// carries its own TTL (`"ttl": "1h"` for an hour, nothing for the default
 /// five minutes). A request's
-/// [`cache_key`](haest_core::ProviderRequest::cache_key) is not
-/// sent: the Messages API has no such field. `max_tokens` defaults to
+/// [`routing_key`](haest_core::ProviderRequest::routing_key) is dropped:
+/// the Messages API has no routing field. `max_tokens` defaults to
 /// 32,000 (also for a cap of 0). Effort becomes adaptive thinking with the
 /// effort level, or for models from before it (Claude 4.5 and older) a
 /// thinking budget of 2,048 tokens for low up to 31,999 for max, kept below

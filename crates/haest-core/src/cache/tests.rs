@@ -199,19 +199,19 @@ async fn a_provider_without_pre_warm_refuses_before_anything_is_sent() {
 }
 
 #[tokio::test]
-async fn the_cache_policy_and_key_ride_on_every_model_call() {
+async fn the_cache_policy_and_routing_key_ride_on_every_model_call() {
     let p = ScriptedProvider::new([text_answer("hi"), text_answer("hi again")]);
     let shared = SharedDeps::new(p.resolver(), "/", ShutWorkspace);
     let opts = AgentOptions::new("scripted:m")
         .with_cache_policy(CachePlan::standard(CacheTtl::OneHour))
-        .with_cache_key("session-1");
+        .with_routing_key("session-1");
     let mut agent = Agent::new(AgentDeps::new(shared, Tools::new(), "sys"), opts);
     collect(&mut agent, "hello").await;
     agent.set_cache_policy(CachePlan::none().with_history(CacheTtl::FiveMinutes));
-    agent.set_cache_key("session-2");
+    agent.set_routing_key("session-2");
     collect(&mut agent, "again").await;
     let sent: Vec<_> = (p.requests().into_iter())
-        .map(|r| (r.cache.system, r.cache.history, r.cache_key))
+        .map(|r| (r.cache.system, r.cache.history, r.routing_key))
         .collect();
     let hour = Some(CacheTtl::OneHour);
     assert_eq!(

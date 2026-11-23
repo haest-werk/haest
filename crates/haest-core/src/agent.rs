@@ -50,8 +50,8 @@ pub(crate) use delivery::Delivery;
 use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, any history to resume,
-/// and how the provider caches its prompt
-/// ([`with_cache_policy`](Self::with_cache_policy), [`with_cache_key`](Self::with_cache_key)).
+/// how the provider caches its prompt ([`with_cache_policy`](Self::with_cache_policy))
+/// and where it routes it ([`with_routing_key`](Self::with_routing_key)).
 ///
 /// ```
 /// use haest_core::{AgentOptions, Message, provider::Effort};
@@ -72,7 +72,7 @@ pub struct AgentOptions {
 
 impl AgentOptions {
     /// Options for `model_spec` with no effort, no history, the default
-    /// cache policy and no cache key.
+    /// cache policy and no routing key.
     pub fn new(model_spec: impl Into<String>) -> Self {
         Self {
             model_spec: model_spec.into(),
@@ -404,7 +404,7 @@ impl Agent {
     pub(crate) async fn request_prefix(&self, model: &str) -> RequestPrefix {
         let built = build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await;
         RequestPrefix {
-            cache_key: self.cache.key.clone(),
+            routing_key: self.cache.routing_key.clone(),
             tool_baseline: self.tool_baseline(&built.tools),
             ..built
         }

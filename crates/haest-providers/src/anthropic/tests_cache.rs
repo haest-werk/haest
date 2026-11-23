@@ -62,8 +62,8 @@ fn an_hour_long_ttl_rides_on_every_breakpoint() {
 }
 
 #[test]
-fn the_messages_api_gets_no_cache_key() {
-    let keyed = turn(CacheTtl::FiveMinutes).with_cache_key("session-1");
+fn the_messages_api_gets_no_routing_key() {
+    let keyed = turn(CacheTtl::FiveMinutes).with_routing_key("session-1");
     assert_eq!(
         build_anthropic_params("anthropic", &keyed),
         build_anthropic_params("anthropic", &turn(CacheTtl::FiveMinutes))

@@ -37,11 +37,11 @@ use haest_http::Request;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+pub(crate) use convert::{flavor_extras, to_chat_messages, to_chat_tools};
 use convert::{
-    cache_key_extras, mark_last_tool, openrouter_anthropic, openrouter_budget_thinking,
+    key_extras, mark_last_tool, openrouter_anthropic, openrouter_budget_thinking,
     reasoning_effort_extras,
 };
-pub(crate) use convert::{flavor_extras, to_chat_messages, to_chat_tools};
 pub use options::CompatOptions;
 pub(crate) use stream::{StreamState, apply_chunk, finish_message};
 
@@ -93,12 +93,12 @@ pub enum CompatFlavor {
 /// breakpoint of the request's [`cache`](haest_core::ProviderRequest::cache)
 /// plan with its TTL (its last function tool too), a `google/` model the
 /// system prompt's and the newest message's at five minutes, any other none.
-/// A request's [`cache_key`](haest_core::ProviderRequest::cache_key) goes to
-/// OpenRouter as `session_id` (its sticky routing; a key over 256 characters
+/// A request's [`routing_key`](haest_core::ProviderRequest::routing_key) goes
+/// to OpenRouter as `session_id`, so its sticky routing keeps the
+/// conversation on the provider holding its cache (a key over 256 characters
 /// is not sent), and its plan's
 /// [`partition_key`](haest_core::cache::CachePlan::partition_key) to OpenAI's
-/// own API as `prompt_cache_key`; any other server gets
-/// neither. A [`prewarm`](haest_core::ProviderRequest::prewarm) request to
+/// own API as `prompt_cache_key`; any other server gets neither. A [`prewarm`](haest_core::ProviderRequest::prewarm) request to
 /// an `anthropic/` model on OpenRouter goes out as the real request capped
 /// at `max_tokens: 1` (OpenRouter does not honour 0); every other is
 /// refused ([`check_prewarm`](Self::check_prewarm)).
@@ -209,8 +209,8 @@ impl CompatProvider {
 /// `req.web_search` is set and the flavor is OpenRouter), `max_tokens` when
 /// above 0 ([`PREWARM_MAX_TOKENS`] for a pre-warm, which is otherwise the
 /// same body), the flavor's extras ([`flavor_extras`]), a `reasoning_effort`
-/// fitted to [`CompatOptions::with_reasoning_effort`], and the cache keys
-/// where the server takes them ([`cache_key_extras`]).
+/// fitted to [`CompatOptions::with_reasoning_effort`], and the routing and
+/// partition keys where the server takes them ([`key_extras`]).
 pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
     mark_last_tool(&mut tools, opts.flavor, &req.model, req.cache.tools);
@@ -253,7 +253,7 @@ pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> 
         opts.reasoning_effort.as_ref(),
         req.effort,
     ));
-    map.extend(cache_key_extras(opts, req));
+    map.extend(key_extras(opts, req));
     body
 }
 

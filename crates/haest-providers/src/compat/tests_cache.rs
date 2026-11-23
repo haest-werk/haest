@@ -1,6 +1,7 @@
 //! The prompt cache over Chat Completions: the TTL and the tools breakpoint
-//! for Anthropic models on OpenRouter, the cache key on the servers that
-//! document one, and the pre-warm only for Anthropic models on OpenRouter.
+//! for Anthropic models on OpenRouter, the routing and partition keys on the
+//! servers that document one, and the pre-warm only for Anthropic models on
+//! OpenRouter.
 
 use haest_core::{
     cache::{CacheTtl, PrewarmRefused},
@@ -70,9 +71,9 @@ fn key_fields(opts: &CompatOptions, req: &ProviderRequest) -> Vec<(String, Value
 }
 
 #[test]
-fn the_cache_key_routes_on_openrouter_and_never_partitions_openai() {
+fn the_routing_key_routes_on_openrouter_and_never_partitions_openai() {
     let field = |f: &str, v: &str| vec![(f.to_string(), json!(v))];
-    let keyed = |key: &str| request("m").with_cache_key(key);
+    let keyed = |key: &str| request("m").with_routing_key(key);
     assert_eq!(
         key_fields(&openrouter(), &keyed("s-1")),
         field("session_id", "s-1")
@@ -114,7 +115,7 @@ async fn an_anthropic_pre_warm_on_openrouter_is_the_real_request_capped_at_one_t
     let real = tooled("anthropic/claude-haiku-5.5", CacheTtl::OneHour)
         .with_effort(Effort::High)
         .with_max_tokens(8_000)
-        .with_cache_key("s-1");
+        .with_routing_key("s-1");
     let provider = CompatProvider::new(openrouter(), t.clone());
     assert_eq!(
         provider.check_prewarm(&real.clone().with_prewarm(true)),
