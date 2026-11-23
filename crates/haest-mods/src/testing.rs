@@ -129,16 +129,6 @@ pub fn ctx() -> ToolContext {
     ToolContext::new(CWD, ShutWorkspace)
 }
 
-/// `v` as a tool's input: [`haest_core::tool::input`], for a test that
-/// knows `v` is an object. A new test calls that one itself.
-///
-/// # Panics
-///
-/// When `v` is not a JSON object.
-pub fn input(v: Value) -> JsonMap {
-    haest_core::tool::input(v).expect("a test's tool input is a JSON object")
-}
-
 /// A tool that records every input it ran with and answers `<name>:<v>` in lower case.
 #[derive(Debug)]
 pub struct Probe {

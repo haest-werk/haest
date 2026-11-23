@@ -4,7 +4,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
+use haest_core::{
+    Tools,
+    tool::{ToolError, input},
+    workspace::WorkspaceMode,
+};
 use haest_mods::{CommandOutcome, Decision, Mod, ModToolCall, Mods};
 use serde_json::json;
 
@@ -34,14 +38,14 @@ async fn a_ts_mod_denies_rm_rf_root_in_bash_and_lets_everything_else_run() {
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     match tools[0]
-        .execute(input(json!({"command": "rm -rf /"})), &ctx())
+        .execute(input(json!({"command": "rm -rf /"})).unwrap(), &ctx())
         .await
     {
         Err(ToolError::Input(m)) => assert!(m.contains("not on my watch")),
         other => panic!("not refused: {other:?}"),
     }
     tools[0]
-        .execute(input(json!({"command": "ls"})), &ctx())
+        .execute(input(json!({"command": "ls"})).unwrap(), &ctx())
         .await
         .unwrap();
     assert_eq!(bash.ran().len(), 1);
@@ -60,7 +64,7 @@ async fn a_mod_adds_a_tool_that_runs_in_its_runtime() {
     assert!(shout.read_only());
     assert_eq!(shout.parameters()["properties"]["v"]["type"], "string");
     let out = shout
-        .execute(input(json!({"v": "hi"})), &ctx())
+        .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
         .await
         .unwrap();
     assert_eq!(out.content, format!("HI@{CWD}"));
@@ -76,7 +80,9 @@ async fn prompt_submit_rewrites_the_humans_message_and_input_rewrites_reach_the_
     let mods = with_mod(TestUi::new(), "rewrite.js", source).await;
     assert_eq!(mods.rewrite_prompt("fix it").await, "fix it (be brief)");
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
-    let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
+    let out = tools[0]
+        .execute(input(json!({"v": "hi"})).unwrap(), &ctx())
+        .await;
     assert_eq!(out.unwrap().content, "ECHO:HI!");
 }
 
@@ -131,7 +137,7 @@ async fn a_throwing_mod_is_reported_and_the_host_carries_on() {
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let refused = tools[0]
-        .execute(input(json!({"command": "ls"})), &ctx())
+        .execute(input(json!({"command": "ls"})).unwrap(), &ctx())
         .await;
     assert!(refused.is_err(), "a guard that broke lets nothing through");
     assert!(bash.ran().is_empty());
@@ -201,7 +207,7 @@ async fn a_mod_asks_the_human_and_their_answer_decides() {
     let mods = with_mod(ui.clone(), "asker.js", source).await;
     let bash = Probe::new("Bash");
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
-    let call = || input(json!({"command": "make"}));
+    let call = || input(json!({"command": "make"})).unwrap();
     assert!(tools[0].execute(call(), &ctx()).await.is_err());
     tools[0].execute(call(), &ctx()).await.unwrap();
     assert_eq!(bash.ran().len(), 1);
@@ -226,7 +232,7 @@ async fn an_ask_under_ctx_signal_ends_when_the_call_is_interrupted() {
     let tools = wrapped(mods, Tools::from_iter([bash.clone()]));
     let c = ctx();
     let cancel = c.cancel().clone();
-    let (out, ()) = tokio::join!(tools[0].execute(input(json!({})), &c), async {
+    let (out, ()) = tokio::join!(tools[0].execute(input(json!({})).unwrap(), &c), async {
         while ui.asks().is_empty() {
             tokio::task::yield_now().await;
         }
@@ -252,7 +258,7 @@ async fn a_call_already_interrupted_never_reaches_the_mod() {
     c.cancel().cancel();
     let call = ModToolCall {
         name: "Echo".into(),
-        input: input(json!({})),
+        input: input(json!({})).unwrap(),
         read_only: true,
     };
     assert!(m.tool_before(&call, &c, &haest).await.is_err());
@@ -273,11 +279,13 @@ async fn a_runaway_mod_is_stopped_and_its_next_call_still_works() {
     let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
     assert!(
         tools[0]
-            .execute(input(json!({"v": "loop"})), &ctx())
+            .execute(input(json!({"v": "loop"})).unwrap(), &ctx())
             .await
             .is_err()
     );
-    let out = tools[0].execute(input(json!({"v": "ok"})), &ctx()).await;
+    let out = tools[0]
+        .execute(input(json!({"v": "ok"})).unwrap(), &ctx())
+        .await;
     assert_eq!(out.unwrap().content, "echo:ok");
     assert_eq!(ui.errors().len(), 1);
 }

@@ -11,12 +11,12 @@ use haest_core::{
     Message, NoHooks, Tools,
     error::BoxError,
     testing::{ScriptedProvider, text_answer},
-    tool::ToolError,
+    tool::{JsonMap, ToolError},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::{Probe, ctx, input, looped, wrapped};
+use super::{Probe, ctx, looped, wrapped};
 use crate::{
     events::{Event, ModEvent},
     hook::Hook,
@@ -74,7 +74,11 @@ pub async fn effect(event: ModEvent, mods: Mods, name: &str) -> Value {
         ModEvent::ToolBefore | ModEvent::ToolAfter => {
             let echo = Probe::new("Echo");
             let tools = wrapped(mods, Tools::from_iter([echo.clone()]));
-            let out = match tools[0].execute(input(json!({"v": "hi"})), &ctx()).await {
+            // A map built directly, not `tool::input(..)`: its `Result`
+            // would need an unwrap, and `effect` is public kit code that
+            // does not panic.
+            let call = JsonMap::from_iter([("v".into(), "hi".into())]);
+            let out = match tools[0].execute(call, &ctx()).await {
                 Ok(o) => json!({ "content": o.content, "isError": o.is_error }),
                 // A hook that failed refuses the call in words that name its
                 // mod and its form: what counts is that it failed.

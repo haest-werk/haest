@@ -87,16 +87,19 @@ async fn a_claude_entry_names_the_session_as_of_each_event() {
 #[cfg(feature = "shell")]
 #[tokio::test]
 async fn an_entrys_matcher_timeout_and_on_error_are_its_bindings() {
-    use haest_core::Tools;
+    use haest_core::{Tools, tool::input};
 
     let remote = Remote::answering(Via::Shell, r#"{"deny": "not Bash"}"#).await;
     let setting = json!({ "tool.before": [{ "command": "sh hook.sh", "matcher": "Bash" }] });
     let mods = bound_mods(setting, &host(&remote), TestUi::new());
     let (echo, bash) = (Probe::new("Echo"), Probe::new("Bash"));
     let tools = wrapped(mods, Tools::from_iter([echo.clone(), bash.clone()]));
-    tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    tools[0]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     assert!(remote.received().is_empty(), "Echo is not Bash: not asked");
-    let refused = tools[1].execute(input(json!({})), &ctx()).await;
+    let refused = tools[1].execute(input(json!({})).unwrap(), &ctx()).await;
     assert!(refused.unwrap_err().to_string().contains("not Bash"));
     assert_eq!((echo.ran().len(), bash.ran().len()), (1, 0));
 
@@ -106,7 +109,10 @@ async fn an_entrys_matcher_timeout_and_on_error_are_its_bindings() {
     let setting = json!({ "tool.before": [{ "command": "sleep 5", "timeout": 0.2, "on_error": "continue" }] });
     let mods = bound_mods(setting, &host(&remote), ui.clone());
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
-    tools[0].execute(input(json!({})), &ctx()).await.unwrap();
+    tools[0]
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     let errors = ui.errors();
     assert!(
         errors

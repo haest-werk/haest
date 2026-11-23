@@ -10,7 +10,7 @@ use haest_core::{
     Tools, TurnOutcome,
     error::BoxError,
     testing::{ScriptedProvider, text_answer},
-    tool::ToolContext,
+    tool::{ToolContext, input},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use haest_mods::{
@@ -88,7 +88,7 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
 
     let call = ModToolCall {
         name: "Echo".into(),
-        input: input(json!({ "v": "hi" })),
+        input: input(json!({ "v": "hi" })).unwrap(),
         read_only: true,
     };
     let ctx = ToolContext::new(CWD, ShutWorkspace).with_tool_call_id("t1");

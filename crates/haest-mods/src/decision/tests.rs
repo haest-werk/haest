@@ -1,6 +1,7 @@
 //! Every decision reads exactly what a mod file's handler may return, and
 //! writes the same words back.
 
+use haest_core::tool::input;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
@@ -9,7 +10,6 @@ use crate::{
     api::Before,
     events::Event,
     payload::{PromptSubmitPayload, SystemPromptPayload},
-    testing::input,
 };
 
 fn read<T: DeserializeOwned>(v: Value) -> T {
@@ -52,7 +52,7 @@ fn tool_before_reads_deny_and_input_and_passes_anything_else() {
     let both = json!({ "deny": "no", "input": { "v": 1 } });
     assert_eq!(read::<Before>(both), Before::Deny("no".into()), "deny wins");
     let rewritten = read::<Before>(json!({ "input": { "v": 1 } }));
-    assert_eq!(rewritten, Before::Input(input(json!({ "v": 1 }))));
+    assert_eq!(rewritten, Before::Input(input(json!({ "v": 1 })).unwrap()));
     for passes in not_answers() {
         assert_eq!(read::<Before>(passes), Before::Pass);
     }
@@ -70,7 +70,7 @@ fn tool_before_reads_deny_and_input_and_passes_anything_else() {
 fn tool_before_writes_what_it_reads() {
     round_trip(&Before::Pass, Value::Null);
     round_trip(&Before::Deny("no".into()), json!({ "deny": "no" }));
-    let input = input(json!({ "v": "x" }));
+    let input = input(json!({ "v": "x" })).unwrap();
     round_trip(&Before::Input(input), json!({ "input": { "v": "x" } }));
 }
 

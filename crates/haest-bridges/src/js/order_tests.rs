@@ -11,6 +11,7 @@ use haest_core::{
     NoHooks, Tools,
     error::BoxError,
     testing::{ScriptedProvider, text_answer},
+    tool::input,
     workspace::WorkspaceMode,
 };
 use haest_mods::{Hooks, ModelBeforeDecision, ModelBeforePayload, Mods};
@@ -54,7 +55,9 @@ async fn a_mod_files_handlers_chain_and_none_is_asked_after_the_first_deny_or_st
 
     let echo = Probe::new("Echo");
     let tools = wrapped(mods.clone(), Tools::from_iter([echo.clone()]));
-    let refused = tools[0].execute(input(json!({ "v": "hi" })), &ctx()).await;
+    let refused = tools[0]
+        .execute(input(json!({ "v": "hi" })).unwrap(), &ctx())
+        .await;
     assert!(
         refused.is_err_and(|e| e.to_string().contains("saw hi!")),
         "the second handler saw the first one's rewrite"

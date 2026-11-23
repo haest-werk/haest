@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_core::{Tools, fs::MemFs, workspace::WorkspaceMode};
+use haest_core::{Tools, fs::MemFs, tool::input, workspace::WorkspaceMode};
 use haest_mods::{ModEnv, ModOptions, load_mods};
 use serde_json::json;
 
@@ -49,7 +49,10 @@ async fn a_mod_in_the_user_mods_dir_loads_and_a_broken_one_is_reported_and_skipp
     let files = ModFiles::load(opts(), fs, sandbox(&ui)).await;
     let tools = wrapped(Mods::new(sandbox(&ui), [files]), Tools::new());
     let hello = find(&tools, "Hello");
-    let out = hello.execute(input(json!({})), &ctx()).await.unwrap();
+    let out = hello
+        .execute(input(json!({})).unwrap(), &ctx())
+        .await
+        .unwrap();
     assert_eq!(out.content, "hello");
     let errors = ui.errors();
     assert_eq!(errors.len(), 1);
