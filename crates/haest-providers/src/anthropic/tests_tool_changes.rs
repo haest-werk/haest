@@ -13,7 +13,7 @@ use haest_core::{
 use serde_json::{Value, json};
 
 use super::*;
-use crate::testing::{FakeHttp, FakeReply, collect, typed_sse};
+use crate::testing::{FakeHttp, collect, ok_reply};
 
 /// Anthropic's documented example tool, `get_weather`.
 fn get_weather() -> ToolSpec {
@@ -288,19 +288,9 @@ fn without_a_baseline_the_changes_are_left_out_and_the_current_tools_sent() {
     assert_eq!(sent["tools"][0]["name"], "db_query");
 }
 
-/// Anthropic's stream of the answer "ok".
-fn ok() -> FakeReply {
-    FakeReply::sse(typed_sse(&[
-        json!({"type": "message_start", "message": {"model": "claude-opus-5-5",
-            "usage": {"input_tokens": 10, "output_tokens": 1}}}),
-        json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "ok"}}),
-        json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
-    ]))
-}
-
 #[tokio::test]
 async fn the_beta_header_rides_only_on_a_request_that_carries_a_change() {
-    let t = FakeHttp::new([ok(), ok(), ok(), ok()]);
+    let t = FakeHttp::new([0; 4].map(|_| ok_reply("anthropic:claude-opus-5-5")));
     let opts = AnthropicOptions::new("anthropic", "k");
     let provider = AnthropicProvider::new(opts.clone(), t.clone());
     let changed = vec![

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use crate::{
     CatalogFacts, CustomProviders, ProviderRegistry, RetryPolicy,
-    testing::{FakeHttp, FakeReply, chat_sse, typed_sse},
+    testing::{FakeHttp, ok_reply as ok},
 };
 
 /// A tool that only has a name.
@@ -38,25 +38,6 @@ impl Tool for Named {
     async fn execute(&self, _: JsonMap, _: &ToolContext) -> Result<ToolOutput, ToolError> {
         Ok(ToolOutput::text("ok"))
     }
-}
-
-/// The answer "ok" in the dialect `spec`'s provider speaks.
-fn ok(spec: &str) -> FakeReply {
-    let body = match spec.split_once(':').map(|s| s.0) {
-        Some("anthropic") => typed_sse(&[
-            json!({"type": "message_start", "message": {"usage": {"input_tokens": 10}}}),
-            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "ok"}}),
-            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
-        ]),
-        Some("openai") => typed_sse(&[
-            json!({"type": "response.output_text.delta", "output_index": 0, "delta": "ok"}),
-            json!({"type": "response.completed", "response": {"usage": {"input_tokens": 10, "output_tokens": 1}}}),
-        ]),
-        _ => chat_sse(&[
-            json!({"choices": [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}]}),
-        ]),
-    };
-    FakeReply::sse(body)
 }
 
 /// An agent on `spec` whose tools are `live`, sending through `http`, every

@@ -297,6 +297,29 @@ pub fn kinds(events: &[ProviderEvent]) -> Vec<&'static str> {
         .collect()
 }
 
+/// The answer "ok", streamed in the dialect `spec`'s provider speaks:
+/// Anthropic Messages for `anthropic:`, OpenAI Responses for `openai:`, Chat
+/// Completions for any other.
+#[cfg(test)]
+pub(crate) fn ok_reply(spec: &str) -> FakeReply {
+    use serde_json::json;
+    let body = match spec.split_once(':').map(|s| s.0) {
+        Some("anthropic") => typed_sse(&[
+            json!({"type": "message_start", "message": {"usage": {"input_tokens": 10}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "ok"}}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 1}}),
+        ]),
+        Some("openai") => typed_sse(&[
+            json!({"type": "response.output_text.delta", "output_index": 0, "delta": "ok"}),
+            json!({"type": "response.completed", "response": {"usage": {"input_tokens": 10, "output_tokens": 1}}}),
+        ]),
+        _ => chat_sse(&[
+            json!({"choices": [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}]}),
+        ]),
+    };
+    FakeReply::sse(body)
+}
+
 /// Every prompt-cache breakpoint (`cache_control`) in a request body,
 /// wherever it sits, in the order the body serializes.
 #[cfg(test)]
