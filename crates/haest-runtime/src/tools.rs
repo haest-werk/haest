@@ -143,11 +143,14 @@ impl WrappedTools {
     }
 
     /// `tools` (the base's), then the Code tool when it is on, all inside
-    /// the mods' hooks. Code calls the WRAPPED siblings, read per run, so
-    /// every call it makes passes the hooks too.
+    /// the mods' hooks, less the tools a mod hides. Code calls the WRAPPED
+    /// siblings, read per run, so every call it makes passes the hooks too,
+    /// and it neither names nor reaches a hidden one.
     fn wrap(&self, mut tools: Tools) -> Tools {
         if let Some(allowed) = &self.code {
-            let names = code_tool_names(&tools, allowed);
+            let hidden = self.mods.disabled_tools();
+            let mut names = code_tool_names(&tools, allowed);
+            names.retain(|name| !hidden.contains(name));
             let callable = ModTools::new(self.base.clone(), self.mods.clone());
             tools.push(CodeTool::new(names, callable));
         }
@@ -180,10 +183,17 @@ impl MainTools {
         Self { wrapped, hub }
     }
 
-    /// `wrapped`, then main's agent tools.
+    /// `wrapped`, then main's agent tools, less those a mod hides (they are
+    /// not inside the mods' hooks, but a mod hides any tool).
     fn with_agents(&self, mut wrapped: Tools) -> Tools {
         if let Some(hub) = &self.hub {
-            wrapped.extend(hub.tools_for(&AgentRef::main()));
+            let hidden = self.wrapped.mods.disabled_tools();
+            let agents = hub.tools_for(&AgentRef::main());
+            wrapped.extend(
+                agents
+                    .into_iter()
+                    .filter(|t| !hidden.iter().any(|h| h == t.name())),
+            );
         }
         wrapped
     }

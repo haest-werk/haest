@@ -17,7 +17,7 @@ use haest_core::{
     Agent, AgentHooks, Effort,
     caps::{TurnCaps, TurnCapsSource},
     catalog::{InputModality, ModelFacts, ModelInfo, Reasoning},
-    compaction::needs_compaction,
+    compaction::{CompactionResult, needs_compaction},
     error::BoxError,
     ledger::{LedgerHooks, LedgerSnapshot},
     messages::MediaPart,
@@ -209,6 +209,11 @@ impl AgentHooks for RuntimeHooks {
             t: now_ms(),
             message: msg.clone(),
         });
+    }
+
+    /// The runtime's own compaction, the human's /compact and a mod's alike.
+    fn on_compaction(&self, result: &CompactionResult) {
+        self.saved(result);
     }
 
     /// A full window is summarised first. A summary that fails ends the turn:

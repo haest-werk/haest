@@ -4,7 +4,7 @@
 
 use haest_core::{
     Agent,
-    compaction::{CompactionError, CompactionOptions, compact},
+    compaction::{CompactionError, CompactionOptions, CompactionResult, compact},
     error::report,
     now_ms,
     session::SessionRecord,
@@ -36,9 +36,10 @@ impl RuntimeHooks {
     }
 
     /// Compact `agent`'s conversation now: the older messages become one
-    /// summary, the latest are kept, and the session file records it. Each
-    /// summary call's cost goes on the conversation's spend as it comes back
-    /// (core's `compact` books it), summary or not.
+    /// summary, the latest are kept, and the session file records it
+    /// ([`saved`](Self::saved), through the agent's hooks). Each summary
+    /// call's cost goes on the conversation's spend as it comes back (core's
+    /// `compact` books it), summary or not.
     ///
     /// `by` says who asked: nothing to cut is said only to the human's
     /// [`Compact::Manual`]. `cancel` stops the summary call.
@@ -57,18 +58,7 @@ impl RuntimeHooks {
         let cfg = self.compaction_for(agent.model_spec());
         match compact(agent, cancel, &cfg).await {
             Ok(None) if by == Compact::Manual => self.info("Nothing to compact yet."),
-            Ok(None) => {}
-            Ok(Some(res)) => {
-                self.append(&SessionRecord::Compaction {
-                    t: now_ms(),
-                    summary: res.summary,
-                    kept: res.kept,
-                });
-                self.info(&format!(
-                    "Conversation compacted; kept the last {} messages.",
-                    res.kept
-                ));
-            }
+            Ok(None | Some(_)) => {}
             Err(e) => {
                 if !cancel.is_cancelled() {
                     self.error(&compaction_failed(&e));
@@ -77,6 +67,21 @@ impl RuntimeHooks {
             }
         }
         Ok(())
+    }
+
+    /// A compaction of the conversation, whoever made it (the runtime's own,
+    /// a mod's): the session file records it, so a resume rebuilds the
+    /// history the agent has now, and the human is told.
+    pub(super) fn saved(&self, res: &CompactionResult) {
+        self.append(&SessionRecord::Compaction {
+            t: now_ms(),
+            summary: res.summary.clone(),
+            kept: res.kept,
+        });
+        self.info(&format!(
+            "Conversation compacted; kept the last {} messages.",
+            res.kept
+        ));
     }
 }
 

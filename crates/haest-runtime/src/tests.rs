@@ -261,6 +261,7 @@ mod compaction;
 mod deferral;
 mod lifecycle;
 mod lock;
+mod mods;
 #[cfg(feature = "session")]
 mod session;
 mod turns;
