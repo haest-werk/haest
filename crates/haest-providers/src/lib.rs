@@ -187,7 +187,9 @@
 //!   HTTP stack wants.
 //! - `testing`: the `testing` module, fakes for tests in other crates: an
 //!   [`http::HttpClient`] that answers from a script and records every
-//!   request, and builders for SSE bodies in each dialect.
+//!   request, and builders for SSE bodies in each dialect. For
+//!   `dev-dependencies` only: like every `testing` module and feature in
+//!   haest, it is outside semver.
 //!
 //! [`Provider`]: haest_core::provider::Provider
 //! [`ProviderRequest`]: haest_core::provider::ProviderRequest

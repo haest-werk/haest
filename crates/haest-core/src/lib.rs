@@ -147,7 +147,8 @@
 //!
 //! - `testing`: the `testing` module, fakes for tests in this crate and in
 //!   crates that build on it (a scripted provider, canned answers). Turn it on
-//!   in `dev-dependencies` only.
+//!   in `dev-dependencies` only: like every `testing` module and feature in
+//!   haest, and like `__private`, it is outside semver.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 

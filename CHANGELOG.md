@@ -54,6 +54,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   handler sees the input or output as haest read it (`isError` filled in),
   and the new loop events read `steer`, `stop` and `continue` as text
   only, `compact` as `true` or `{ instructions }` only (`"yes"` fails).
+- Every `testing` module and feature is outside semver, as `__private` is:
+  haest-core's, haest-providers', haest-mods', haest-http's and the
+  facade's. They are for `dev-dependencies` only and change in any release.
 
 ### Added
 
@@ -175,11 +178,16 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   load, naming its file and its number there, never a header's value. A
   trusted project's file may bind a command, never a URL; an untrusted
   project's hooks never load. haest-bridges: `HookSettings` and
-  `HookHost`, and the feature `testing` (`testing::Server`). haest-config:
-  `Config::hooks`, `Loaded::hooks`. haest-runtime:
-  `RuntimeInputs::with_hook_settings`, which `haest::runtime_inputs` sets;
-  the facade's `runtime` turns on `bridge-shell` and `bridge-http`.
+  `HookHost`. haest-config: `Config::hooks`, `Loaded::hooks`.
+  haest-runtime: `RuntimeInputs::with_hook_settings`, which
+  `haest::runtime_inputs` sets; the facade's `runtime` turns on
+  `bridge-shell` and `bridge-http`.
   [docs/extending.md](docs/extending.md#hooks-from-a-config-file).
+- haest-http: the feature `testing`, `testing::Server`: an HTTP server on
+  127.0.0.1 for a test (of an HTTP hook, a client, an MCP server), on
+  threads of its own. It writes down each request and answers from a
+  script (`Server::start`) or as a closure that reads the request decides
+  (`Server::answering`). The facade's `testing` turns it on with `http`.
 
 ### Fixed
 

@@ -3,6 +3,10 @@
 //! a [`FakeHttp`] that answers with recorded SSE bodies and records every
 //! request, plus builders for those bodies in each dialect.
 //!
+//! Not part of the API and not covered by semver, like every `testing`
+//! module and feature in haest: for `dev-dependencies` only, it changes in
+//! any release.
+//!
 //! ```
 //! use haest_core::Provider;
 //! use haest_providers::{

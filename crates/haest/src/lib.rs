@@ -165,7 +165,11 @@
 //!
 //! The `testing` feature brings [`core::testing`]: a model that answers from
 //! a script and records every request, so a test drives whole turns with no
-//! network and no keys. Its docs run a turn with a tool call.
+//! network and no keys. Its docs run a turn with a tool call. With
+//! `providers` it adds `providers::testing` (a fake HTTP client, SSE bodies),
+//! with `http` an HTTP server on 127.0.0.1 (`http::testing::Server`). Every
+//! `testing` module is for `dev-dependencies` only and outside semver: it
+//! changes in any release.
 //!
 //! ```toml
 //! [dev-dependencies]
@@ -205,7 +209,7 @@
 //! | `transport-broker` | `transport::Broker`: the conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls) | no |
 //! | `transport-unix` | `transport::UnixSocket`: programs on this machine watch (or drive) the conversation over a Unix socket; `transport::running_sessions` and `transport::connect_session` find and reach one | no |
 //! | `prompt` | [`prompt`]: the system prompt as the host's Jinja template, set up like Hugging Face chat templates; with `runtime`, `runtime::RuntimeInputs::with_prompt_template` renders it before every model call | no |
-//! | `testing` | [`core::testing`]: a scripted model and other fakes for tests | no |
+//! | `testing` | [`core::testing`]: a scripted model and other fakes for tests; with `providers` `providers::testing`, with `http` `http::testing::Server`. `dev-dependencies` only, outside semver | no |
 //!
 //! ```toml
 //! # a host with its own HTTP client, files and tools:

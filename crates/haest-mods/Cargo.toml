@@ -15,7 +15,8 @@ workspace = true
 
 [features]
 # The `testing` module: fakes for tests of mods and the decision cases a
-# bridge answers the way `Hooks` does. Turn it on in `dev-dependencies` only.
+# bridge answers the way `Hooks` does. Turn it on in `dev-dependencies` only:
+# like every `testing` feature in haest, it is outside semver.
 testing = ["haest-core/testing"]
 
 [dependencies]

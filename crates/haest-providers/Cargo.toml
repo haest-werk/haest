@@ -19,7 +19,9 @@ default = ["reqwest"]
 # `ReqwestClient` unless handed one. Off, no reqwest, rustls or ring is built,
 # and a registry or provider without a client of the host's refuses to send.
 reqwest = ["haest-http/reqwest"]
-# Fakes for tests in other crates: FakeHttp and SSE body builders.
+# Fakes for tests in other crates: FakeHttp and SSE body builders. For
+# `dev-dependencies` only: like every `testing` feature in haest, it is
+# outside semver.
 testing = []
 
 [dependencies]

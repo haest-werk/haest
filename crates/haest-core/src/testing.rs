@@ -6,6 +6,10 @@
 //! drives a whole [`Agent`](crate::Agent) turn offline and then checks what
 //! the loop sent. [`text_answer`] and [`tool_answer`] build the script.
 //!
+//! Not part of the API and not covered by semver, like every `testing`
+//! module and feature in haest: for `dev-dependencies` only, it changes in
+//! any release.
+//!
 //! # Examples
 //!
 //! A turn with one tool call, offline: the script asks for the tool, then

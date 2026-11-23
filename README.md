@@ -70,7 +70,7 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `settings` | `haest::settings` (the values, plain) | yes |
 | `config` | `haest::config` (the loader: files, variables, flags, profiles, trust) | no |
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
-| `testing` | `haest::core::testing` (a scripted model that records every request, for a host's tests) | no |
+| `testing` | `haest::core::testing` (a scripted model that records every request, for a host's tests); with `providers` `haest::providers::testing` (a fake HTTP client, SSE bodies), with `http` `haest::http::testing::Server` (an HTTP server on 127.0.0.1). For `dev-dependencies` only: every `testing` module and feature in haest is outside semver and changes in any release | no |
 | `wire` | `haest::wire` (the envelope, requests, replay ring, NDJSON codec) | no |
 | `session` | `haest::session` (the session driver, its handle and stream); with `runtime`, the whole conversation as one | no |
 | `transport` | `haest::transport` (the session served to another program, over any line source and sink) | no |

@@ -53,7 +53,7 @@
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
 //! | [`ModRef`], [`ModUiRef`], [`AutoJudgeRef`], [`PrompterRef`] | the handles the plug points are held by; a parameter that takes `impl Into<..Ref>` takes the value itself, or an `Arc` of it |
-//! | `testing` (feature `testing`) | fakes for tests of mods, and the decision cases a bridge must answer the way [`Hooks`] does |
+//! | `testing` (feature `testing`) | fakes for tests of mods, and the decision cases a bridge must answer the way [`Hooks`] does; for `dev-dependencies` only, and outside semver like every `testing` module in haest |
 //!
 //! # Putting mods in the loop
 //!
