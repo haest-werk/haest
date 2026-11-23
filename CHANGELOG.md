@@ -62,6 +62,17 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   minutes is too long"), as every time setting's number is; it was read
   as the longest duration there is. A config file, variable or flag
   holding one no longer loads.
+- haest-config: `code_tools` took a regular expression (`Edit|Write`,
+  `Bash.*`), a `*` inside a name or a name with a space in it, and quietly
+  matched no tool. haest's pattern is an exact name or a prefix ending in
+  `*`, and anything else is now refused at load, the error naming
+  `code_tools`: a config file holding one no longer loads. The setting is
+  of a new kind, `Kind::Patterns`. Every place that takes the pattern
+  (`code_tools`, a hook's `matcher`, a `[cache.models."<pattern>"]` key)
+  runs the same check, which also refuses a list (`Edit,Write`,
+  `Edit Write`). A `.*` end is a regular expression only in a
+  tool's name: a model spec holds dots, so `openrouter:openai/gpt-6.*` is
+  the prefix of every `gpt-6.1-*` spec.
 
 ### Added
 
@@ -210,17 +221,6 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 
 ### Fixed
 
-- haest-config: `code_tools` took a regular expression (`Edit|Write`,
-  `Bash.*`), a `*` inside a name or a name with a space in it, and quietly
-  matched no tool. haest's pattern is an exact name or a prefix ending in
-  `*`, and anything else is now refused at load, the error naming
-  `code_tools`: a config file holding one no longer loads. The setting is
-  of a new kind, `Kind::Patterns`. Every place that takes the pattern
-  (`code_tools`, a hook's `matcher`, a `[cache.models."<pattern>"]` key)
-  runs the same check, which also refuses a list (`Edit,Write`,
-  `Edit Write`). A `.*` end is a regular expression only in a
-  tool's name: a model spec holds dots, so `openrouter:openai/gpt-6.*` is
-  the prefix of every `gpt-6.1-*` spec.
 - haest-mods: when a `tool.before` guard failed, the refusal the model
   read carried the guard's error but not its causes. It now carries both.
 - haest-mods: a `tool.after` hook that replaced a tool's output dropped what
