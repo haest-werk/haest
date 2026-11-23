@@ -98,10 +98,11 @@ pub enum CompatFlavor {
 /// conversation on the provider holding its cache (a key over 256 characters
 /// is not sent), and its plan's
 /// [`partition_key`](haest_core::cache::CachePlan::partition_key) to OpenAI's
-/// own API as `prompt_cache_key`; any other server gets neither. A [`prewarm`](haest_core::ProviderRequest::prewarm) request to
-/// an `anthropic/` model on OpenRouter goes out as the real request capped
-/// at `max_tokens: 1` (OpenRouter does not honour 0); every other is
-/// refused ([`check_prewarm`](Self::check_prewarm)).
+/// own API as `prompt_cache_key`; any other server gets neither. A
+/// [`prewarm`](haest_core::ProviderRequest::prewarm) request to an
+/// `anthropic/` model on OpenRouter goes out as the real request capped at
+/// `max_tokens: 1` (OpenRouter does not honour 0); every other is refused
+/// ([`check_prewarm`](Self::check_prewarm)).
 ///
 /// # Examples
 ///

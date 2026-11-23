@@ -52,7 +52,7 @@ pub struct ProviderRequest {
     pub cache: CachePlan,
     /// What routes this request to the same upstream as the others of its
     /// conversation (the conversation's id, say), so it lands where its
-    /// prompt cache is; None = nothing. It is no cache key: OpenRouter takes
+    /// prompt cache is; None = nothing. It is not a cache key: OpenRouter takes
     /// it as `session_id`, its sticky routing, and no other provider routes,
     /// so none sends it. The key OpenAI's own API partitions its cache by is
     /// the plan's [`CachePlan::partition_key`].

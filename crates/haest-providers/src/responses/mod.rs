@@ -71,7 +71,8 @@ endpoint_options! {
 /// GPT-5.6 and later, so a key per conversation would keep conversations
 /// from sharing it. That key is the plan's
 /// [`partition_key`](haest_core::cache::CachePlan::partition_key), sent when
-/// the base URL is OpenAI's own API, and not to any other server. The Responses API reports no cost: an answer is priced from
+/// the base URL is OpenAI's own API, and not to any other server. The
+/// Responses API reports no cost: an answer is priced from
 /// [`ResponsesOptions::with_pricing`] (the registry sets the catalog's). It
 /// sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
 ///
