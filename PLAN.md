@@ -138,7 +138,9 @@ One new crate only, `haest-bridges`: a crate exists to carry a dependency a host
 | Starting a process on the host | haest-workspace's real exec (`spawn_collect`: process group, deadline, cancel, `ChildEnv`), given stdin | `ShellHook`; haest-mcp's stdio start keeps rmcp's own transport |
 | An HTTP request | haest-http's `HttpClient` | `HttpHook` |
 | The event JSON | the TypeScript mods' payloads and returns, typed once in haest-mods | the `js`, `shell` and `http` bridges |
-| Timeout, `on_error`, matcher, encode / decode for an external hook | one runner in haest-bridges | `shell`, `http` |
+| Timeout, `on_error`, tool matcher for any hook | `Binding` in haest-mods (`Hooks` runs it) | every hook: Rust closures, `shell`, `http` |
+| Encode a payload, decode a decision | the protocol's serde types in haest-mods (`Event`, its payload and `Decision`) | `js`, `shell`, `http`: a bridge is only `Hook<E>` = encode, carry, decode |
+| Running a list of mods' events (order, gates, first wins) | `Mods` | `ModFiles` holds a `Mods` of the current files and swaps it on reload, never a second dispatcher |
 | A structured config entry (a table per key, an array of tables) | one new registry kind in haest-config, built by whichever task lands first | `[cache]` / `[cache.models."..."]`, `[[hooks.<event>]]` |
 | Compacting a conversation | `haest_core::compaction::compact` | the runtime's threshold, a mod's `{ compact }`, `compact_before_expire` |
 | A request that reuses the last prefix | `request_prefix.rs` | compaction's summary, `Agent::warm_cache` |
