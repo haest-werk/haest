@@ -101,3 +101,19 @@ async fn every_decision_takes_the_same_effect_from_a_shell_hook_an_http_hook_and
         }
     }
 }
+
+/// `system.prompt`'s `false` (a script's `cond && 'text'`) adds nothing and
+/// is no failure, in the one decoder every bridge reads with.
+#[tokio::test]
+async fn a_system_prompt_answer_of_false_adds_nothing_and_is_no_failure() {
+    for via in VIAS {
+        let remote = Remote::answering(*via, "false").await;
+        let ui = TestUi::new();
+        let mods = Mods::new(
+            env(ui.clone(), WorkspaceMode::Sandbox),
+            [remote.hooks(ModEvent::SystemPrompt)],
+        );
+        assert_eq!(mods.system_append().await, "", "{via:?}");
+        assert!(ui.errors().is_empty(), "{via:?}: {:?}", ui.errors());
+    }
+}

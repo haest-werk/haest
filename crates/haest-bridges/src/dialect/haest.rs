@@ -44,12 +44,12 @@ impl<E: Event> Dialect<E> for Haest {
         match reply {
             Reply::Blocked(stderr) => blocked::<E>(&stderr),
             Reply::Answer(text) if text.trim().is_empty() => Ok(E::Decision::default()),
-            Reply::Answer(text) => {
-                serde_json::from_str(&text).map_err(|source| HookFailure::Answer {
+            Reply::Answer(text) => serde_json::from_str(&text)
+                .and_then(E::read_decision)
+                .map_err(|source| HookFailure::Answer {
                     event: E::NAME,
                     source,
-                })
-            }
+                }),
         }
     }
 }
