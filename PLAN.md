@@ -136,7 +136,7 @@ One new crate only, `haest-bridges`: a crate exists to carry a dependency a host
 | Need | The one place | Used by |
 |---|---|---|
 | A tool set that changes | `LiveTools` (haest-core) | the runtime's own tools, the TypeScript mods' tools, D40 |
-| A tool-name or model-spec pattern (exact, or `prefix*`) | `matches` in haest-code, moved to haest-core for every crate | Code's `code_tools`, hook matchers, `[cache.models."..."]`. The `claude` dialect alone keeps Claude Code's regex matchers, for compatibility |
+| A tool-name or model-spec pattern (exact, or `prefix*`) | `matches` in haest-code, moved to haest-core for every crate | Code's `code_tools`, hook matchers (the `claude` dialect too: Claude Code's regex matchers are not supported, D42), `[cache.models."..."]` |
 | Starting a process on the host | haest-workspace's real exec (`spawn_collect`: process group, deadline, cancel, `ChildEnv`), given stdin | `ShellHook`; haest-mcp's stdio start keeps rmcp's own transport |
 | An HTTP request | haest-http's `HttpClient` | `HttpHook` |
 | The event JSON | the TypeScript mods' payloads and returns, typed once in haest-mods | the `js`, `shell` and `http` bridges |
