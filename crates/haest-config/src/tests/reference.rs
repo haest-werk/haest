@@ -70,6 +70,10 @@ fn takes(def: &Def) -> String {
         Kind::Vars => {
             "`NAME=VALUE`, or `NAME` for haest's own value; repeat the flag for more".into()
         }
+        Kind::Table => format!(
+            "a table: `[{0}]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{{ key = value }}`), the flag repeated for more. Each layer merges into the ones before it, key by key",
+            def.key
+        ),
     }
 }
 
@@ -91,6 +95,7 @@ fn set_in(def: &Def) -> &'static str {
 fn default_of(def: &Def) -> String {
     match Config::bare("<cwd>", "~").get(def.key).as_deref() {
         None if def.kind == Kind::Vars => "none".into(),
+        None if def.kind == Kind::Table => "every key at the default given above".into(),
         None => match tool_default(def.key) {
             Some(own) => format!("unset: the tool's own, {own}"),
             None => "unset".into(),
@@ -138,6 +143,14 @@ fn toml_line(def: &Def) -> Option<String> {
         Kind::Vars => {
             let (name, value) = var_parts(raw);
             format!("[{}]\n{name} = {}", def.key, string(value))
+        }
+        Kind::Table => {
+            let table = crate::table::parse(raw).expect("the example is a table");
+            let file = toml::Table::from_iter([(def.key.to_string(), Value::Table(table))]);
+            toml::to_string(&file)
+                .expect("a table")
+                .trim_end()
+                .to_string()
         }
         Kind::Text | Kind::Url | Kind::Path | Kind::Choice(_) => {
             format!("{} = {}", def.key, string(raw))

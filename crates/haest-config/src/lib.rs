@@ -172,6 +172,7 @@ mod profiles;
 mod registry;
 mod source;
 mod stack;
+mod table;
 #[cfg(test)]
 mod tests;
 mod value;

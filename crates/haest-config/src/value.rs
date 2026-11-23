@@ -103,6 +103,7 @@ pub(crate) fn check(def: &Def, raw: &str) -> Result<String, String> {
         Kind::List(allowed) => list(word, allowed),
         // A variable's value keeps its spaces.
         Kind::Vars => var(raw),
+        Kind::Table => crate::table::check(raw),
     }
 }
 

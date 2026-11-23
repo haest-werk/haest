@@ -6,6 +6,7 @@ mod handed;
 mod loader;
 mod reference;
 mod refused;
+mod table;
 mod typed;
 mod wind_down;
 

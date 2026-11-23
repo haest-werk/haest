@@ -4,7 +4,7 @@
 //! line. Its default is the bare value (`Config::bare`): every capability off
 //! until asked for, every brake on.
 
-use haest_core::{Effort, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine};
+use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
 
 use crate::fields::{
@@ -59,6 +59,14 @@ pub enum Kind {
     /// Variables, one `NAME=VALUE` each: a repeated flag, a TOML table. A
     /// value adds to the ones before it; a name set twice keeps the later value.
     Vars,
+    /// A table of settings: `[key]` in a file, holding values, tables
+    /// (`[key.sub."name"]`) and arrays of tables (`[[key.list]]`). A
+    /// variable or a flag holds the same as TOML: `key = value` lines, or an
+    /// inline table `{ key = value }`; the flag may be repeated. Each value
+    /// merges into the ones before it: a table key by key, an array appended
+    /// to, any other value replaced. Its field's type says which keys and
+    /// values it takes; a key it lacks is refused.
+    Table,
 }
 
 /// Where a setting may come from. A layer that sets one it may not is an
@@ -177,7 +185,7 @@ const AGENTS: &str = "Subagents";
 const SESSION: &str = "Watching and driving";
 const PATHS: &str = "Paths";
 
-use Kind::{Bool, Choice, List, Number, Path, Text, Url, Vars};
+use Kind::{Bool, Choice, List, Number, Path, Table, Text, Url, Vars};
 
 /// A row's field, put to one use: `get_set`, how [`Config`] reads and writes
 /// it by its [`Raw`]; or, with a function's name, what that function says of
@@ -194,7 +202,7 @@ macro_rules! field {
         (
             |c| Raw::to_raw(&c.$($path).+),
             |c, raw| {
-                c.$($path).+ = Raw::from_raw(raw)?;
+                c.$($path).+ = Raw::over(&c.$($path).+, raw)?;
                 Ok(())
             },
         )
@@ -253,7 +261,8 @@ settings! {
     "profile" => profile: def(PROFILE, Text, "claude", "A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.<name>] table in a config file"),
     "model" => settings.model_spec: def(MODEL, Text, "anthropic:claude-opus-5-5", "provider:model").short('m'),
     "effort" => settings.effort: def(MODEL, Choice(Effort::WORDS), "high", "Reasoning effort (unset: the model's own default)").short('e'),
-    "cache_ttl" => settings.cache_ttl: def(MODEL, Choice(CacheTtl::WORDS), "1h", "How long the provider keeps the prompt cache each model call writes: 5m, or 1h, which costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes. Anthropic models only; other providers ignore it"),
+    "cache" => settings.cache: def(MODEL, Table, r#"{ system = "1h", keep_warm = true }"#, "The prompt cache: which blocks carry a breakpoint and for how long (system, tools, history: off, 5m or 1h), and what an idle conversation does before its cache expires (keep_warm, keep_warm_for, compact_before_expire); per model under models.\"<spec or prefix*>\"")
+        .detail("`system`, `tools` and `history` (the newest message, which the next request reads the conversation before it from) each take `off`, `5m` or `1h`; the default is `5m` for all three. `1h` costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes; a model that keeps no cache entry for an hour gets five minutes, and you are told. `keep_warm = true` sends a pre-warm a little before an idle conversation's cache expires, while the model's prices say the pings cost less than writing the cache again, for at most `keep_warm_for` minutes after the last turn (default 60); a ping that wrote instead of read stops it, and you are told. A model with no price, or a provider that takes no pre-warm (only Anthropic's API and OpenRouter's `anthropic/` models do), is never pinged. `compact_before_expire = { min_context = 120000, instructions = \"...\" }` (or `min_context = \"60%\"` of the window; default `\"off\"`) compacts an idle conversation that holds at least `min_context` while its cache is still warm, when the summary and the smaller next write cost less than writing the whole prompt again. `[cache.models.\"openrouter:google/*\"]` sets any of these for the models it matches (exact, or `prefix*`); the most specific wins."),
     "system_prompt" => settings.system_prompt: def(MODEL, Text, "You are a terse code reviewer.", "Replaces haest's own identity text at the top of the system prompt"),
     "append_system_prompt" => settings.append_system_prompt: def(MODEL, Text, "Answer in British English.", "Text appended to the system prompt"),
     "provider_routing" => provider_routing: def(MODEL, Text, r#"{"global": {"banned": ["novita"]}}"#, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),

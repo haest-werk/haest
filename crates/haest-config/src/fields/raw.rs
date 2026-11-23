@@ -4,10 +4,10 @@
 use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
-    Effort, WorkspaceMode, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine,
+    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
 };
-use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
+use haest_settings::{BuiltinTools, CacheSettings, ContextSources, ModReload, SkillSources};
 
 use super::{BrokerAccess, ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
@@ -21,7 +21,34 @@ pub(crate) trait Raw: Sized {
     const UP_TO: Option<f64> = None;
     fn to_raw(&self) -> Option<String>;
     fn from_raw(raw: &str) -> Result<Self, String>;
+    /// `raw` set over `self`, the value the layers before it left: replaces
+    /// it, but for a table ([`Kind::Table`](crate::Kind::Table)), which
+    /// merges into it.
+    fn over(&self, raw: &str) -> Result<Self, String> {
+        Self::from_raw(raw)
+    }
 }
+
+/// A table setting's type: written and read as TOML through its serde
+/// impls, each value merged over the one before ([`crate::table`]). Its
+/// serialization leaves out a key at its default, so an untouched table
+/// reads as unset.
+macro_rules! table {
+    ($($t:ty),+) => {$(
+        impl Raw for $t {
+            fn to_raw(&self) -> Option<String> {
+                crate::table::to_raw(self)
+            }
+            fn from_raw(raw: &str) -> Result<Self, String> {
+                crate::table::merged(&<$t>::default(), raw)
+            }
+            fn over(&self, raw: &str) -> Result<Self, String> {
+                crate::table::merged(self, raw)
+            }
+        }
+    )+};
+}
+table!(CacheSettings);
 
 /// A type that already reads and writes itself as one word.
 macro_rules! word {
@@ -38,7 +65,6 @@ macro_rules! word {
 }
 word!(
     Effort,
-    CacheTtl,
     WorkspaceMode,
     DeferMode,
     EnvPassthrough,

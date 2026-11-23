@@ -184,6 +184,12 @@ impl Entry<'_> {
         if self.profile.is_some() && !def.profile_may_set() {
             return Err(refused("can't be set in a profile"));
         }
+        if def.kind == Kind::Table {
+            let Value::Table(table) = value else {
+                return Err(refused(&format!("must be a table: [{key}]")));
+            };
+            return Ok(vec![(def, crate::table::inline(table.clone()))]);
+        }
         if def.kind == Kind::Vars {
             let Value::Table(vars) = value else {
                 return Err(refused(&format!(

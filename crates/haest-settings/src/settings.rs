@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use haest_core::{
     Effort, WorkspaceMode,
-    cache::CacheTtl,
     caps::SubagentCaps,
     deferred_tools::DeferMode,
     provider::{WebSearchEngine, WebSearchOptions},
@@ -15,7 +14,7 @@ use haest_core::{
     wind_down::WindDown,
 };
 
-use crate::{CapSettings, ContextSources, ModReload, sets::BuiltinTools};
+use crate::{CacheSettings, CapSettings, ContextSources, ModReload, sets::BuiltinTools};
 
 /// The model a run uses when none is configured: [`Settings::bare`]'s `model_spec`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
@@ -67,13 +66,14 @@ pub struct Settings {
     pub model_spec: String,
     /// Reasoning effort; None sends none, and the model uses its own default.
     pub effort: Option<Effort>,
-    /// How long the provider keeps the prompt cache each model call writes:
-    /// five minutes, or an hour, which costs more to write and pays when the
-    /// human pauses for longer than five minutes (haest-core's
-    /// [`cache`](haest_core::cache) says when). Anthropic's API and
-    /// OpenRouter's `anthropic/` models take it; other providers ignore it.
-    /// Bare: [`CacheTtl::FiveMinutes`].
-    pub cache_ttl: CacheTtl,
+    /// The `[cache]` setting: which blocks of each request carry a
+    /// prompt-cache breakpoint and for how long, and what an idle
+    /// conversation does before its cache expires (keep it warm, compact
+    /// it); per model too. It is the conversation's
+    /// [`CachePolicy`](haest_core::cache::CachePolicy). Bare: the default,
+    /// a breakpoint on the system prompt, the tools and the newest message
+    /// for five minutes each.
+    pub cache: CacheSettings,
     /// Replaces haest's own identity text at the top of the system prompt; None keeps it.
     pub system_prompt: Option<String>,
     /// Text added at the end of the system prompt.
@@ -168,7 +168,7 @@ impl Settings {
             cwd: cwd.into(),
             model_spec: DEFAULT_MODEL.into(),
             effort: None,
-            cache_ttl: CacheTtl::FiveMinutes,
+            cache: CacheSettings::default(),
             system_prompt: None,
             append_system_prompt: None,
             context: ContextSources::NONE,

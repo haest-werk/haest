@@ -30,6 +30,8 @@ haest-providers = { workspace = true }
 haest-mcp = { workspace = true, optional = true }
 # The config files: ~/.config/haest/config.toml and a trusted project's .haest/config.toml.
 toml = "1.1"
+# A table setting's value read into its typed field, and written back.
+serde = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -1011,6 +1011,7 @@ dependencies = [
  "haest-settings",
  "haest-tools",
  "haest-workspace",
+ "serde",
  "thiserror",
  "tokio",
  "toml",
@@ -1166,6 +1167,8 @@ name = "haest-settings"
 version = "0.4.1"
 dependencies = [
  "haest-core",
+ "serde",
+ "toml",
 ]
 
 [[package]]

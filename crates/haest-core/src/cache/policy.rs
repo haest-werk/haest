@@ -150,6 +150,56 @@ pub struct IdleState<'a> {
     pub facts: Option<&'a CacheFacts>,
 }
 
+impl<'a> IdleState<'a> {
+    /// A conversation on `model_spec`, idle for `idle`, its cache living
+    /// `ttl` and holding `prefix_tokens`; its window, price and cache facts
+    /// unknown.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_core::{cache::{CacheTtl, IdleState}, catalog::ModelPricing};
+    ///
+    /// let price = ModelPricing::new(3.0, 0.3, 15.0).with_cache_write(3.75);
+    /// let idle = IdleState::new("anthropic:claude-sonnet-5-5", Duration::from_secs(240), CacheTtl::FiveMinutes, 90_000)
+    ///     .with_context_window(1_000_000)
+    ///     .with_pricing(&price);
+    /// assert_eq!(idle.context_window, Some(1_000_000));
+    /// ```
+    pub fn new(model_spec: &'a str, idle: Duration, ttl: CacheTtl, prefix_tokens: u64) -> Self {
+        Self {
+            model_spec,
+            idle,
+            ttl,
+            prefix_tokens,
+            context_window: None,
+            pricing: None,
+            facts: None,
+        }
+    }
+
+    /// With the model's context window.
+    #[must_use]
+    pub fn with_context_window(mut self, tokens: u64) -> Self {
+        self.context_window = Some(tokens);
+        self
+    }
+
+    /// With the model's price.
+    #[must_use]
+    pub fn with_pricing(mut self, pricing: &'a ModelPricing) -> Self {
+        self.pricing = Some(pricing);
+        self
+    }
+
+    /// With what the model's cache can do.
+    #[must_use]
+    pub fn with_facts(mut self, facts: &'a CacheFacts) -> Self {
+        self.facts = Some(facts);
+        self
+    }
+}
+
 /// What a [`CachePolicy`] asks for at an idle tick.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]

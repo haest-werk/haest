@@ -175,6 +175,8 @@ fn setting_arg(def: &Def) -> Arg {
         Kind::Url => arg.value_name("URL"),
         Kind::Choice(_) | Kind::Text => arg.value_name("VALUE"),
         Kind::Vars => arg.action(ArgAction::Append).value_name("NAME=VALUE"),
+        // Each one merges into the ones before it.
+        Kind::Table => arg.action(ArgAction::Append).value_name("TOML"),
         // A kind haest-config adds later takes a plain value until named here.
         _ => arg.value_name("VALUE"),
     };
@@ -267,6 +269,26 @@ mod tests {
         let c = cli(&["-E", "A=1", "--env", "B", "-E", "A=2", "go"]);
         let env = [("env", "A=1"), ("env", "B"), ("env", "A=2")];
         assert_eq!(c.settings, env.map(|(k, v)| (k.to_string(), v.to_string())));
+        assert_eq!(c.args.prompt, ["go"]);
+    }
+
+    #[test]
+    fn a_table_flag_repeats_in_its_order() {
+        let c = cli(&[
+            "--cache",
+            "system = \"1h\"",
+            "--cache",
+            "{ keep_warm = true }",
+            "go",
+        ]);
+        let cache = [
+            ("cache", "system = \"1h\""),
+            ("cache", "{ keep_warm = true }"),
+        ];
+        assert_eq!(
+            c.settings,
+            cache.map(|(k, v)| (k.to_string(), v.to_string()))
+        );
         assert_eq!(c.args.prompt, ["go"]);
     }
 

@@ -26,7 +26,7 @@ whole config files.
 | Group | Settings |
 |---|---|
 | Profile | [`profile`](#profile) |
-| Model and prompt | [`model`](#model), [`effort`](#effort), [`cache_ttl`](#cache_ttl), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
+| Model and prompt | [`model`](#model), [`effort`](#effort), [`cache`](#cache), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
 | Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
 | Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`mod_reload`](#mod_reload), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
@@ -82,18 +82,21 @@ variable      HAEST_EFFORT=high
 flag          --effort high   or   -e high
 ```
 
-### `cache_ttl`
+### `cache`
 
-How long the provider keeps the prompt cache each model call writes: 5m, or 1h, which costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes. Anthropic models only; other providers ignore it.
+The prompt cache: which blocks carry a breakpoint and for how long (system, tools, history: off, 5m or 1h), and what an idle conversation does before its cache expires (keep_warm, keep_warm_for, compact_before_expire); per model under models."&lt;spec or prefix*>".
+`system`, `tools` and `history` (the newest message, which the next request reads the conversation before it from) each take `off`, `5m` or `1h`; the default is `5m` for all three. `1h` costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes; a model that keeps no cache entry for an hour gets five minutes, and you are told. `keep_warm = true` sends a pre-warm a little before an idle conversation's cache expires, while the model's prices say the pings cost less than writing the cache again, for at most `keep_warm_for` minutes after the last turn (default 60); a ping that wrote instead of read stops it, and you are told. A model with no price, or a provider that takes no pre-warm (only Anthropic's API and OpenRouter's `anthropic/` models do), is never pinged. `compact_before_expire = { min_context = 120000, instructions = "..." }` (or `min_context = "60%"` of the window; default `"off"`) compacts an idle conversation that holds at least `min_context` while its cache is still warm, when the summary and the smaller next write cost less than writing the whole prompt again. `[cache.models."openrouter:google/*"]` sets any of these for the models it matches (exact, or `prefix*`); the most specific wins.
 
-- Takes: one of `5m`, `1h`
-- Default: `5m`
+- Takes: a table: `[cache]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{ key = value }`), the flag repeated for more. Each layer merges into the ones before it, key by key
+- Default: every key at the default given above
 - Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
 
 ```text
-config.toml   cache_ttl = "1h"
-variable      HAEST_CACHE_TTL=1h
-flag          --cache-ttl 1h
+config.toml   [cache]
+              keep_warm = true
+              system = "1h"
+variable      HAEST_CACHE='{ system = "1h", keep_warm = true }'
+flag          --cache '{ system = "1h", keep_warm = true }'
 ```
 
 ### `system_prompt`

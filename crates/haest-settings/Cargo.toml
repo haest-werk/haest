@@ -16,6 +16,13 @@ workspace = true
 [dependencies]
 # haest-core only: a host that writes its settings out pulls in no tools, no HTTP.
 haest-core = { workspace = true }
+# The `[cache]` table's own shape, as a config file writes it (haest-core
+# already depends on serde, so nothing new is built).
+serde = { workspace = true }
+
+[dev-dependencies]
+# The `[cache]` table read as a config file holds it.
+toml = "1.1"
 
 [package.metadata.docs.rs]
 all-features = true

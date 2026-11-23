@@ -50,6 +50,29 @@ broker_access = "watch"
 # OpenRouter's provider routing, as JSON (your own file only).
 provider_routing = '{"global": {"banned": ["novita"]}}'
 
+# The prompt cache. The system prompt rarely changes and you often step away
+# for longer than five minutes: keep it an hour (a dearer write, read back
+# after a coffee). The conversation is written again each turn: five minutes.
+[cache]
+system = "1h"
+tools = "1h"
+history = "5m"
+# While you are away, ping the cache before it expires, as long as the
+# model's prices say the pings cost less than writing it again; at most for
+# two hours after the last turn.
+keep_warm = true
+keep_warm_for = 120
+# A long conversation left idle is compacted while its cache is still warm,
+# when that costs less than writing the whole prompt again next turn.
+compact_before_expire = { min_context = "60%", instructions = "Keep the open TODOs and the files touched." }
+
+# Google's models on OpenRouter keep no cache entry for an hour and take no
+# pre-warm: five minutes, no pings.
+[cache.models."openrouter:google/*"]
+system = "5m"
+tools = "5m"
+keep_warm = false
+
 # Variables every process haest starts gets, the sandbox's shell included.
 # ${NAME} comes from haest's environment; ${NAME:-default} when it is unset.
 [env]

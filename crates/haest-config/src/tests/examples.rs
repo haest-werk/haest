@@ -3,7 +3,7 @@
 //! fails here.
 
 use haest_core::WorkspaceMode;
-use haest_settings::BuiltinTools;
+use haest_settings::{BreakpointTtl, BuiltinTools, CompactBeforeExpire, MinContext};
 
 use super::*;
 
@@ -58,6 +58,28 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         WorkspaceMode::Real,
         "the project's file is read"
     );
+    let sonnet = s.cache.for_model("openrouter:anthropic/claude-sonnet-5.5");
+    let gemini = s.cache.for_model("openrouter:google/gemini-4-argon");
+    assert_eq!(
+        (
+            sonnet.system,
+            sonnet.keep_warm,
+            sonnet.keep_warm_for.as_secs()
+        ),
+        (BreakpointTtl::OneHour, true, 7_200),
+        "the system prompt an hour, kept warm two hours"
+    );
+    assert_eq!(
+        (gemini.system, gemini.keep_warm),
+        (BreakpointTtl::FiveMinutes, false)
+    );
+    assert!(matches!(
+        sonnet.compact_before_expire,
+        CompactBeforeExpire::When {
+            min_context: MinContext::Percent(60.0),
+            ..
+        }
+    ));
     let passed: Vec<&str> = r
         .passed_env
         .vars()

@@ -240,14 +240,18 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// The `cache_ttl` setting and the session id reach the wire: an hour on
-/// every breakpoint of an Anthropic model on OpenRouter, the session id as
-/// its sticky-routing `session_id`.
+/// The `[cache]` setting and the session id reach the wire: an hour on the
+/// system prompt of an Anthropic model on OpenRouter, none on the newest
+/// message, the session id as its sticky-routing `session_id`.
 #[tokio::test]
-async fn the_cache_ttl_setting_and_the_session_id_reach_the_model_call() {
+async fn the_cache_setting_and_the_session_id_reach_the_model_call() {
     let api = Arc::new(Refusing::default());
     let settings = Settings {
-        cache_ttl: haest_core::cache::CacheTtl::OneHour,
+        cache: haest_settings::CacheSettings {
+            system: haest_settings::BreakpointTtl::OneHour,
+            history: haest_settings::BreakpointTtl::Off,
+            ..Default::default()
+        },
         ..hardcoded()
     };
     let inputs = RuntimeInputs::new(settings, World::files(Arc::new(MemFs::new())))
@@ -265,4 +269,6 @@ async fn the_cache_ttl_setting_and_the_session_id_reach_the_model_call() {
         system["cache_control"],
         json!({"type": "ephemeral", "ttl": "1h"})
     );
+    let newest = body["messages"].as_array().unwrap().last().unwrap();
+    assert!(!newest.to_string().contains("cache_control"), "{newest}");
 }
