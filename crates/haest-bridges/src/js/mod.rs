@@ -30,6 +30,8 @@ mod handlers;
 mod load;
 #[cfg(test)]
 mod loop_tests;
+#[cfg(test)]
+mod order_tests;
 mod outbox;
 #[cfg(test)]
 mod protocol_tests;
