@@ -924,6 +924,7 @@ version = "0.4.1"
 dependencies = [
  "async-trait",
  "futures",
+ "haest-bridges",
  "haest-code",
  "haest-config",
  "haest-core",
@@ -943,6 +944,22 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
+]
+
+[[package]]
+name = "haest-bridges"
+version = "0.4.1"
+dependencies = [
+ "async-trait",
+ "haest-core",
+ "haest-mods",
+ "haest-ts",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
  "tokio-util",
 ]
 
@@ -1066,9 +1083,7 @@ version = "0.4.1"
 dependencies = [
  "async-trait",
  "haest-core",
- "haest-ts",
  "regex",
- "rquickjs",
  "serde",
  "serde_json",
  "thiserror",
@@ -1109,6 +1124,7 @@ version = "0.4.1"
 dependencies = [
  "async-trait",
  "futures",
+ "haest-bridges",
  "haest-code",
  "haest-core",
  "haest-mcp",

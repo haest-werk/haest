@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use haest_mods::ModUiRef;
 use rquickjs::{Context, Ctx, Function, Module, Object, Runtime, Value};
 use tokio::{runtime::Handle, sync::oneshot};
 use tokio_util::sync::CancellationToken;
@@ -19,7 +20,6 @@ use super::{
     channel::{JsMeta, Reply, ToJs},
     load::{ModCaps, ModLoadError},
 };
-use crate::env::ModUiRef;
 
 const BOOTSTRAP: &str = include_str!("bootstrap.js");
 const STACK_BYTES: usize = 4 << 20;

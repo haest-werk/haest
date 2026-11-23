@@ -25,6 +25,7 @@ haest-tools = { version = "0.4.1", path = "crates/haest-tools" }
 haest-mcp = { version = "0.4.1", path = "crates/haest-mcp" }
 haest-code = { version = "0.4.1", path = "crates/haest-code" }
 haest-mods = { version = "0.4.1", path = "crates/haest-mods" }
+haest-bridges = { version = "0.4.1", path = "crates/haest-bridges" }
 haest-ts = { version = "0.4.1", path = "crates/haest-ts" }
 haest-settings = { version = "0.4.1", path = "crates/haest-settings" }
 # No default features: the facade's `mcp` turns on the loader's `mcp`.

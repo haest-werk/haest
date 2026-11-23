@@ -1,9 +1,10 @@
 //! Mods: code that changes how a haest agent behaves, without a change to haest itself.
 //!
-//! A mod is plain Rust (a [`Mod`]), a `.js` / `.ts` file run in embedded
-//! QuickJS (a [`JsMod`]), or a set of [`Hooks`]: one handler per event, a
-//! Rust closure or anything else that implements [`Hook`]. All of them hook
-//! the same events of the agent loop --
+//! A mod is plain Rust (a [`Mod`]) or a set of [`Hooks`]: one handler per
+//! event, a Rust closure or anything else that implements [`Hook`]. A `.js`
+//! / `.ts` mod file is a mod too, through a bridge: haest-bridges (feature
+//! `js`) runs it in embedded QuickJS. All of them hook the same events of
+//! the agent loop --
 //!
 //! | Event | When | May | Payload | Decision |
 //! |---|---|---|---|---|
@@ -30,9 +31,8 @@
 //! Allow) and [`PlanMod`] (`/plan`: read-only until `/plan off`).
 //!
 //! A mod runs with the HOST's full trust, sandbox or not: a native mod is the
-//! host's own code, and a mod file can do whatever its `haest` API reaches.
-//! Load a project's mod files only from a directory the human trusts
-//! ([`ModOptions::with_project_mods`]).
+//! host's own code, and a mod file can do whatever its bridge lets it reach.
+//! Load a project's mod files only from a directory the human trusts.
 //!
 //! # When to use this crate directly
 //!
@@ -46,37 +46,42 @@
 //! | [`Mod`] | a native mod: implement only the events it hooks |
 //! | [`Hooks`], [`Hook`], [`Binding`] | one handler per event as a mod: a closure, an `async fn` or any [`Hook`], each bound with a timeout, an [`OnError`] and (tool events) a tool-name matcher |
 //! | [`Event`], [`ModEvent`] and the payload and decision types | the events' protocol: what a handler gets and answers, typed once, the mod files' own JSON |
-//! | [`JsMod`] | a `.js` / `.ts` mod file, and the `haest` API its default export gets; [`ModCaps`] bounds it, [`ModLoadError`] says why one did not load |
-//! | [`load_mods`] | the built-ins plus one conversation's mod files, as [`Mods`] |
-//! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`] |
+//! | [`load_mods`] | the built-ins plus the host's own mods, as [`Mods`] |
+//! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`]. A `Mods` is a [`Mod`] itself, so a set can run inside another in its place |
 //! | [`ModTools`], [`ModSystemPrompt`], [`ModHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
 //! | [`Mods::rewrite_prompt`], [`Mods::command`] | `prompt.submit` and slash commands, for the host's input path |
 //! | [`ModUi`] | PLUG POINT: how the host asks the human and shows them a line |
 //! | [`ApprovalGate`], [`Prompter`] | the generic half of a host's ask: scoped ALWAYS answers, a timeout, interrupts; [`ApprovalGate::mod_ui`] makes it the host's whole [`ModUi`] |
 //! | [`ModRef`], [`ModUiRef`], [`AutoJudgeRef`], [`PrompterRef`] | the handles the plug points are held by; a parameter that takes `impl Into<..Ref>` takes the value itself, or an `Arc` of it |
+//! | `testing` (feature `testing`) | fakes for tests of mods, and the decision cases a bridge must answer the way [`Hooks`] does |
 //!
 //! # Putting mods in the loop
 //!
 //! Load the mods, wrap the agent's tool source in [`ModTools`] and its system
 //! prompt in [`ModSystemPrompt`] (and its hooks in [`ModHooks`], for the
-//! loop events: [the mod file below](#a-mod-file-in-the-loop) uses them), and
-//! pass the human's text through [`Mods::rewrite_prompt`] before it goes to
-//! the agent. The model here is scripted, so the example runs offline.
+//! loop events: [`Hooks`' example](Hooks#examples) uses them), and pass the
+//! human's text through [`Mods::rewrite_prompt`] before it goes to the
+//! agent. The model here is scripted, so the example runs offline.
 //!
 //! ```
 //! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, MemFs, Message, SharedDeps, ShutWorkspace, Tools,
+//!     Agent, AgentDeps, AgentOptions, Message, SharedDeps, ShutWorkspace, Tools,
+//!     error::BoxError,
 //!     testing::{ScriptedProvider, text_answer, tool_answer},
 //!     tool::Tool,
 //!     workspace::WorkspaceMode,
 //! };
-//! use haest_mods::{ModOptions, ModSystemPrompt, ModTools, load_mods};
+//! use haest_mods::{
+//!     Before, Binding, Hooks, ModOptions, ModSystemPrompt, ModTools, SystemPromptPayload,
+//!     ToolBeforePayload, load_mods,
+//! };
 //! use serde_json::json;
+//! use tokio_util::sync::CancellationToken;
 //! # use haest_mods::{ApprovalRequest, Decision, ModUi};
 //! # struct Terminal;
 //! # #[async_trait::async_trait]
 //! # impl ModUi for Terminal {
-//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
+//! #     async fn ask(&self, _: ApprovalRequest, _: &CancellationToken) -> Decision { Decision::Deny }
 //! #     fn info(&self, text: &str) { println!("{text}") }
 //! # }
 //! # struct Bash;
@@ -94,20 +99,25 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() {
-//! // The human's own mod file, in the host's config directory.
-//! let files = MemFs::from_files([(
-//!     "/home/me/.config/haest/mods/guard.js",
-//!     r#"export default function (haest) {
-//!          haest.on('tool.before', call =>
-//!            call.name === 'Bash' && String(call.input.command).includes('rm -rf /')
-//!              ? { deny: 'not on this machine' } : undefined)
-//!          haest.on('system.prompt', () => 'Ask before deleting anything.')
-//!        }"#,
-//! )]);
-//! let config = ModOptions::new("/project", WorkspaceMode::Real, "/home/me/.config/haest")
-//!     .with_user_mods(true);
-//! let mods = load_mods(config, &files, Terminal).await;
-//! assert_eq!(mods.names(), ["approval", "plan", "/home/me/.config/haest/mods/guard.js"]);
+//! // The host's own rule for this machine, as two hooks.
+//! let guard = |p: ToolBeforePayload, _: CancellationToken| async move {
+//!     let command = p.call.input.get("command").and_then(|c| c.as_str()).unwrap_or("");
+//!     Ok::<_, BoxError>(if command.contains("rm -rf /") {
+//!         Before::Deny("not on this machine".into())
+//!     } else {
+//!         Before::Pass
+//!     })
+//! };
+//! let line = |_: SystemPromptPayload, _: CancellationToken| async {
+//!     Ok::<_, BoxError>(Some("Ask before deleting anything.".to_string()))
+//! };
+//! let tidy = Hooks::new()
+//!     .with_name("tidy")
+//!     .on_tool_before(Binding::new(guard).with_matcher("Bash"))
+//!     .on_system_prompt(line);
+//! let config = ModOptions::new("/project", WorkspaceMode::Real).with_mod(tidy);
+//! let mods = load_mods(config, Terminal);
+//! assert_eq!(mods.names(), ["approval", "plan", "tidy"]);
 //!
 //! // The agent's tools and system prompt, inside the mods.
 //! let tools = Tools::new().with(Bash);
@@ -126,7 +136,7 @@
 //! let outcome = agent.run(&text, &mut Vec::new()).await;
 //! assert_eq!(outcome.error, None);
 //!
-//! // The model saw the mod's line, and its Bash call came back refused.
+//! // The model saw the hook's line, and its Bash call came back refused.
 //! assert!(model.requests()[0].system.contains("Ask before deleting anything."));
 //! let refusal = agent.history().iter().find_map(|m| match m {
 //!     Message::Tool(result) => Some(result),
@@ -216,134 +226,13 @@
 //! [`Hooks`' example](Hooks#examples) guards Bash with a matcher and sends
 //! a turn back once.
 //!
-//! # A mod file
+//! # Mod files
 //!
-//! A `.js` or `.ts` file whose default export receives the `haest` API (all
-//! of it is on [`JsMod`]). [`load_mods`] finds the files in the mod
-//! directories; a host can also load one itself with [`JsMod::load`]. This one
-//! adds a slash command and a tool:
-//!
-//! ```
-//! use std::path::Path;
-//!
-//! use haest_core::{ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
-//! use haest_mods::{CommandOutcome, JsMod, ModEnv, ModTools, Mods};
-//! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
-//! # struct Terminal;
-//! # #[async_trait::async_trait]
-//! # impl ModUi for Terminal {
-//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-//! #     fn info(&self, text: &str) { println!("{text}") }
-//! # }
-//!
-//! const STANDUP_TS: &str = r#"
-//! export default function (haest: any) {
-//!   haest.command('standup', (args: string) => `Write my standup from: ${args}`)
-//!   haest.tool({
-//!     name: 'WordCount',
-//!     description: 'Count the words in a text',
-//!     parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-//!     readOnly: true,
-//!     execute: (input: { text: string }) => String(input.text.split(/\s+/).filter(Boolean).length),
-//!   })
-//! }
-//! "#;
-//!
-//! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), haest_core::error::BoxError> {
-//! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
-//! let standup = JsMod::load(Path::new("/mods/standup.ts"), STANDUP_TS.into(), &env).await?;
-//! let mods = Mods::new(env, [standup]);
-//!
-//! // The human types `/standup yesterday's commits`; the model gets the text.
-//! let sent = mods.command("/standup", "yesterday's commits").await;
-//! assert_eq!(sent, CommandOutcome::Prompt("Write my standup from: yesterday's commits".into()));
-//!
-//! // The mod's tool sits beside the host's, inside the same hooks.
-//! let tools = ModTools::wrap(&mods, Tools::new());
-//! let ctx = ToolContext::new("/project", ShutWorkspace);
-//! let count = input(json!({ "text": "one two three" }))?;
-//! assert_eq!(tools[0].execute(count, &ctx).await?.content, "3");
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! # A mod file in the loop
-//!
-//! The loop events run where the host put [`ModHooks`] around its hooks.
-//! This mod hides the host's `Push` tool from the model, and holds every
-//! turn until the tests ran: `turn.end` keeps it going with a message.
-//!
-//! ```
-//! use std::path::Path;
-//!
-//! use haest_core::{
-//!     Agent, AgentDeps, AgentOptions, LoopEvent, Message, NoHooks, SharedDeps, ShutWorkspace,
-//!     Tools,
-//!     testing::{ScriptedProvider, text_answer, tool_answer},
-//!     workspace::WorkspaceMode,
-//! };
-//! use haest_mods::{JsMod, ModEnv, ModHooks, ModTools, Mods};
-//! use serde_json::json;
-//! # use haest_mods::{ApprovalRequest, Decision, ModUi};
-//! # struct Terminal;
-//! # #[async_trait::async_trait]
-//! # impl ModUi for Terminal {
-//! #     async fn ask(&self, _: ApprovalRequest, _: &tokio_util::sync::CancellationToken) -> Decision { Decision::Deny }
-//! #     fn info(&self, _: &str) {}
-//! # }
-//! # struct Named(&'static str);
-//! # #[async_trait::async_trait]
-//! # impl haest_core::Tool for Named {
-//! #     fn name(&self) -> &str { self.0 }
-//! #     fn description(&self) -> String { self.0.into() }
-//! #     fn parameters(&self) -> serde_json::Value { json!({"type": "object"}) }
-//! #     fn kind(&self) -> &str { "dev.run" }
-//! #     async fn execute(&self, _: haest_core::tool::JsonMap, _: &haest_core::ToolContext)
-//! #         -> Result<haest_core::ToolOutput, haest_core::ToolError> {
-//! #         Ok(haest_core::ToolOutput::text("ok"))
-//! #     }
-//! # }
-//!
-//! const TESTED_FIRST_TS: &str = r#"
-//! export default function (haest: any) {
-//!   haest.disableTool('Push')
-//!   let tested = false
-//!   haest.on('tool.after', (call: { name: string }) => { if (call.name === 'Test') tested = true })
-//!   haest.on('turn.end', (turn: { stopReason: string }) =>
-//!     tested ? undefined : { continue: 'Run the tests before you stop.' })
-//! }
-//! "#;
-//!
-//! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), haest_core::error::BoxError> {
-//! let env = ModEnv::new("/project", WorkspaceMode::Sandbox, Terminal);
-//! let rule = JsMod::load(Path::new("/mods/tested-first.ts"), TESTED_FIRST_TS.into(), &env).await?;
-//! let mods = Mods::new(env, [rule]);
-//!
-//! let model = ScriptedProvider::new([
-//!     text_answer("Done, I think."),
-//!     tool_answer(&[("t1", "Test", json!({}))]),
-//!     text_answer("The tests pass."),
-//! ]);
-//! let tools = Tools::new().with(Named("Test")).with(Named("Push"));
-//! let shared = SharedDeps::new(model.resolver(), "/project", ShutWorkspace);
-//! let deps = AgentDeps::new(shared, ModTools::new(tools, mods.clone()), "")
-//!     .with_hooks(ModHooks::new(NoHooks, mods));
-//! let mut agent = Agent::new(deps, AgentOptions::new("scripted:m"));
-//!
-//! let end = agent.run("fix the bug", &mut Vec::<LoopEvent>::new()).await;
-//! assert_eq!(end.error, None);
-//!
-//! // The model never saw Push, and was sent back once to run the tests.
-//! let requests = model.requests();
-//! assert!(requests.iter().all(|r| r.tools.iter().all(|t| t.name != "Push")));
-//! assert_eq!(requests.len(), 3);
-//! assert!(matches!(&agent.history()[2], Message::User(u) if u.content.contains("Run the tests")));
-//! # Ok(())
-//! # }
-//! ```
+//! A `.js` or `.ts` file whose default export receives the `haest` API is a
+//! bridge's mod, not this crate's: haest-bridges (feature `js`) loads one as
+//! its `JsMod`, and a conversation's mod files as one host mod, its
+//! `ModFiles`, which reloads them as they change. A host adds that with
+//! [`ModOptions::with_mod`], first among its own; haest-runtime does.
 //!
 //! # Approvals
 //!
@@ -382,7 +271,6 @@ mod gate;
 mod hook;
 mod hook_set;
 mod hooks;
-mod js;
 mod loader;
 mod payload;
 mod plan;
@@ -392,8 +280,6 @@ mod registry;
 #[cfg(any(test, feature = "testing"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "testing")))]
 pub mod testing;
-#[cfg(test)]
-mod testkit;
 
 pub use api::{Before, Mod, ModRef, ModToolCall, Step, TurnEnd};
 pub use approval::{
@@ -408,7 +294,6 @@ pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, Pro
 pub use hook::{Binding, DEFAULT_HOOK_TIMEOUT, Hook, HookError, OnError};
 pub use hook_set::Hooks;
 pub use hooks::ModHooks;
-pub use js::{JsMod, ModCaps, ModLoadError};
 pub use loader::{ModOptions, load_mods};
 pub use payload::{
     AgentView, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,

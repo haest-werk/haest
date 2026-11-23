@@ -7,7 +7,7 @@ use haest_core::{
 use serde_json::json;
 
 use super::*;
-use crate::{api::ModRef, registry::Mods, testkit::*};
+use crate::{api::ModRef, registry::Mods, testing::*};
 
 #[test]
 fn recursive_deletes_history_rewrites_disk_wipes_and_sudo_need_approval_ordinary_commands_do_not() {

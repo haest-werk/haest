@@ -1,14 +1,11 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
+use haest_mods::{CommandOutcome, Decision, Mods};
 use serde_json::json;
 
 use super::{JsMod, ModCaps, ModLoadError};
-use crate::{
-    ask::Decision,
-    registry::{CommandOutcome, Mods},
-    testkit::*,
-};
+use crate::testkit::*;
 
 const GUARD_TS: &str = r#"
 interface Call { name: string; input: Record<string, unknown>; readOnly: boolean }

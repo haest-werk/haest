@@ -68,7 +68,7 @@ type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 /// # Examples
 ///
 /// ```
-/// use haest_core::{MemFs, ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
+/// use haest_core::{ShutWorkspace, ToolContext, Tools, tool::input, workspace::WorkspaceMode};
 /// use haest_mods::{CommandOutcome, ModOptions, ModTools, PLAN_PROMPT, load_mods};
 /// use serde_json::json;
 /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
@@ -93,8 +93,7 @@ type PlanListener = Arc<dyn Fn(bool) + Send + Sync>;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
-/// let config = ModOptions::new("/project", WorkspaceMode::Sandbox, "/home/me/.config/haest");
-/// let mods = load_mods(config, &MemFs::new(), Terminal).await;
+/// let mods = load_mods(ModOptions::new("/project", WorkspaceMode::Sandbox), Terminal);
 /// let tools = ModTools::wrap(&mods, Tools::new().with(Write));
 /// let ctx = ToolContext::new("/project", ShutWorkspace);
 /// let write = json!({ "file_path": "notes.md" });

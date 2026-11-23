@@ -5,7 +5,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use super::{Compact, ModelAfterDecision, ModelBeforeDecision, TurnEndDecision};
-use crate::{api::Before, testkit::input};
+use crate::{api::Before, testing::input};
 
 fn read<T: DeserializeOwned>(v: Value) -> T {
     serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{v} does not read: {e}"))

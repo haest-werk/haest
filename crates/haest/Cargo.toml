@@ -17,7 +17,7 @@ workspace = true
 name = "haest"
 
 [features]
-default = ["providers", "workspace", "tools", "mcp", "code", "mods", "settings", "reqwest"]
+default = ["providers", "workspace", "tools", "mcp", "code", "mods", "bridge-js", "settings", "reqwest"]
 # The HTTP seam: on with every part that sends requests through it.
 http = ["dep:haest-http"]
 # The default client over reqwest and rustls (`http::ReqwestClient`). Off, with
@@ -36,9 +36,13 @@ mcp = ["dep:haest-mcp", "haest-config?/mcp"]
 rmcp = ["mcp", "haest-mcp/rmcp"]
 # The QuickJS engine: the Code tool and the sandbox `js` command.
 code = ["dep:haest-code"]
-# Mods: JS/TS files that hook tools, prompts and commands; approvals and plan mode.
-# With `session` too: approval asks answered over the session.
+# Mods: native Rust mods and hooks on tools, prompts and commands; approvals
+# and plan mode. No script engine. With `session` too: approval asks answered
+# over the session.
 mods = ["dep:haest-mods", "haest-session?/approvals"]
+# The JS bridge: `.js` / `.ts` mod files in embedded QuickJS, a conversation's
+# mod files reloaded as they change. Turns on `mods`.
+bridge-js = ["dep:haest-bridges", "haest-bridges/js", "mods"]
 # Settings as plain values a host writes out: no files, no environment, no flags.
 settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
@@ -46,7 +50,7 @@ settings = ["dep:haest-settings"]
 # too, a trusted project's .mcp.json).
 config = ["dep:haest-config", "settings", "providers"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
-runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods"]
+runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods", "bridge-js"]
 # The wire format: the envelope around a conversation's events, requests, the
 # replay ring, the NDJSON line codec. serde only.
 wire = ["dep:haest-wire"]
@@ -85,6 +89,7 @@ haest-tools = { workspace = true, optional = true }
 haest-mcp = { workspace = true, optional = true }
 haest-code = { workspace = true, optional = true }
 haest-mods = { workspace = true, optional = true }
+haest-bridges = { workspace = true, optional = true }
 haest-settings = { workspace = true, optional = true }
 haest-config = { workspace = true, optional = true }
 haest-runtime = { workspace = true, optional = true }

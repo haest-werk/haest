@@ -18,7 +18,7 @@ use haest_core::{
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use crate::{Mod, ModEnv, ModRef, Mods, Step, TurnEnd, testkit::*};
+use crate::{Mod, ModEnv, ModRef, Mods, Step, TurnEnd, testing::*};
 
 mod order;
 

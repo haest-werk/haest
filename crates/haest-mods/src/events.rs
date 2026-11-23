@@ -6,13 +6,14 @@
 //! decision, what a failing hook does by default, and its [`Hooks`] binding
 //! (`on_*`). The rows write all of them, so an event cannot come without
 //! any. The rest of an event is held from the other side: `impl Mod` for
-//! [`JsMod`](crate::JsMod) and for [`Hooks`] name every method
-//! (`clippy::missing_trait_methods`), so a `Mod` event without its mod-file
-//! twin or its `Hooks` run fails the gates; the JavaScript half of a mod
-//! file (bootstrap.js) is handed [`ModEvent::WORDS`] at load and refuses to
-//! start unless it handles exactly those; and the parity tests match on
-//! every [`ModEvent`], so a new row fails to compile there until it is
-//! driven through both.
+//! [`Hooks`], for [`Mods`](crate::Mods) and for haest-bridges' `JsMod` name
+//! every method (`clippy::missing_trait_methods`), so a `Mod` event without
+//! its mod-file twin or its `Hooks` run fails the gates; the JavaScript
+//! half of a mod file (bootstrap.js) is handed [`ModEvent::WORDS`] at load
+//! and refuses to start unless it handles exactly those; and the parity
+//! tests (`testing::decision_cases`, run by both crates)
+//! match on every [`ModEvent`], so a new row fails to compile there until
+//! it is driven through both.
 
 use std::fmt;
 

@@ -1,9 +1,8 @@
 //! Why what crossed into or out of a mod file was refused.
 
 use haest_core::error::BoxError;
+use haest_mods::ModEvent;
 use serde_json::Value;
-
-use crate::events::ModEvent;
 
 /// A payload that could not be written as JSON, or an answer its event does
 /// not take.

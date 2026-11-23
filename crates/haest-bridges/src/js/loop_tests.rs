@@ -8,13 +8,13 @@ use haest_core::{
     tool::{JsonMap, ToolSource},
     workspace::{ShutWorkspace, WorkspaceMode},
 };
+use haest_mods::{
+    Before, CommandOutcome, Mod, ModEvent, ModToolCall, ModTools, Mods, Step, TurnEnd,
+};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    Before, Mod, ModToolCall, ModTools, Mods, Step, TurnEnd, events::ModEvent,
-    registry::CommandOutcome, testkit::*,
-};
+use crate::testkit::*;
 
 /// `source` loaded as the `.ts` mod `file`, alone in its [`Mods`].
 async fn ts_mods(ui: &std::sync::Arc<TestUi>, file: &str, source: &str) -> Mods {
@@ -30,8 +30,9 @@ fn user_text(m: &Message) -> Option<&str> {
     }
 }
 
-/// TWIN PARITY. A `.ts` mod with a handler on every event of the Rust list
-/// (events.rs) hears each one when the matching `Mod` method runs on it. A
+/// TWIN PARITY (D29). A `.ts` mod with a handler on every event of the Rust
+/// list (haest-mods' `ModEvent`) hears each one when the matching `Mod`
+/// method runs on it. A
 /// `Mod` event without a twin fails the gates at `impl Mod for JsMod`
 /// (every method named), an event the list has and bootstrap.js does not
 /// handle stops every mod file loading, and a new event fails to compile
@@ -94,6 +95,9 @@ async fn every_mod_event_reaches_its_handler_in_a_ts_mod() {
                 let end = m.turn_end(&mut agent, &ended, &cancel, &haest).await;
                 assert_eq!(end.unwrap(), TurnEnd::Pass);
             }
+            // `ModEvent` is non-exhaustive outside haest-core: a new event
+            // fails here at run time, as every event is driven through.
+            other => panic!("{other} is not driven through a mod file here"),
         }
     }
     assert_eq!(ui.infos(), ModEvent::WORDS);

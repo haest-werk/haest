@@ -20,7 +20,7 @@ use crate::{
     env::ModEnv,
     plan::PlanMod,
     registry::{CommandOutcome, Mods},
-    testkit::*,
+    testing::*,
 };
 
 /// `mods`, nested one level down in a `Mods` of their own.

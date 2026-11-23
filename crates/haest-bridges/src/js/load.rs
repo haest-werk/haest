@@ -9,6 +9,7 @@ use std::{
 };
 
 use haest_core::LiveTools;
+use haest_mods::{ModEnv, ModEvent};
 use serde_json::json;
 
 use super::{
@@ -16,7 +17,6 @@ use super::{
     channel::{CallError, JsMeta, JsThread},
     thread::{self, Setup},
 };
-use crate::{env::ModEnv, events::ModEvent};
 
 /// The bounds a file mod runs in. The default: 10 s of code without a pause,
 /// 128 MiB of memory, 30 s for its default export to return.
@@ -24,7 +24,7 @@ use crate::{env::ModEnv, events::ModEvent};
 /// ```
 /// use std::time::Duration;
 ///
-/// use haest_mods::ModCaps;
+/// use haest_bridges::ModCaps;
 ///
 /// let strict = ModCaps { load_timeout: Duration::from_secs(5), ..ModCaps::default() };
 /// assert_eq!(strict.memory_bytes, 128 << 20);
@@ -93,16 +93,16 @@ impl JsMod {
     /// (a `.ts` path, through `haest-ts`), evaluates `source` as an ES module
     /// in a fresh QuickJS runtime on its own thread, and calls its default
     /// export with the `haest` API. `path` names the mod
-    /// ([`Mod::name`](crate::Mod::name)) and its errors; the file is not
+    /// ([`Mod::name`](haest_mods::Mod::name)) and its errors; the file is not
     /// read, `source` is the code.
     ///
     /// What the default export registers (events, tools, commands) is in
     /// place when this returns.
     ///
-    /// [`load_mods`](crate::load_mods) calls this for every file in the mod
+    /// [`ModFiles`](crate::ModFiles) calls this for every file in the mod
     /// directories; a host calls it to load one file of its own, then puts
-    /// it in with [`ModOptions::with_mod`](crate::ModOptions::with_mod) or
-    /// [`Mods::new`](crate::Mods::new).
+    /// it in with [`ModOptions::with_mod`](haest_mods::ModOptions::with_mod)
+    /// or [`Mods::new`](haest_mods::Mods::new).
     ///
     /// # Errors
     ///
@@ -117,7 +117,8 @@ impl JsMod {
     /// # use std::path::Path;
     /// # use haest_core::workspace::WorkspaceMode;
     /// # use haest_mods::{ApprovalRequest, Decision, ModUi};
-    /// use haest_mods::{JsMod, Mod, ModEnv, ModLoadError};
+    /// use haest_bridges::{JsMod, ModLoadError};
+    /// use haest_mods::{Mod, ModEnv};
     /// # struct Terminal;
     /// # #[async_trait::async_trait]
     /// # impl ModUi for Terminal {

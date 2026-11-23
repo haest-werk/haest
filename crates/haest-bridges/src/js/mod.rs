@@ -14,18 +14,24 @@
 //! `haest.removeTool(name)`, `haest.disableTool(name)`,
 //! `haest.enableTool(name)`, `haest.command(name, run)`,
 //! `haest.ask(req, ctx.signal)` (a promise of 'allow' | 'deny') and
-//! `haest.notice(text)`. The events are events.rs's list, handed to the
-//! JavaScript half (bootstrap.js) at load. Handlers of `tool.before`,
-//! `tool.after` and a tool's `execute` get `ctx = { cwd, toolCallId, signal }`.
-//! `.ts` is type-stripped first. There is no `node:` API, no `import`, no
-//! timer, no network and no file access: a mod reaches the world through the
-//! `haest` API alone.
+//! `haest.notice(text)`. The events are haest-mods' list (`ModEvent`),
+//! handed to the JavaScript half (bootstrap.js) at load. Handlers of
+//! `tool.before`, `tool.after` and a tool's `execute` get
+//! `ctx = { cwd, toolCallId, signal }`. `.ts` is type-stripped first. There
+//! is no `node:` API, no `import`, no timer, no network and no file access:
+//! a mod reaches the world through the `haest` API alone.
+//!
+//! A conversation's mod files, found in its mod directories and reloaded
+//! as they change, are one mod: [`ModFiles`] (files.rs).
 
 mod channel;
+mod files;
 mod load;
 #[cfg(test)]
 mod loop_tests;
 mod outbox;
+#[cfg(test)]
+mod protocol_tests;
 mod returns;
 #[cfg(test)]
 mod tests;
@@ -40,21 +46,17 @@ use haest_core::{
     error::BoxError,
     tool::{ToolContext, ToolOutput, ToolSource},
 };
+use haest_mods::{
+    Before, Event, Mod, ModEnv, ModEvent, ModToolCall, ModelAfterDecision, ModelAfterPayload,
+    ModelBeforeDecision, ModelBeforePayload, PromptSubmitPayload, Step, SystemPromptPayload,
+    ToolAfterPayload, ToolBeforePayload, TurnEnd, TurnEndDecision, TurnEndPayload,
+};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    api::{Before, Mod, ModToolCall, Step, TurnEnd},
-    decision::{ModelAfterDecision, ModelBeforeDecision, TurnEndDecision},
-    env::ModEnv,
-    events::{Event, ModEvent},
-    payload::{
-        ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
-        ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
-    },
-};
 use channel::{JsMeta, JsThread, ToolChange};
+pub use files::{ModFileOptions, ModFiles};
 pub use load::{ModCaps, ModLoadError};
 use returns::{BadReturn, text_of};
 use tool::JsTool;
@@ -82,7 +84,7 @@ use tool::JsTool;
 /// | `haest.disableTool(name)` | hide any tool, the host's, an MCP server's or a mod's: neither offered to the model nor run ([`Mod::disabled_tools`]) |
 /// | `haest.enableTool(name)` | show a hidden tool again, as it was, where it was |
 /// | `haest.command(name, run)` | add a slash command (a leading `/` is dropped): `run(args)` returns text for the model, or nothing |
-/// | `haest.ask(req, ctx.signal)` | a promise of `'allow'` or `'deny'` from the human; `req` is an [`ApprovalRequest`](crate::ApprovalRequest) in camelCase, and with `ctx.signal` the ask ends as a deny when that call is interrupted |
+/// | `haest.ask(req, ctx.signal)` | a promise of `'allow'` or `'deny'` from the human; `req` is an [`ApprovalRequest`](haest_mods::ApprovalRequest) in camelCase, and with `ctx.signal` the ask ends as a deny when that call is interrupted |
 /// | `haest.notice(text)` | a line the human sees |
 ///
 /// What each event's handler gets and may return:
@@ -98,9 +100,9 @@ use tool::JsTool;
 /// | `turn.end` | `{ modelSpec, effort, historyLength, stopReason, error }` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
 ///
 /// What a handler gets is its event's payload and what it returns is read
-/// as its event's decision, the types [`Event`](crate::Event) ties together
-/// (the [crate docs](crate) list them): a [`Hook`](crate::Hook) in Rust or
-/// in another process gets and answers the same.
+/// as its event's decision, the types [`Event`] ties together
+/// ([haest-mods' docs](haest_mods) list them): a [`Hook`](haest_mods::Hook)
+/// in Rust or in another process gets and answers the same.
 /// `call` is a [`ModToolCall`] and `output` a tool output, both in camelCase.
 /// `ctx` is `{ cwd, toolCallId, signal }`; a tool's `execute` gets it too,
 /// and returns a string or `{ content, isError }`. `lastMessage` and
@@ -112,7 +114,8 @@ use tool::JsTool;
 /// be async (an interrupt stops the wait); `prompt.submit` and
 /// `system.prompt` must answer at once (a returned promise is an error).
 /// Several handlers of one event run in the order they were added. A handler
-/// that throws is a failed event ([`Mods`](crate::Mods) says what that means).
+/// that throws is a failed event ([`Mods`](haest_mods::Mods) says what that
+/// means).
 ///
 /// # What a mod file cannot do
 ///
@@ -123,8 +126,7 @@ use tool::JsTool;
 /// code that runs 10 s without a pause (awaiting does not count) is stopped
 /// (every call into the mod in flight then fails, and the next call runs as
 /// usual), and the default export must return within 30 s. A host sets other
-/// caps with [`JsMod::load_with`] or
-/// [`ModOptions::with_caps`](crate::ModOptions::with_caps).
+/// caps with [`JsMod::load_with`] or [`ModFileOptions::with_caps`].
 ///
 /// The thread stops when the `JsMod` and every tool it added are dropped.
 pub struct JsMod {
@@ -170,7 +172,7 @@ impl JsMod {
 }
 
 /// Every method is named, so an event `Mod` gains fails the gates here
-/// until it has its twin in a mod file (events.rs, bootstrap.js).
+/// until it has its twin in a mod file (haest-mods' events, bootstrap.js).
 #[async_trait]
 #[warn(clippy::missing_trait_methods)]
 impl Mod for JsMod {

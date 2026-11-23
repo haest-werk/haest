@@ -167,14 +167,37 @@ async fn a_hosts_own_mod_runs_in_the_conversation_after_the_built_ins() {
         .await
         .unwrap();
     let names = rt.mods().names();
-    assert_eq!(
-        names.last().map(String::as_str),
-        Some("house-style"),
-        "{names:?}"
-    );
+    assert_eq!(names, ["approval", "plan", "house-style"]);
     let prompt = rt.agent().deps().system_prompt().system_prompt().await;
     assert!(prompt.contains("Use British spelling."), "{prompt}");
     assert_eq!(rt.mods().rewrite_prompt("hi").await, "hi (house style)");
+}
+
+/// The order the mods always ran in: the built-ins, the mod files (the
+/// human's, then the project's), the host's own.
+#[tokio::test]
+async fn the_mod_files_run_after_the_built_ins_and_before_the_hosts_own_mods() {
+    let tag =
+        |t: &str| format!("export default (haest) => haest.on('prompt.submit', t => t + ' ({t})')");
+    let files = MemFs::from_files([
+        ("/h/.config/haest/mods/mine.js", tag("mine")),
+        ("/w/.haest/mods/repo.js", tag("repo")),
+    ]);
+    let settings = Settings {
+        mods: true,
+        project_mods: true,
+        ..hardcoded()
+    };
+    let inputs = RuntimeInputs::new(settings, World::files(files))
+        .with_keys(openrouter_key())
+        .with_mod(HouseStyle);
+    let rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
+    let names = rt.mods().names();
+    assert_eq!(names, ["approval", "plan", "mod files", "house-style"]);
+    let rewritten = rt.mods().rewrite_prompt("hi").await;
+    assert_eq!(rewritten, "hi (mine) (repo) (house style)");
 }
 
 /// A host's own models: a turn runs on them with no key and no HTTP, and a

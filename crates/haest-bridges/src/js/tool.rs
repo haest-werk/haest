@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
+use haest_mods::ToolCallContext;
 use serde_json::{Value, json};
 
 use super::channel::{CallError, JsThread, ToolMeta};
-use crate::payload::ToolCallContext;
 
 pub(crate) struct JsTool {
     meta: ToolMeta,

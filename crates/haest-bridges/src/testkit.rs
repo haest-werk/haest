@@ -1,13 +1,12 @@
-//! This crate's own test kit: the public fakes ([`crate::testing`]) and
+//! This crate's test kit: haest-mods' fakes ([`haest_mods::testing`]) and
 //! the mod-file helpers.
 
 use std::{path::Path, time::Duration};
 
-pub(crate) use crate::testing::*;
-use crate::{
-    env::ModEnv,
-    js::{JsMod, ModCaps, ModLoadError},
-};
+use haest_mods::ModEnv;
+pub(crate) use haest_mods::testing::*;
+
+use crate::{JsMod, ModCaps, ModLoadError};
 
 /// Caps short enough that a runaway mod is stopped inside a test.
 pub(crate) fn test_caps() -> ModCaps {

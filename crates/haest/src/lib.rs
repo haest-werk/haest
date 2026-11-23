@@ -191,7 +191,8 @@
 //! | `mcp` | [`mcp`]: MCP servers (stdio, streamable HTTP) and their tools | yes |
 //! | `rmcp` | `mcp::rmcp` and `mcp::McpHub::connect_transport`: an MCP server over a transport the host opened (rmcp's types in haest's API); turns on `mcp` | no |
 //! | `code` | [`code`]: the Code tool and the sandbox `js` command, in embedded QuickJS | yes |
-//! | `mods` | [`mods`]: change how haest behaves without forking it; approvals, plan mode | yes |
+//! | `mods` | [`mods`]: change how haest behaves without forking it, in Rust: native mods, hooks per event; approvals, plan mode | yes |
+//! | `bridge-js` | [`bridges`]: `.js` / `.ts` mod files in embedded QuickJS, reloaded as they change; turns on `mods` | yes |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json` | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
@@ -275,6 +276,9 @@ pub mod prelude {
     pub use serde_json::{Value, json};
 }
 
+#[cfg(feature = "bridge-js")]
+#[doc(inline)]
+pub use haest_bridges as bridges;
 #[cfg(feature = "code")]
 #[doc(inline)]
 pub use haest_code as code;

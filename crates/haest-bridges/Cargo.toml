@@ -1,0 +1,43 @@
+[package]
+name = "haest-bridges"
+description = "haest's bridges: mods and hooks written outside Rust, speaking the mod protocol. Feature js: .js/.ts mod files in embedded QuickJS, reloaded as they change"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+# One feature per bridge, each carrying what only it needs; none is on by
+# default.
+[features]
+# TypeScript and JavaScript mod files in embedded QuickJS (`JsMod`), and a
+# conversation's mod files as one mod that reloads them (`ModFiles`).
+js = ["dep:rquickjs", "dep:haest-ts"]
+
+[dependencies]
+haest-core = { workspace = true }
+haest-mods = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = { workspace = true }
+# js: the engine (the same build the Code tool links).
+rquickjs = { version = "0.14", default-features = false, features = ["std"], optional = true }
+# js: `.ts` mod files, through the same type stripper as the sandbox `js` command.
+haest-ts = { workspace = true, optional = true }
+
+[dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
+haest-mods = { workspace = true, features = ["testing"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

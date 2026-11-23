@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::testkit::Human;
+use crate::testing::Human;
 
 fn bash(command: &str) -> ApprovalRequest {
     ApprovalRequest::new(

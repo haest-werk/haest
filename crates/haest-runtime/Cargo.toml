@@ -21,6 +21,8 @@ haest-tools = { workspace = true }
 haest-mcp = { workspace = true }
 haest-code = { workspace = true }
 haest-mods = { workspace = true }
+# js: the human's and the project's `.js` / `.ts` mod files.
+haest-bridges = { workspace = true, features = ["js"] }
 haest-settings = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-util = { workspace = true }

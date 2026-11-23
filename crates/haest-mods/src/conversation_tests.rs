@@ -16,7 +16,7 @@ use serde_json::json;
 
 use crate::{
     ApprovalAnswer, ApprovalGate, ApprovalMod, CommandOutcome, ModEnv, ModRef, ModSystemPrompt,
-    ModTools, Mods, PLAN_PROMPT, PlanMod, testkit::*,
+    ModTools, Mods, PLAN_PROMPT, PlanMod, testing::*,
 };
 
 fn agent(p: &ScriptedProvider, mods: &Mods, tools: Tools) -> Agent {

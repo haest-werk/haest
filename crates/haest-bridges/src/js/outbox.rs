@@ -3,13 +3,13 @@
 //! Registrations land before any reply, so a loaded mod's tools are there by
 //! the time `load` returns.
 
+use haest_mods::{ApprovalRequest, Decision};
 use serde::Deserialize;
 
 use super::{
     channel::{JsMeta, ToJs, ToolChange, ToolMeta},
     thread::Js,
 };
-use crate::ask::{ApprovalRequest, Decision};
 
 #[derive(Deserialize)]
 struct Drained {

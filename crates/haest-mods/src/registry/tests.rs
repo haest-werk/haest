@@ -14,7 +14,7 @@ use crate::{
     decorate::ModSystemPrompt,
     env::ModEnv,
     plan::PlanMod,
-    testkit::*,
+    testing::*,
 };
 
 /// The TS test's mod: refuse `bad`, add `!` to anything else, shout the output.
