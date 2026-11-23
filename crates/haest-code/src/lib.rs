@@ -129,9 +129,13 @@ pub mod __private {
         pub use crate::engine::{JsEngine, spawn_thread};
     }
 
-    /// The QuickJS binding the engine is built on, for a crate that runs its
-    /// own code on a [`JsEngine`](engine::JsEngine).
-    pub use rquickjs;
+    /// What a crate needs from QuickJS to run its own code in a
+    /// [`JsEngine`](engine::JsEngine)'s context, and no more. No `Runtime` and
+    /// no `Context`: an engine is made only by `JsEngine::new`, held to its
+    /// caps and its watch.
+    pub mod quickjs {
+        pub use rquickjs::{Ctx, Error, Function, Module, Object, Result, Value, convert::Coerced};
+    }
 }
 
 pub use code::{

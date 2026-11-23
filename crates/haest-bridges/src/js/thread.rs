@@ -15,7 +15,7 @@ use std::{
 use haest_code::{
     __private::{
         engine::{JsEngine, spawn_thread},
-        rquickjs::{self, Ctx, Function, Module, Object, Value},
+        quickjs::{self, Coerced, Ctx, Function, Module, Object, Value},
     },
     VmCaps,
 };
@@ -88,7 +88,7 @@ fn serve(
 }
 
 /// What a thrown value says.
-pub(super) fn error_text(ctx: &Ctx<'_>, e: &rquickjs::Error) -> String {
+pub(super) fn error_text(ctx: &Ctx<'_>, e: &quickjs::Error) -> String {
     if !e.is_exception() {
         return e.to_string();
     }
@@ -100,11 +100,11 @@ pub(super) fn error_text(ctx: &Ctx<'_>, e: &rquickjs::Error) -> String {
         return message;
     }
     thrown
-        .get::<rquickjs::convert::Coerced<String>>()
+        .get::<Coerced<String>>()
         .map_or_else(|_| "an error that cannot be shown".into(), |s| s.0)
 }
 
-fn haest<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<Object<'js>> {
+fn haest<'js>(ctx: &Ctx<'js>) -> quickjs::Result<Object<'js>> {
     ctx.globals().get("__haest")
 }
 
@@ -164,7 +164,7 @@ impl Js {
             ctx.eval::<(), _>(BOOTSTRAP)?;
             let (module, done) = Module::declare(ctx.clone(), name, code)?.eval()?;
             match done.finish::<()>() {
-                Err(rquickjs::Error::WouldBlock) => return Ok(Loaded::NeverFinished),
+                Err(quickjs::Error::WouldBlock) => return Ok(Loaded::NeverFinished),
                 other => other?,
             }
             let main: Value<'_> = module.get("default")?;
@@ -182,7 +182,7 @@ impl Js {
     }
 
     /// Run `f` in the mod's context, timing it as one slice.
-    fn enter<T>(&self, f: impl FnOnce(&Ctx<'_>) -> rquickjs::Result<T>) -> Result<T, String> {
+    fn enter<T>(&self, f: impl FnOnce(&Ctx<'_>) -> quickjs::Result<T>) -> Result<T, String> {
         let context = self.engine.context();
         let entered = || context.with(|ctx| f(&ctx).map_err(|e| error_text(&ctx, &e)));
         self.engine.timed(self.slice, entered).0
@@ -253,7 +253,7 @@ impl Js {
                 Err(job) => {
                     let thrown = job
                         .0
-                        .with(|ctx| error_text(&ctx, &rquickjs::Error::Exception));
+                        .with(|ctx| error_text(&ctx, &quickjs::Error::Exception));
                     stopped = Some(if took > self.slice {
                         format!(
                             "its code ran over {:.1}s without pausing and was stopped",

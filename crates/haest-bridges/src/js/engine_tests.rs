@@ -1,9 +1,9 @@
-//! A Code run and a mod file are held to one caps type on one engine.
-//! haest-bridges links no QuickJS of its own: a mod file's runtime can only be
-//! haest-code's `JsEngine`, the one `run_in_vm` (the Code tool's) runs on, so
-//! its memory cap and its interrupt watch are the engine's for both. These
-//! tests hand the same `VmCaps` to each and see each cap stop each, and a
-//! roomier cap let the same code through.
+//! A Code run and a mod file are held to one caps type, `VmCaps`. These tests
+//! hand the same caps to each and see each cap stop each, and roomier caps
+//! let the same code through. They show behaviour only. That both run on
+//! haest-code's `JsEngine` rests on the build: haest-bridges has no QuickJS
+//! dependency of its own, and haest-code's `__private` hands it no `Runtime`
+//! or `Context` to make a second engine with.
 
 use std::{
     path::Path,
