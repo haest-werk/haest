@@ -11,7 +11,7 @@ use toml::Value;
 use super::*;
 use crate::{
     profiles::BUILTIN,
-    registry::{Def, Scope, up_to, whole_up_to},
+    registry::{Def, Scope, project_limit, up_to, whole_up_to},
     value::var_parts,
 };
 
@@ -77,7 +77,15 @@ fn takes(def: &Def) -> String {
     }
 }
 
-fn set_in(def: &Def) -> &'static str {
+fn set_in(def: &Def) -> String {
+    let set_in = scope_says(def);
+    match project_limit(def.key) {
+        Some(limit) => format!("{set_in}; {}", limit.says),
+        None => set_in.into(),
+    }
+}
+
+fn scope_says(def: &Def) -> &'static str {
     match (def.scope, def.profile_may_set()) {
         (Scope::Any, true) => {
             "a config file (yours, or a trusted project's), a profile, its variable, its flag"
@@ -95,6 +103,8 @@ fn set_in(def: &Def) -> &'static str {
 fn default_of(def: &Def) -> String {
     match Config::bare("<cwd>", "~").get(def.key).as_deref() {
         None if def.kind == Kind::Vars => "none".into(),
+        // A table of lists (`hooks`: each event's entries) holds none.
+        None if def.kind == Kind::Table && lists_only(def.example) => "none".into(),
         None if def.kind == Kind::Table => "every key at the default given above".into(),
         None => match tool_default(def.key) {
             Some(own) => format!("unset: the tool's own, {own}"),
@@ -103,6 +113,12 @@ fn default_of(def: &Def) -> String {
         Some("") => "none".into(),
         Some(v) => format!("`{v}`"),
     }
+}
+
+/// Every key of the table `example` holds a list.
+fn lists_only(example: &str) -> bool {
+    let table = crate::table::parse(example).expect("the example is a table");
+    table.values().all(Value::is_array)
 }
 
 /// What a key left unset means when the tool, not the config, holds the

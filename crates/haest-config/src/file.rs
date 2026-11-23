@@ -21,7 +21,7 @@ use toml::{Table, Value};
 
 use crate::{
     ConfigError,
-    registry::{Kind, Scope, find},
+    registry::{Kind, Scope, find, project_limit},
     source::Source,
     stack::{Entries, Layer},
     value::{check, named_var},
@@ -153,7 +153,8 @@ struct Entry<'a> {
 
 impl Entry<'_> {
     /// One `key = value`, checked: a known setting, one this file (and a
-    /// profile in it) may set, a value of its kind. A table of variables
+    /// profile in it) may set, a value of its kind, and in a project's file
+    /// nothing its [`project_limit`] refuses. A table of variables
     /// (`[env]`) is one value per variable. An error names the entry by its
     /// TOML path.
     fn read(self, key: &str, value: &Value) -> Result<Entries, ConfigError> {
@@ -188,7 +189,11 @@ impl Entry<'_> {
             let Value::Table(table) = value else {
                 return Err(refused(&format!("must be a table: [{key}]")));
             };
-            return Ok(vec![(def, crate::table::inline(table.clone()))]);
+            let checked = crate::table::inline(table.clone());
+            if let (FileKind::Project, Some(limit)) = (self.kind, project_limit(key)) {
+                (limit.check)(&checked).map_err(|why| refused(&why))?;
+            }
+            return Ok(vec![(def, checked)]);
         }
         if def.kind == Kind::Vars {
             let Value::Table(vars) = value else {

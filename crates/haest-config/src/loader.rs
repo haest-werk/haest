@@ -292,6 +292,8 @@ impl Loader {
         handed::no_mcp(config.mcp, &mut notes);
         let providers = load_custom_providers(fs, &config.settings.config_dir).await?;
         let routing = config.provider_routing.as_deref();
+        let (hooks, hook_notes) = config.hooks.filled(&|name| env.get(name).cloned());
+        notes.extend(hook_notes);
         Ok(Loaded {
             child_env: handed::child_env(config.env_passthrough, &env),
             passed_env: handed::passed_env(&config.env, &env, &mut notes),
@@ -302,6 +304,7 @@ impl Loader {
             providers,
             #[cfg(feature = "mcp")]
             mcp_servers,
+            hooks,
             notes,
         })
     }

@@ -28,6 +28,9 @@ haest-settings = { workspace = true }
 haest-providers = { workspace = true }
 # A trusted project's .mcp.json, read here and handed in.
 haest-mcp = { workspace = true, optional = true }
+# The `hooks` setting's type, read and checked here. No bridge (no `shell`,
+# no `http`): the runtime binds the entries.
+haest-bridges = { workspace = true }
 # The config files: ~/.config/haest/config.toml and a trusted project's .haest/config.toml.
 toml = "1.1"
 # A table setting's value read into its typed field, and written back.
@@ -40,6 +43,8 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "ti
 haest-tools = { workspace = true }
 # The real disk, for the crate docs' example of loading real files.
 haest-workspace = { workspace = true }
+# The events a `hooks` entry is bound to, in the tests.
+haest-mods = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true

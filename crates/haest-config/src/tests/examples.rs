@@ -91,6 +91,18 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         ["DATABASE_URL", "GH_TOKEN", "NODE_ENV", "PAGER", "RUST_LOG"]
     );
     assert_eq!(r.passed_env.get("NODE_ENV"), Some("development"));
+    let hooks: Vec<_> = r.hooks.entries().collect();
+    assert_eq!(hooks.len(), 1, "the URL hook is commented out");
+    let (event, guard) = hooks[0];
+    assert_eq!(event, haest_mods::ModEvent::ToolBefore);
+    assert_eq!(
+        (guard.command(), guard.dialect(), guard.matcher()),
+        (
+            Some("sh ~/.config/haest/hooks/no-rm-rf.sh"),
+            haest_bridges::HookDialect::Claude,
+            Some("Bash")
+        )
+    );
     #[cfg(feature = "mcp")]
     {
         let mut servers: Vec<&str> = r.mcp_servers.iter().map(|s| s.name.as_str()).collect();

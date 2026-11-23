@@ -7,6 +7,7 @@ mod raw;
 
 use std::{collections::BTreeMap, fmt, path::PathBuf};
 
+use haest_bridges::HookSettings;
 use haest_core::provider::WebSearchEngine;
 use haest_providers::http::__private::UrlDebug;
 use haest_settings::Settings;
@@ -129,6 +130,10 @@ pub struct Config {
     pub broker_url: Option<String>,
     /// What the broker may do over the link. Default watch.
     pub broker_access: BrokerAccess,
+    /// `hooks`: commands and URLs bound to events, every layer's entries
+    /// after the ones before, as written. [`crate::Loaded::hooks`] has
+    /// their headers' `${NAME}`s filled in. Default none.
+    pub hooks: HookSettings,
 }
 
 impl Config {
@@ -136,7 +141,7 @@ impl Config {
     /// ([`Settings::bare`]), and the loader's own settings at their defaults:
     /// no profile, no trusted dirs, `env_passthrough = core`, no `env`, `mcp`
     /// off, no routing, a ring of 1000 frames, not driven over stdio, no
-    /// control socket, no broker link.
+    /// control socket, no broker link, no hooks.
     pub fn bare(cwd: impl Into<PathBuf>, home: impl Into<PathBuf>) -> Self {
         Settings::bare(cwd, home).into()
     }
@@ -221,13 +226,16 @@ impl From<Settings> for Config {
             control_dir: None,
             broker_url: None,
             broker_access: BrokerAccess::Watch,
+            hooks: HookSettings::default(),
         }
     }
 }
 
 /// Every field, but `env` by its variables' names (a value may be a key;
-/// [`Config::get`] gives the names too) and `broker_url` without its
-/// userinfo, query values or fragment ([`Config::get`] gives it as set).
+/// [`Config::get`] gives the names too), `broker_url` without its
+/// userinfo, query values or fragment ([`Config::get`] gives it as set),
+/// and `hooks` with each header by its name ([`Config::get`] too) and each
+/// URL without its credentials.
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Config {
@@ -244,6 +252,7 @@ impl fmt::Debug for Config {
             control_dir,
             broker_url,
             broker_access,
+            hooks,
         } = self;
         f.debug_struct("Config")
             .field("settings", settings)
@@ -259,6 +268,7 @@ impl fmt::Debug for Config {
             .field("control_dir", control_dir)
             .field("broker_url", &broker_url.as_deref().map(UrlDebug))
             .field("broker_access", broker_access)
+            .field("hooks", hooks)
             .finish()
     }
 }

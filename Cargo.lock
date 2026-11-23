@@ -1008,8 +1008,10 @@ dependencies = [
 name = "haest-config"
 version = "0.4.1"
 dependencies = [
+ "haest-bridges",
  "haest-core",
  "haest-mcp",
+ "haest-mods",
  "haest-providers",
  "haest-settings",
  "haest-tools",

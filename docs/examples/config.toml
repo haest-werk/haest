@@ -73,6 +73,25 @@ system = "5m"
 tools = "5m"
 keep_warm = false
 
+# Hooks: a command or a URL run at an event, no Rust needed (extending.md).
+# This one is a Claude Code PreToolUse script, run as it is on Bash calls: it
+# refuses `rm -rf`. Copy docs/examples/hooks/no-rm-rf.sh there first: a
+# tool.before hook that fails refuses the call. Give a command in this file
+# as an absolute path or under ~/: a relative one runs whatever the working
+# directory has at that path.
+[[hooks."tool.before"]]
+command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
+dialect = "claude"
+matcher = "Bash"
+
+# A service that reviews each turn and may keep it going, in haest's own
+# JSON. Only your own file, a variable or a flag may bind a URL, never a
+# project's file. The token comes from haest's environment.
+# [[hooks."turn.end"]]
+# url = "https://review.example/haest/turn-end"
+# headers = { authorization = "Bearer ${REVIEW_TOKEN}" }
+# timeout = 10
+
 # Variables every process haest starts gets, the sandbox's shell included.
 # ${NAME} comes from haest's environment; ${NAME:-default} when it is unset.
 [env]

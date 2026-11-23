@@ -46,7 +46,7 @@ pub(crate) fn merge(into: &mut Table, later: Table) {
 }
 
 /// `value` as its table; an empty one for a value that is no table.
-fn table_of<T: Serialize>(value: &T) -> Table {
+pub(crate) fn table_of<T: Serialize>(value: &T) -> Table {
     match Value::try_from(value) {
         Ok(Value::Table(table)) => table,
         _ => Table::new(),

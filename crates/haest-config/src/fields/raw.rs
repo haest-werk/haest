@@ -3,6 +3,7 @@
 
 use std::{path::PathBuf, time::Duration};
 
+use haest_bridges::HookSettings;
 use haest_core::{
     Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
@@ -49,6 +50,34 @@ macro_rules! table {
     )+};
 }
 table!(CacheSettings);
+
+/// `hooks`: a table, each layer's entries appended to the ones before
+/// ([`crate::table::merge`]). A layer is read alone first, so a refusal
+/// numbers an entry as its own file does (`[[hooks."turn.end"]] #1` is
+/// that file's first, whatever the layers before it hold). It reads back
+/// with each header by its name only, `headers = ["authorization"]`: a
+/// value may be a key, so `haest settings` never shows it.
+impl Raw for HookSettings {
+    fn to_raw(&self) -> Option<String> {
+        let mut table = crate::table::table_of(self);
+        let entries = table.iter_mut().filter_map(|(_, list)| list.as_array_mut());
+        for entry in entries.flatten().filter_map(toml::Value::as_table_mut) {
+            if let Some(toml::Value::Table(headers)) = entry.get_mut("headers") {
+                let names = headers.keys().map(|n| toml::Value::String(n.clone()));
+                let names = toml::Value::Array(names.collect());
+                entry.insert("headers".into(), names);
+            }
+        }
+        (!table.is_empty()).then(|| crate::table::inline(table))
+    }
+    fn from_raw(raw: &str) -> Result<Self, String> {
+        crate::table::merged(&Self::default(), raw)
+    }
+    fn over(&self, raw: &str) -> Result<Self, String> {
+        Self::from_raw(raw)?;
+        crate::table::merged(self, raw)
+    }
+}
 
 /// A type that already reads and writes itself as one word.
 macro_rules! word {

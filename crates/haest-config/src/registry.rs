@@ -4,6 +4,7 @@
 //! line. Its default is the bare value (`Config::bare`): every capability off
 //! until asked for, every brake on.
 
+use haest_bridges::HookSettings;
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
 
@@ -288,6 +289,8 @@ settings! {
     "mod_reload" => settings.mod_reload: def(WORK, Choice(ModReload::WORDS), "ask", "Whether mod files reload as they change, checked before each model call: off, ask (a new, changed or deleted file waits for your Allow) or auto (it loads or unloads without asking)")
         .detail("A deleted file unloads, and its tools leave the model's list. A file that fails to load keeps the version that ran, and haest says why. After a Deny the old version stays, and the same content is not asked about again. Rust mods never reload.")
         .scope(Scope::User),
+    "hooks" => hooks: def(WORK, Table, r#"{ "tool.before" = [{ command = "sh ~/.config/haest/hooks/no-rm-rf.sh", dialect = "claude", matcher = "Bash" }] }"#, "Commands and URLs run at each event of the mods protocol, with no Rust: [[hooks.\"<event>\"]] entries, each a command (run on the host) or a url (POSTed), in haest's JSON or Claude Code's (dialect = \"claude\")")
+        .detail("The events are the protocol's own names, quoted for their dot: `tool.before`, `tool.after`, `prompt.submit`, `system.prompt`, `model.before`, `model.after`, `turn.end`. An entry takes `command` or `url` (one of them), `dialect` (`haest` or `claude`; `claude` runs a Claude Code hook script as it is, on the events Claude Code has, so never on `model.before` or `model.after`), `matcher` (on `tool.before` and `tool.after` only: a tool's name, or a prefix ending in `*`), `timeout` (seconds, default 60), `on_error` (`block` or `continue`; default `block` on `tool.before`, else `continue`) and `headers` (a `url`'s, `{ name = \"value\" }`, `${NAME}` filled in from haest's environment). A command runs in the conversation's directory with the environment every process haest starts gets (`env_passthrough`, `env`). Every layer's entries bind after the ones before it, in the order written; they bind after your mods and the project's, before a host's own. A subagent's tool calls pass through them too; its turns do not (`prompt.submit`, `system.prompt`, `model.before`, `model.after` and `turn.end` are the main conversation's). `haest settings` shows a header by its name only. [extending.md](extending.md) has the whole story."),
     "approvals" => settings.approvals: def(WORK, Bool, "false", "The built-in approval mod: in the real workspace, asks before a shell command that cannot be undone (deleting recursively, rewriting git history or the remote, wiping a disk, killing processes by name, sudo); anything else runs without asking")
         .detail("haest asks on a terminal only where the question can be seen and answered: stdin must be a terminal, and so must stderr, where the question shows (with --json it is a line on stdout, which must not be a regular file). Otherwise each approval is refused at once, and haest says why on stderr."),
     "trusted_dirs" => trusted_dirs: def(WORK, List(None), "~/projects,~/work", "Dirs whose project files haest reads (.haest/config.toml, .mcp.json, .haest/mods), with every dir inside them").scope(Scope::User),
@@ -330,6 +333,44 @@ settings! {
 
 pub(crate) fn find(key: &str) -> Option<&'static Def> {
     DEFS.iter().find(|d| d.key == key)
+}
+
+/// What a trusted project's file may not put in a setting it may set: the
+/// settings reference's words for it, and the check the project's value
+/// (in the checked spelling) goes through, a profile the file defines
+/// included.
+pub(crate) struct ProjectLimit {
+    /// What "Set in" adds.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "docs/settings.md is written by a test")
+    )]
+    pub(crate) says: &'static str,
+    /// Why the project's value may not be, if it may not.
+    pub(crate) check: fn(&str) -> Result<(), String>,
+}
+
+/// The limit on what a project's file puts in `key`, if it has one. A
+/// `hooks` entry with a `url` POSTs the conversation's events off the
+/// machine, where the repo says. A trusted project already runs its own
+/// code (its mods, its `.mcp.json` servers), so it may bind a command;
+/// never a URL.
+pub(crate) fn project_limit(key: &str) -> Option<ProjectLimit> {
+    match key {
+        "hooks" => Some(ProjectLimit {
+            says: "a `url` entry only in your own file, its variable or its flag, never in a project's file or a profile one defines",
+            check: |raw| {
+                let hooks: HookSettings = Raw::from_raw(raw)?;
+                match hooks.url_entries().first() {
+                    Some(entry) => Err(format!(
+                        "{entry}: a `url` hook can't be set in a project's file: it would send your conversation's events where the repo says. Bind it in your own config file"
+                    )),
+                    None => Ok(()),
+                }
+            },
+        }),
+        _ => None,
+    }
 }
 
 /// A setting's flag, without the dashes in front: `skill_catalog` -> `skill-catalog`.

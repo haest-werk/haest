@@ -29,7 +29,7 @@ whole config files.
 | Model and prompt | [`model`](#model), [`effort`](#effort), [`cache`](#cache), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
 | Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
 | Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
-| Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`mod_reload`](#mod_reload), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
+| Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`mod_reload`](#mod_reload), [`hooks`](#hooks), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
 | Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`wind_down_at`](#wind_down_at), [`context_window`](#context_window), [`compact_at`](#compact_at) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
 | Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir), [`broker_url`](#broker_url), [`broker_access`](#broker_access) |
@@ -414,6 +414,24 @@ A deleted file unloads, and its tools leave the model's list. A file that fails 
 config.toml   mod_reload = "ask"
 variable      HAEST_MOD_RELOAD=ask
 flag          --mod-reload ask
+```
+
+### `hooks`
+
+Commands and URLs run at each event of the mods protocol, with no Rust: [[hooks."&lt;event>"]] entries, each a command (run on the host) or a url (POSTed), in haest's JSON or Claude Code's (dialect = "claude").
+The events are the protocol's own names, quoted for their dot: `tool.before`, `tool.after`, `prompt.submit`, `system.prompt`, `model.before`, `model.after`, `turn.end`. An entry takes `command` or `url` (one of them), `dialect` (`haest` or `claude`; `claude` runs a Claude Code hook script as it is, on the events Claude Code has, so never on `model.before` or `model.after`), `matcher` (on `tool.before` and `tool.after` only: a tool's name, or a prefix ending in `*`), `timeout` (seconds, default 60), `on_error` (`block` or `continue`; default `block` on `tool.before`, else `continue`) and `headers` (a `url`'s, `{ name = "value" }`, `${NAME}` filled in from haest's environment). A command runs in the conversation's directory with the environment every process haest starts gets (`env_passthrough`, `env`). Every layer's entries bind after the ones before it, in the order written; they bind after your mods and the project's, before a host's own. A subagent's tool calls pass through them too; its turns do not (`prompt.submit`, `system.prompt`, `model.before`, `model.after` and `turn.end` are the main conversation's). `haest settings` shows a header by its name only. [extending.md](extending.md) has the whole story.
+
+- Takes: a table: `[hooks]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{ key = value }`), the flag repeated for more. Each layer merges into the ones before it, key by key
+- Default: none
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag; a `url` entry only in your own file, its variable or its flag, never in a project's file or a profile one defines
+
+```text
+config.toml   [[hooks."tool.before"]]
+              command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
+              dialect = "claude"
+              matcher = "Bash"
+variable      HAEST_HOOKS='{ "tool.before" = [{ command = "sh ~/.config/haest/hooks/no-rm-rf.sh", dialect = "claude", matcher = "Bash" }] }'
+flag          --hooks '{ "tool.before" = [{ command = "sh ~/.config/haest/hooks/no-rm-rf.sh", dialect = "claude", matcher = "Bash" }] }'
 ```
 
 ### `approvals`

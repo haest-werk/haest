@@ -177,6 +177,7 @@ mod table;
 mod tests;
 mod value;
 
+use haest_bridges::HookSettings;
 use haest_core::ChildEnv;
 #[cfg(feature = "mcp")]
 use haest_mcp::McpServerConfig;
@@ -204,6 +205,7 @@ pub use value::env_var;
 /// | `.with_providers(..)` | `providers` |
 /// | `.with_mcp_servers(..)` | `mcp_servers` (the `mcp` feature) |
 /// | `.with_routing(..)` | `routing` |
+/// | `.with_hook_settings(..)` | `hooks` |
 /// | `.with_http(..)` | not loaded: the host's own client; by default the shared `ReqwestClient` |
 ///
 /// Show the human every [`notes`](Self::notes) line before the run starts.
@@ -239,9 +241,14 @@ pub struct Loaded {
     #[cfg(feature = "mcp")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mcp")))]
     pub mcp_servers: Vec<McpServerConfig>,
+    /// The `hooks` setting, each header's `${NAME}`s filled in from the
+    /// environment [`Loader::env`] was given (`config.hooks` is as
+    /// written). One that names a variable with no value and no default
+    /// is sent as written, and a note says so.
+    pub hooks: HookSettings,
     /// What the host should tell the human: a setting asked for and not
     /// honoured (an untrusted project's file, mods or MCP servers skipped, a
-    /// variable `env` names that has no value, a malformed `provider_routing`,
-    /// a profile named but not read).
+    /// variable `env` or a hook's header names that has no value, a
+    /// malformed `provider_routing`, a profile named but not read).
     pub notes: Vec<String>,
 }

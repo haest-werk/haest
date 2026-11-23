@@ -3,6 +3,7 @@
 
 mod examples;
 mod handed;
+mod hooks;
 mod loader;
 mod reference;
 mod refused;
