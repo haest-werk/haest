@@ -235,6 +235,19 @@ pub(crate) fn end(events: &[LoopEvent]) -> (StopReason, Usage, Option<String>) {
     }
 }
 
+/// Each message's role, as its serde tag says it.
+pub(crate) fn roles(messages: &[Message]) -> Vec<&'static str> {
+    messages
+        .iter()
+        .map(|m| match m {
+            Message::User(_) => "user",
+            Message::Assistant(_) => "assistant",
+            Message::Tool(_) => "tool",
+            Message::ToolChange(_) => "tool_change",
+        })
+        .collect()
+}
+
 pub(crate) fn count(events: &[LoopEvent], pred: impl Fn(&LoopEvent) -> bool) -> usize {
     events.iter().filter(|e| pred(e)).count()
 }

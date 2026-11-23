@@ -125,7 +125,7 @@ fn repair(messages: Vec<Message>, leave_pending: bool) -> Repaired {
     while let Some(m) = rest.next() {
         let calls: Vec<ToolCall> = match &m {
             Message::Assistant(a) => a.tool_calls().cloned().collect(),
-            Message::User(_) => {
+            Message::User(_) | Message::ToolChange(_) => {
                 out.messages.push(m);
                 continue;
             }

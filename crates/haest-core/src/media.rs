@@ -192,7 +192,7 @@ fn media_of(m: &Message) -> &[MediaPart] {
     match m {
         Message::User(u) => &u.media,
         Message::Tool(t) => &t.media,
-        Message::Assistant(_) => &[],
+        Message::Assistant(_) | Message::ToolChange(_) => &[],
     }
 }
 
@@ -202,13 +202,16 @@ fn media_of(m: &Message) -> &[MediaPart] {
 ///
 /// Base64 counted as text would read a 1 MB screenshot as ~350K tokens. An
 /// image counts a fixed 1600 tokens (about what every provider charges); any
-/// other part one token per 64 bytes.
+/// other part one token per 64 bytes. A tool change's baseline is taken out
+/// too: it is sent as the request's tools, which the estimate counts on
+/// their own.
 pub(crate) fn messages_for_estimate(messages: &[Message]) -> (String, u64) {
     let mut value = serde_json::to_value(messages).unwrap_or(Value::Null);
     if let Value::Array(items) = &mut value {
         for item in items {
             if let Some(obj) = item.as_object_mut() {
                 obj.remove("media");
+                obj.remove("baseline");
             }
         }
     }

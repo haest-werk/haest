@@ -193,7 +193,7 @@ pub(super) fn texts(messages: &[Message]) -> Vec<String> {
     let texts = messages.iter().filter_map(|m| match m {
         Message::User(u) => Some(u.content.clone()),
         Message::Tool(t) => Some(t.content.clone()),
-        Message::Assistant(_) => None,
+        Message::Assistant(_) | Message::ToolChange(_) => None,
     });
     texts.collect()
 }

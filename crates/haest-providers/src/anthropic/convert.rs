@@ -5,13 +5,19 @@
 //!     (tool results + a queued user message become ONE user turn);
 //!   - every tool_use needs its tool_result in the very next user turn;
 //!   - thinking blocks replay only with their signature, and only to the
-//!     provider (the endpoint) that signed them.
+//!     provider (the endpoint) that signed them;
+//!   - a mid-conversation `system` message (a tool change) follows a user
+//!     turn and precedes an assistant turn or ends the array; the loop
+//!     places it so, this file only renders it.
 
 use haest_core::{
     cache::{CachePlan, CacheTtl},
     media::dropped_note,
-    messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolResultMessage},
-    provider::{Effort, ToolSpec},
+    messages::{
+        AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolChange,
+        ToolResultMessage,
+    },
+    provider::{Effort, ProviderRequest, ToolSpec},
 };
 use serde_json::{Map, Value, json};
 
@@ -110,12 +116,55 @@ fn tool_result_block(msg: &ToolResultMessage) -> Value {
     block
 }
 
-fn blocks_of(msg: &Message, provider_id: &str) -> (&'static str, Vec<Value>) {
+/// The `tool_addition` / `tool_removal` blocks of a mid-conversation system
+/// message, as Anthropic documents them: a removal and a tool of the
+/// baseline by reference, any other tool by its definition, a `tools` entry
+/// as [`to_anthropic_tools`] writes one, without a breakpoint.
+fn tool_change_blocks(changes: &[ToolChange]) -> Vec<Value> {
+    let reference = |name: &str| json!({"type": "tool_reference", "name": name});
+    changes
+        .iter()
+        .filter_map(|change| match change {
+            ToolChange::Removed { name } => {
+                Some(json!({"type": "tool_removal", "tool": reference(name)}))
+            }
+            ToolChange::Restored { name } => {
+                Some(json!({"type": "tool_addition", "tool": reference(name)}))
+            }
+            ToolChange::Added { tool } => {
+                let definition = to_anthropic_tools(std::slice::from_ref(tool), None).pop()?;
+                Some(json!({"type": "tool_addition",
+                    "tool": {"type": "tool_definition", "definition": definition}}))
+            }
+            // A kind of change Anthropic has no block for is not sent.
+            _ => None,
+        })
+        .collect()
+}
+
+/// Which role `msg` takes in the Messages API, and its blocks. A tool change
+/// is a `system` message when `tool_changes`, else nothing.
+fn blocks_of(msg: &Message, provider_id: &str, tool_changes: bool) -> (&'static str, Vec<Value>) {
     match msg {
         Message::User(u) => ("user", user_blocks(&u.content, &u.media)),
         Message::Tool(t) => ("user", vec![tool_result_block(t)]),
         Message::Assistant(a) => ("assistant", assistant_blocks(a, provider_id)),
+        Message::ToolChange(c) if tool_changes => (SYSTEM, tool_change_blocks(&c.changes)),
+        Message::ToolChange(_) => (SYSTEM, Vec::new()),
     }
+}
+
+/// The role of a mid-conversation system message: the tool changes.
+const SYSTEM: &str = "system";
+
+/// Whether `req` sends a tool change: it has a tool baseline and a
+/// [`Message::ToolChange`] with a change in it. Such a request needs the
+/// beta header [`INLINE_TOOLS_BETA`](super::INLINE_TOOLS_BETA).
+pub(crate) fn sends_tool_changes(req: &ProviderRequest) -> bool {
+    req.tool_baseline.is_some()
+        && req.messages.iter().any(
+            |m| matches!(m, Message::ToolChange(c) if !tool_change_blocks(&c.changes).is_empty()),
+        )
 }
 
 /// A thinking block, which takes no cache breakpoint.
@@ -131,20 +180,25 @@ fn is_thinking(block: &Value) -> bool {
 /// queued user message become one user turn). Thinking replays only from a
 /// message whose provider is `provider_id`, and only with its signature. Images
 /// and PDFs go as base64 blocks; audio and video, which the API does not take,
-/// become a text note. The newest block gets the rolling breakpoint, with
-/// `cache.history`'s TTL; a message the plan chose gets one on its last
-/// block that is not thinking, with its own.
+/// become a text note. With `tool_changes`, a [`Message::ToolChange`] is a
+/// `system` message of `tool_addition` / `tool_removal` blocks; without, it
+/// is left out. The newest block outside a system message gets the rolling
+/// breakpoint, with `cache.history`'s TTL, as Anthropic advises for a new
+/// system message (the next request's breakpoint moves past it); a message
+/// the plan chose gets one on its last block that is not thinking, with its
+/// own, and a chosen tool change none.
 pub(crate) fn to_anthropic_messages(
     messages: &[Message],
     provider_id: &str,
     cache: impl Into<CachePlan>,
+    tool_changes: bool,
 ) -> Vec<Value> {
     let cache = cache.into();
     let mut out: Vec<(&'static str, Vec<Value>)> = Vec::new();
     // Each chosen message's blocks: its TTL, its turn, where its blocks start.
     let mut chosen = Vec::new();
     for (i, msg) in messages.iter().enumerate() {
-        let (role, blocks) = blocks_of(msg, provider_id);
+        let (role, blocks) = blocks_of(msg, provider_id, tool_changes);
         if blocks.is_empty() {
             continue;
         }
@@ -156,7 +210,7 @@ pub(crate) fn to_anthropic_messages(
         let turn = out.len() - 1;
         let start = out[turn].1.len() - count;
         let ttl = cache.messages.iter().find(|(at, _)| *at == i).map(|m| m.1);
-        chosen.extend(ttl.map(|ttl| (ttl, turn, start)));
+        chosen.extend(ttl.filter(|_| role != SYSTEM).map(|ttl| (ttl, turn, start)));
     }
     for (ttl, turn, start) in chosen {
         let last = out[turn].1[start..]
@@ -168,8 +222,10 @@ pub(crate) fn to_anthropic_messages(
         }
     }
     // Rolling cache breakpoint on the newest block: the next request re-reads
-    // everything up to here from cache.
-    let tail = out.last_mut().and_then(|(_, c)| c.last_mut());
+    // everything up to here from cache. A system message never takes one.
+    let tail = (out.iter_mut().rev())
+        .find(|(role, _)| *role != SYSTEM)
+        .and_then(|(_, c)| c.last_mut());
     if let (Some(tail), Some(ttl)) = (tail, cache.history)
         && !is_thinking(tail)
     {

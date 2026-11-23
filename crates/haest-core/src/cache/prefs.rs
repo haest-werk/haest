@@ -196,7 +196,7 @@ impl Agent {
     pub(crate) fn plan_cache(&mut self, req: &mut ProviderRequest) {
         let spec = self.model_spec().to_string();
         let facts = self.deps().shared().facts().cache_facts(&spec);
-        let shape = RequestShape::new(&spec, &req.tools, &req.system, &req.messages);
+        let shape = RequestShape::new(&spec, req.sent_tools(), &req.system, &req.messages);
         let shape = match &facts {
             Some(facts) => shape.with_facts(facts),
             None => shape,

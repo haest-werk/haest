@@ -222,6 +222,7 @@ fn tool_results_and_queued_input_merge_into_one_user_turn_ids_sanitised_tail_cac
         ],
         "anthropic",
         CacheTtl::FiveMinutes,
+        false,
     );
     let roles: Vec<_> = msgs.iter().map(|m| m["role"].as_str().unwrap()).collect();
     assert_eq!(roles, ["user", "assistant", "user"]);
@@ -239,6 +240,7 @@ fn thinking_is_replayed_only_to_the_provider_that_signed_it() {
             &[Message::user("a"), assistant(from)],
             to,
             CacheTtl::FiveMinutes,
+            false,
         );
         types(&msgs[1]["content"]) == ["thinking", "tool_use"]
     };

@@ -161,6 +161,7 @@ async fn a_hook_may_refuse_a_model_call_and_end_the_turn() {
             Message::User(_) => "user",
             Message::Assistant(_) => "assistant",
             Message::Tool(_) => "tool",
+            Message::ToolChange(_) => "tool_change",
         })
         .collect();
     assert_eq!(kinds, ["user", "assistant", "tool"]);

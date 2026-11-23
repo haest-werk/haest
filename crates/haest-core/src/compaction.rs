@@ -151,9 +151,9 @@ pub(crate) fn cut_index(messages: &[Message], keep_recent: usize) -> usize {
 
 /// Per message: may the kept tail start there? At a user message or an
 /// assistant message (the summary is a user message, so roles still
-/// alternate), never at a tool result, and never where a result after the cut
-/// answers a call before it. One long agentic turn has no user message to cut
-/// at, and must still compact.
+/// alternate), never at a tool result or a tool change, and never where a
+/// result after the cut answers a call before it. One long agentic turn has
+/// no user message to cut at, and must still compact.
 fn tail_starts(messages: &[Message]) -> Vec<bool> {
     // For each result, where its call is: the latest call of that id before it.
     let mut called_at: HashMap<&str, usize> = HashMap::new();
@@ -167,14 +167,15 @@ fn tail_starts(messages: &[Message]) -> Vec<bool> {
                     .copied()
                     .unwrap_or(usize::MAX)
             }
-            Message::User(_) => {}
+            Message::User(_) | Message::ToolChange(_) => {}
         }
     }
     let mut earliest_answered = usize::MAX;
     let mut starts = vec![false; messages.len()];
     for i in (0..messages.len()).rev() {
         earliest_answered = earliest_answered.min(call_of[i]);
-        starts[i] = !matches!(messages[i], Message::Tool(_)) && earliest_answered >= i;
+        let starter = matches!(messages[i], Message::User(_) | Message::Assistant(_));
+        starts[i] = starter && earliest_answered >= i;
     }
     starts
 }

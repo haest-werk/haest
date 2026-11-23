@@ -21,17 +21,6 @@ use crate::{
     workspace::ShutWorkspace,
 };
 
-fn roles(messages: &[Message]) -> Vec<&'static str> {
-    messages
-        .iter()
-        .map(|m| match m {
-            Message::User(_) => "user",
-            Message::Assistant(_) => "assistant",
-            Message::Tool(_) => "tool",
-        })
-        .collect()
-}
-
 fn kind(e: &LoopEvent) -> &'static str {
     match e {
         LoopEvent::User { .. } => "user",

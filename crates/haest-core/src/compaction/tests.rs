@@ -110,7 +110,7 @@ fn answered_within(tail: &[Message]) -> bool {
             true
         }
         Message::Tool(r) => called.contains(r.tool_call_id.as_str()),
-        Message::User(_) => true,
+        Message::User(_) | Message::ToolChange(_) => true,
     })
 }
 

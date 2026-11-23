@@ -25,6 +25,17 @@ pub struct ProviderRequest {
     pub messages: Vec<Message>,
     /// The tools the model may call; empty = none.
     pub tools: Vec<ToolSpec>,
+    /// The `tools` array the conversation's requests keep sending to a model
+    /// that takes mid-conversation tool changes
+    /// ([`CacheFacts::tool_changes`](crate::catalog::CacheFacts::tool_changes)),
+    /// with the [`Message::ToolChange`](crate::Message::ToolChange)s in
+    /// `messages` saying what changed since. The loop sets it for such a
+    /// model only. A provider that renders tool changes (Anthropic's) sends
+    /// this as its tools and each change where history holds it, so the
+    /// cached prefix stays as it was; every other provider sends
+    /// [`tools`](Self::tools) and leaves the changes out. None: `tools`, and
+    /// no change is rendered.
+    pub tool_baseline: Option<Vec<ToolSpec>>,
     /// The turn's interrupt. When it fires, end the stream soon, with a
     /// [`ProviderEvent::Done`](super::ProviderEvent::Done) whose stop reason
     /// is [`StopReason::Aborted`](crate::StopReason::Aborted).
@@ -56,16 +67,17 @@ pub struct ProviderRequest {
 }
 
 impl ProviderRequest {
-    /// A call to `model` with `messages`: no system prompt, no tools, a fresh
-    /// cancel token, the model's own effort, output cap and search, the
-    /// default cache plan ([`CachePlan::default`]: five minutes), no cache
-    /// key or partition key, and not a pre-warm.
+    /// A call to `model` with `messages`: no system prompt, no tools, no
+    /// tool baseline, a fresh cancel token, the model's own effort, output
+    /// cap and search, the default cache plan ([`CachePlan::default`]: five
+    /// minutes), no cache key or partition key, and not a pre-warm.
     pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
             system: String::new(),
             messages,
             tools: Vec::new(),
+            tool_baseline: None,
             cancel: CancellationToken::new(),
             effort: None,
             max_tokens: None,
@@ -88,6 +100,31 @@ impl ProviderRequest {
     pub fn with_tools(mut self, tools: Vec<ToolSpec>) -> Self {
         self.tools = tools;
         self
+    }
+
+    /// With `baseline` as the `tools` array a provider that renders tool
+    /// changes keeps sending ([`tool_baseline`](Self::tool_baseline)).
+    ///
+    /// ```
+    /// use haest_core::{Message, ProviderRequest, provider::ToolSpec};
+    /// use serde_json::json;
+    ///
+    /// let clock = ToolSpec { name: "Clock".into(), description: "Tell the time.".into(), parameters: json!({"type": "object"}) };
+    /// let req = ProviderRequest::new("claude-opus-5-5", vec![Message::user("hi")])
+    ///     .with_tool_baseline(vec![clock.clone()]);
+    /// assert_eq!(req.tool_baseline, Some(vec![clock]));
+    /// ```
+    #[must_use]
+    pub fn with_tool_baseline(mut self, baseline: Vec<ToolSpec>) -> Self {
+        self.tool_baseline = Some(baseline);
+        self
+    }
+
+    /// The `tools` array a provider that renders tool changes sends: the
+    /// [`tool_baseline`](Self::tool_baseline) when set, else the
+    /// [`tools`](Self::tools).
+    pub fn sent_tools(&self) -> &[ToolSpec] {
+        self.tool_baseline.as_deref().unwrap_or(&self.tools)
     }
 
     /// Interrupted by `cancel`.

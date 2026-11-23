@@ -97,7 +97,8 @@ fn assistant_items(msg: &AssistantMessage, provider_id: &str, out: &mut Vec<Valu
 ///
 /// Reasoning replays, as its encrypted content, only from a message whose
 /// provider is `provider_id`. A tool's media rides a user item after the run of
-/// function_call_outputs (same rule as Chat Completions).
+/// function_call_outputs (same rule as Chat Completions). A
+/// [`Message::ToolChange`] is left out: the request carries the current tools.
 pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec<Value> {
     let mut out = Vec::new();
     with_tool_media(messages, &RESPONSES, &mut out, |m, out| {
@@ -109,6 +110,8 @@ pub(crate) fn to_responses_input(messages: &[Message], provider_id: &str) -> Vec
             json!({"type": "function_call_output", "call_id": t.tool_call_id, "output": result_text(t)}),
         ),
         Message::Assistant(a) => assistant_items(a, provider_id, out),
+        // The request carries the current tools instead.
+        Message::ToolChange(_) => {}
     }
     });
     out

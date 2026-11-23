@@ -8,7 +8,8 @@
 //! [`Message::User`] opens it, each [`Message::Assistant`] that called tools is
 //! followed by one [`Message::Tool`] per [`ToolCall`], in call order, and any
 //! further user input (steering, the turn guard's nudge) comes after those
-//! results.
+//! results. A [`Message::ToolChange`] sits right after a user or tool
+//! message and right before an answer.
 //!
 //! The serde shape is the TypeScript haest's, field for field (camelCase keys,
 //! `role` / `type` tags), so a session file written by either haest replays in
@@ -29,11 +30,13 @@
 //! [`Agent::history`]: crate::Agent::history
 //! [`Provider`]: crate::Provider
 
+mod tool_change;
 pub(crate) mod usage;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+pub use tool_change::{ToolChange, ToolChangeMessage};
 pub use usage::Usage;
 pub(crate) use usage::{add_cost, real_cost};
 
@@ -263,7 +266,8 @@ pub struct ToolResultMessage {
 
 /// One entry of a conversation's history.
 ///
-/// Serialized with a `role` tag: `"user"`, `"assistant"` or `"tool"`.
+/// Serialized with a `role` tag: `"user"`, `"assistant"`, `"tool"` or
+/// `"tool_change"`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum Message {
@@ -273,6 +277,10 @@ pub enum Message {
     Assistant(AssistantMessage),
     /// The answer to one tool call.
     Tool(ToolResultMessage),
+    /// A change to the tools the model may call, for a model that takes
+    /// them mid-conversation; every other provider leaves it out.
+    #[serde(rename = "tool_change")]
+    ToolChange(ToolChangeMessage),
 }
 
 impl Message {

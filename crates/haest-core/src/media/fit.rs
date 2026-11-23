@@ -74,7 +74,7 @@ pub(super) fn fit_media(
                 }
                 None => m.clone(),
             },
-            Message::Assistant(_) => m.clone(),
+            Message::Assistant(_) | Message::ToolChange(_) => m.clone(),
         })
         .collect()
 }

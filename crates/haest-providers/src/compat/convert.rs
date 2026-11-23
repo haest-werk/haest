@@ -165,7 +165,9 @@ fn replayed_reasoning(data: Option<&Value>) -> Map<String, Value> {
 /// reasoning back (`reasoning_details`, `reasoning_content`); one from any
 /// other provider goes as text and tool calls only. A tool result's media,
 /// which a `tool` message cannot hold, follows the run of tool results as a
-/// user message.
+/// user message. A [`Message::ToolChange`] is left out: Chat Completions has
+/// no such message (OpenRouter drops one for its Anthropic models, measured),
+/// so the request carries the current tools instead.
 ///
 /// On OpenRouter the breakpoints of `cache` go in (a [`CacheTtl`] is the
 /// standard plan at that TTL): an `anthropic/` model's on the system prompt,
@@ -203,7 +205,8 @@ pub(crate) fn to_chat_messages(
             Message::Assistant(a) if !a.content.is_empty() => {
                 out.push(assistant_msg(a, provider_id))
             }
-            Message::Assistant(_) => {}
+            // A tool change is left out: these get the current tools.
+            Message::Assistant(_) | Message::ToolChange(_) => {}
         }
         landed.push((out.len() > before).then(|| out.len() - 1));
     });

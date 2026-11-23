@@ -31,7 +31,8 @@ fn result(id: &str) -> Message {
     })
 }
 
-/// Each message as a short tag: u:<text>, a:<call ids>, t:<id>[!] (! = error).
+/// Each message as a short tag: u:<text>, a:<call ids>, t:<id>[!] (! = error),
+/// c (a tool change).
 fn shape(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
@@ -44,6 +45,7 @@ fn shape(messages: &[Message]) -> Vec<String> {
                 let ids: Vec<&str> = a.tool_calls().map(|c| c.id.as_str()).collect();
                 format!("a:{}", ids.join(","))
             }
+            Message::ToolChange(_) => "c".into(),
         })
         .collect()
 }

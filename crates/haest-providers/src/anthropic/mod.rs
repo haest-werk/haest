@@ -16,6 +16,8 @@ mod tests;
 mod tests_cache;
 #[cfg(test)]
 mod tests_prewarm;
+#[cfg(test)]
+mod tests_tool_changes;
 
 use haest_core::{
     cache::PrewarmRefused,
@@ -24,7 +26,8 @@ use haest_core::{
 use serde_json::{Value, json};
 
 pub(crate) use convert::{
-    thinking_params, to_anthropic_messages, to_anthropic_tools, uses_budget_thinking,
+    sends_tool_changes, thinking_params, to_anthropic_messages, to_anthropic_tools,
+    uses_budget_thinking,
 };
 
 use haest_http::Request;
@@ -84,6 +87,16 @@ endpoint_options! {
 /// thinking budget of 2,048 tokens for low up to 31,999 for max, kept below
 /// `max_tokens` (a cap of 1,024 or less sends no thinking). Thinking is
 /// replayed, with its signature, only to this provider.
+///
+/// A request with a [`tool_baseline`](haest_core::ProviderRequest::tool_baseline)
+/// (a model whose catalog facts say it takes mid-conversation tool changes)
+/// sends that baseline as its `tools`, and each
+/// [`Message::ToolChange`](haest_core::messages::Message::ToolChange) in its
+/// history as a `system` message of `tool_addition` / `tool_removal` blocks,
+/// none with a breakpoint. A request that carries such a message gets the
+/// beta `inline-tools-2026-09-15` in its `anthropic-beta` header, after any
+/// the host configured. Without a baseline, the tool changes are left out
+/// and the current tools sent.
 ///
 /// A [`prewarm`](haest_core::ProviderRequest::prewarm) request goes out as
 /// Anthropic documents a cache pre-warm: `max_tokens: 0` and not streamed,
@@ -173,8 +186,29 @@ impl AnthropicProvider {
             .with_header("anthropic-version", API_VERSION)
             .with_json(&build_anthropic_params(&self.opts.id, req))
             .with_header("accept", "application/json");
-        configured(post, &self.opts.headers)
+        let post = configured(post, &self.opts.headers);
+        if sends_tool_changes(req) {
+            with_beta(post, INLINE_TOOLS_BETA)
+        } else {
+            post
+        }
     }
+}
+
+/// The beta a request with a tool change needs: it covers tools added by
+/// reference and by definition (`mid-conversation-tool-changes-2026-07-01`
+/// covers only the first).
+const INLINE_TOOLS_BETA: &str = "inline-tools-2026-09-15";
+
+/// `post` with `beta` in its `anthropic-beta` header, after any a host
+/// configured (one header, the betas comma-separated).
+fn with_beta(post: Request, beta: &str) -> Request {
+    let betas = match post.header("anthropic-beta") {
+        Some(had) if had.split(',').any(|b| b.trim() == beta) => return post,
+        Some(had) => format!("{had},{beta}"),
+        None => beta.to_string(),
+    };
+    post.with_header("anthropic-beta", betas)
 }
 
 /// The output cap a request of `req` sends: `req.max_tokens` when above 0,
@@ -192,7 +226,10 @@ fn max_tokens(req: &ProviderRequest) -> u32 {
 /// block, the messages ([`to_anthropic_messages`]), `stream: true`, the
 /// tools when there are any ([`to_anthropic_tools`]) and the thinking fields
 /// for `req.effort` under that cap ([`thinking_params`]); every breakpoint
-/// of `req.cache` with its own TTL ([`cache_control`]). A pre-warm is the
+/// of `req.cache` with its own TTL ([`cache_control`]). With a
+/// [`tool_baseline`](ProviderRequest::tool_baseline) the tools are the
+/// baseline and each tool change is a `system` message; without, the tools
+/// are `req.tools` and the changes are left out. A pre-warm is the
 /// same request with `max_tokens: 0` and no `stream`: its thinking is the
 /// real cap's, so it renders into the prompt as the real request's does.
 pub(crate) fn build_anthropic_params(provider_id: &str, req: &ProviderRequest) -> Value {
@@ -202,17 +239,20 @@ pub(crate) fn build_anthropic_params(provider_id: &str, req: &ProviderRequest) -
     if let Some(ttl) = cache.system {
         system["cache_control"] = cache_control(ttl);
     }
+    let tool_changes = req.tool_baseline.is_some();
+    let messages = to_anthropic_messages(&req.messages, provider_id, cache.clone(), tool_changes);
     let mut body = json!({
         "model": req.model,
         "max_tokens": if req.prewarm { 0 } else { max_tokens },
         "system": [system],
-        "messages": to_anthropic_messages(&req.messages, provider_id, cache.clone()),
+        "messages": messages,
     });
     if !req.prewarm {
         body["stream"] = Value::Bool(true);
     }
-    if !req.tools.is_empty() {
-        body["tools"] = Value::Array(to_anthropic_tools(&req.tools, cache.tools));
+    let tools = req.sent_tools();
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(to_anthropic_tools(tools, cache.tools));
     }
     if let Value::Object(map) = &mut body {
         map.extend(thinking_params(&req.model, req.effort, max_tokens));

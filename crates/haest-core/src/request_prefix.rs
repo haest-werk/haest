@@ -21,6 +21,10 @@ pub(crate) struct RequestPrefix {
     pub(crate) system: String,
     /// The advertised tools, as the model sees them.
     pub(crate) tools: Vec<ToolSpec>,
+    /// The conversation's tool baseline, for a model that takes
+    /// mid-conversation tool changes; None for any other
+    /// ([`ProviderRequest::tool_baseline`]).
+    pub(crate) tool_baseline: Option<Vec<ToolSpec>>,
     /// The effort fitted to the model; None sends none.
     pub(crate) effort: Option<Effort>,
     /// Provider-side web search; None = off.
@@ -44,6 +48,7 @@ impl RequestPrefix {
             system: self.system,
             messages,
             tools: self.tools,
+            tool_baseline: self.tool_baseline,
             cancel,
             effort: self.effort,
             max_tokens: None,
@@ -58,7 +63,7 @@ impl RequestPrefix {
 /// The prefix for one call of `model` (the provider's id) under `spec`: the
 /// system prompt built now, the tools [`ToolSource::tools`](crate::ToolSource::tools)
 /// advertises now, `effort` fitted to what the model takes, and the deps'
-/// web search; no cache key, which the agent sets.
+/// web search; no cache key or tool baseline, which the agent sets.
 pub(crate) async fn build_request_prefix(
     deps: &AgentDeps,
     spec: &str,
@@ -78,6 +83,7 @@ pub(crate) async fn build_request_prefix(
     RequestPrefix {
         system: deps.system_prompt().system_prompt().await,
         tools,
+        tool_baseline: None,
         effort: fit_effort(
             effort,
             spec,
