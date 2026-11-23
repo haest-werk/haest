@@ -52,6 +52,7 @@ fn a_command_and_a_url_in_either_dialect_read_with_their_options() {
     assert_eq!(review.url(), Some("https://review.example/turn"));
     assert_eq!(review.timeout(), Some(Duration::from_millis(2_500)));
     assert_eq!(review.header_names().collect::<Vec<_>>(), ["authorization"]);
+    assert_eq!(s.url_entries(), ["[[hooks.\"turn.end\"]] #1"]);
 
     // Written back as a file says it, and read again the same.
     let written = serde_json::to_value(&s).unwrap();
@@ -196,7 +197,7 @@ fn a_headers_name_in_variables_is_filled_in_and_an_unset_one_is_said() {
     assert_eq!(
         notes,
         [
-            "[[hooks.\"turn.end\"]] #1: header x-missing names ${NOPE}, which is not set and has no default"
+            "[[hooks.\"turn.end\"]] #1: header x-missing names ${NOPE}, which is not set and has no default: sent as written"
         ]
     );
     let written = &s.events[0].1[0].headers;

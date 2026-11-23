@@ -144,6 +144,22 @@ impl HookSettings {
             .flat_map(|(event, entries)| entries.iter().map(move |e| (*event, e)))
     }
 
+    /// Each entry that POSTs, named as a refusal names it
+    /// (`[[hooks."turn.end"]] #1`): what a host refuses from a config it
+    /// does not trust, since a POST sends the conversation's events off the
+    /// machine. haest-config refuses one in a project's file.
+    pub fn url_entries(&self) -> Vec<String> {
+        let mut named = Vec::new();
+        for (event, entries) in &self.events {
+            for (nth, entry) in (1..).zip(entries) {
+                if entry.url().is_some() {
+                    named.push(entry_name(*event, nth));
+                }
+            }
+        }
+        named
+    }
+
     /// These settings with each `${NAME}` (or `${NAME:-default}`) in a
     /// header's value filled in from `lookup`, haest's environment: a token
     /// stays out of the config file. One with no value and no default stays
@@ -159,7 +175,8 @@ impl HookSettings {
                     let (text, unset) = expand_vars(value, lookup);
                     if !unset.is_empty() {
                         let at = entry_name(*event, nth);
-                        notes.push(format!("{at}: header {name} {}", unset_note(&unset)));
+                        let unset = unset_note(&unset);
+                        notes.push(format!("{at}: header {name} {unset}: sent as written"));
                     }
                     *value = text;
                 }
