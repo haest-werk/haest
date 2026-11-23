@@ -89,13 +89,15 @@ pub enum CompatFlavor {
 /// the server's when it reports one (at or above zero: a cost below it is
 /// not taken), else the price set by [`CompatOptions::with_pricing`], else none.
 ///
-/// The prompt cache: on OpenRouter an `anthropic/` model's breakpoints carry
-/// the request's [`cache_ttl`](haest_core::ProviderRequest::cache_ttl), and
-/// its last function tool gets one too. A request's
-/// [`cache_key`](haest_core::ProviderRequest::cache_key) goes to OpenRouter
-/// as `session_id` (its sticky routing; a key over 256 characters is not
-/// sent), and its [`partition_key`](haest_core::ProviderRequest::partition_key)
-/// to OpenAI's own API as `prompt_cache_key`; any other server gets
+/// The prompt cache: on OpenRouter an `anthropic/` model gets every
+/// breakpoint of the request's [`cache`](haest_core::ProviderRequest::cache)
+/// plan with its TTL (its last function tool too), a `google/` model the
+/// system prompt's and the newest message's at five minutes, any other none.
+/// A request's [`cache_key`](haest_core::ProviderRequest::cache_key) goes to
+/// OpenRouter as `session_id` (its sticky routing; a key over 256 characters
+/// is not sent), and its plan's
+/// [`partition_key`](haest_core::cache::CachePlan::partition_key) to OpenAI's
+/// own API as `prompt_cache_key`; any other server gets
 /// neither. A [`prewarm`](haest_core::ProviderRequest::prewarm) request to
 /// an `anthropic/` model on OpenRouter goes out as the real request capped
 /// at `max_tokens: 1` (OpenRouter does not honour 0); every other is
@@ -211,7 +213,7 @@ impl CompatProvider {
 /// where the server takes them ([`cache_key_extras`]).
 pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
     let mut tools = to_chat_tools(&req.tools);
-    mark_last_tool(&mut tools, opts.flavor, &req.model, req.cache_ttl);
+    mark_last_tool(&mut tools, opts.flavor, &req.model, req.cache.tools);
     if opts.flavor == CompatFlavor::OpenRouter {
         tools.extend(req.web_search.as_ref().map(web_search_tool));
     }
@@ -220,7 +222,7 @@ pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> 
         &req.messages,
         opts.flavor,
         &req.model,
-        req.cache_ttl,
+        req.cache.clone(),
         &opts.id,
     );
     let mut body = json!({

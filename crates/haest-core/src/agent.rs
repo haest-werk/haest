@@ -30,7 +30,7 @@ use std::{fmt, time::Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    cache::CachePrefs,
+    cache::{CachePrefs, CacheState},
     caps::TurnCaps,
     compaction::last_context_tokens,
     deps::AgentDeps,
@@ -50,7 +50,7 @@ use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, any history to resume,
 /// and how the provider caches its prompt
-/// ([`with_cache_ttl`](Self::with_cache_ttl), [`with_cache_key`](Self::with_cache_key)).
+/// ([`with_cache_policy`](Self::with_cache_policy), [`with_cache_key`](Self::with_cache_key)).
 ///
 /// ```
 /// use haest_core::{AgentOptions, Message, provider::Effort};
@@ -71,7 +71,7 @@ pub struct AgentOptions {
 
 impl AgentOptions {
     /// Options for `model_spec` with no effort, no history, the default
-    /// cache TTL and no cache key.
+    /// cache policy and no cache key.
     pub fn new(model_spec: impl Into<String>) -> Self {
         Self {
             model_spec: model_spec.into(),
@@ -182,8 +182,9 @@ pub struct Agent {
     /// The turn's thresholds and which have fired, across turns: this agent's
     /// own, following [`SharedDeps::thresholds`](crate::SharedDeps::thresholds).
     thresholds: SharedWatch,
-    /// The cache TTL and key every model call sends.
-    pub(crate) cache: CachePrefs,
+    /// The cache policy and key every model call is planned with, and what
+    /// the last one sent.
+    pub(crate) cache: CacheState,
 }
 
 /// The model, the effort, how long the history is and whether a turn runs;
@@ -212,7 +213,7 @@ impl Agent {
             control: AgentControl::new(),
             side_spend: Usage::default(),
             thresholds: SharedWatch::new(thresholds),
-            cache: opts.cache,
+            cache: CacheState::new(opts.cache),
         }
     }
 
@@ -373,7 +374,6 @@ impl Agent {
     /// system prompt and the tool list afresh.
     pub(crate) async fn request_prefix(&self, model: &str) -> RequestPrefix {
         RequestPrefix {
-            cache_ttl: self.cache.ttl,
             cache_key: self.cache.key.clone(),
             ..build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
         }

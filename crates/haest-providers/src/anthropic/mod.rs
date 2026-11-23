@@ -70,12 +70,14 @@ endpoint_options! {
 
 /// Anthropic's Messages API as a [`Provider`](haest_core::Provider).
 ///
-/// Each request streams (`stream: true`) with a prompt-cache breakpoint on
-/// the system prompt, the last tool and the newest message block, so the next
-/// request reads everything before it from the cache. Every breakpoint
-/// carries the request's [`cache_ttl`](haest_core::ProviderRequest::cache_ttl)
-/// (`"ttl": "1h"` for an hour, nothing for the default five minutes). A
-/// request's [`cache_key`](haest_core::ProviderRequest::cache_key) is not
+/// Each request streams (`stream: true`) with the prompt-cache breakpoints
+/// its [`cache`](haest_core::ProviderRequest::cache) plan places: by
+/// default on the system prompt, the last tool and the newest message block,
+/// so the next request reads everything before it from the cache. A message
+/// the plan chose gets one on its last block that is not thinking. Each
+/// carries its own TTL (`"ttl": "1h"` for an hour, nothing for the default
+/// five minutes). A request's
+/// [`cache_key`](haest_core::ProviderRequest::cache_key) is not
 /// sent: the Messages API has no such field. `max_tokens` defaults to
 /// 32,000 (also for a cap of 0). Effort becomes adaptive thinking with the
 /// effort level, or for models from before it (Claude 4.5 and older) a
@@ -186,27 +188,31 @@ fn max_tokens(req: &ProviderRequest) -> u32 {
 /// The request body for `req`, as the [`AnthropicProvider`] named
 /// `provider_id` sends it.
 ///
-/// `model`, `max_tokens` ([`max_tokens`]), the system prompt as one cached
-/// text block, the messages ([`to_anthropic_messages`]), `stream: true`, the
+/// `model`, `max_tokens` ([`max_tokens`]), the system prompt as one text
+/// block, the messages ([`to_anthropic_messages`]), `stream: true`, the
 /// tools when there are any ([`to_anthropic_tools`]) and the thinking fields
 /// for `req.effort` under that cap ([`thinking_params`]); every breakpoint
-/// with `req.cache_ttl` ([`cache_control`]). A pre-warm is the same request
-/// with `max_tokens: 0` and no `stream`: its thinking is the real cap's, so
-/// it renders into the prompt as the real request's does.
+/// of `req.cache` with its own TTL ([`cache_control`]). A pre-warm is the
+/// same request with `max_tokens: 0` and no `stream`: its thinking is the
+/// real cap's, so it renders into the prompt as the real request's does.
 pub(crate) fn build_anthropic_params(provider_id: &str, req: &ProviderRequest) -> Value {
     let max_tokens = max_tokens(req);
-    let ttl = req.cache_ttl;
+    let cache = &req.cache;
+    let mut system = json!({"type": "text", "text": req.system});
+    if let Some(ttl) = cache.system {
+        system["cache_control"] = cache_control(ttl);
+    }
     let mut body = json!({
         "model": req.model,
         "max_tokens": if req.prewarm { 0 } else { max_tokens },
-        "system": [{"type": "text", "text": req.system, "cache_control": cache_control(ttl)}],
-        "messages": to_anthropic_messages(&req.messages, provider_id, ttl),
+        "system": [system],
+        "messages": to_anthropic_messages(&req.messages, provider_id, cache.clone()),
     });
     if !req.prewarm {
         body["stream"] = Value::Bool(true);
     }
     if !req.tools.is_empty() {
-        body["tools"] = Value::Array(to_anthropic_tools(&req.tools, ttl));
+        body["tools"] = Value::Array(to_anthropic_tools(&req.tools, cache.tools));
     }
     if let Value::Object(map) = &mut body {
         map.extend(thinking_params(&req.model, req.effort, max_tokens));

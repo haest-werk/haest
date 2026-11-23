@@ -1,31 +1,75 @@
-//! How an agent asks the provider to cache its prompt: the TTL and the key,
-//! set on [`AgentOptions`] and changed on [`Agent`].
+//! How an agent asks the provider to cache its prompt: the policy and the
+//! routing key, set on [`AgentOptions`] and changed on [`Agent`], and the
+//! plan each request gets from them.
 
-use super::CacheTtl;
-use crate::agent::{Agent, AgentOptions};
+use std::collections::HashSet;
 
-/// The cache TTL and the cache key every model call of one agent sends.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+use super::{CachePlan, CachePolicyRef, PlanFix, RequestShape};
+use crate::{
+    agent::{Agent, AgentOptions},
+    provider::ProviderRequest,
+};
+
+/// The cache policy and the routing key a new agent starts with; None is
+/// the default policy, [`CachePlan::default`].
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CachePrefs {
-    pub(crate) ttl: CacheTtl,
+    pub(crate) policy: Option<CachePolicyRef>,
     pub(crate) key: Option<String>,
 }
 
+/// Two options are equal when they hold the same policy (one handle a clone
+/// of the other, or both the default) and the same key.
+impl PartialEq for CachePrefs {
+    fn eq(&self, other: &Self) -> bool {
+        let same_policy = match (&self.policy, &other.policy) {
+            (None, None) => true,
+            (Some(a), Some(b)) => CachePolicyRef::ptr_eq(a, b),
+            _ => false,
+        };
+        same_policy && self.key == other.key
+    }
+}
+
+/// An agent's prompt cache: its policy and key, the plan its last loop
+/// request sent, and the fixes the human was already told of.
+#[derive(Debug)]
+pub(crate) struct CacheState {
+    pub(crate) policy: CachePolicyRef,
+    pub(crate) key: Option<String>,
+    pub(crate) last_plan: Option<CachePlan>,
+    told: HashSet<String>,
+}
+
+impl CacheState {
+    pub(crate) fn new(prefs: CachePrefs) -> Self {
+        Self {
+            policy: prefs.policy.unwrap_or_else(|| CachePlan::default().into()),
+            key: prefs.key,
+            last_plan: None,
+            told: HashSet::new(),
+        }
+    }
+}
+
 impl AgentOptions {
-    /// The same, asking the provider to keep what each model call caches for
-    /// `ttl` ([`ProviderRequest::cache_ttl`](crate::ProviderRequest::cache_ttl)).
-    /// Without it, the default: five minutes.
+    /// The same, with `policy` deciding where each request's cache
+    /// breakpoints go and what an idle conversation does
+    /// ([`CachePolicy`](super::CachePolicy)). Without it, the default:
+    /// [`CachePlan::default`], the tools, the system prompt and the newest
+    /// message, each for five minutes.
     ///
     /// ```
-    /// use haest_core::{AgentOptions, cache::CacheTtl};
+    /// use haest_core::{AgentOptions, cache::{CachePlan, CacheTtl}};
     ///
-    /// let opts = AgentOptions::new("anthropic:claude-opus-5-5").with_cache_ttl(CacheTtl::OneHour);
-    /// assert_eq!(opts.cache_ttl(), CacheTtl::OneHour);
-    /// assert_eq!(AgentOptions::new("anthropic:claude-opus-5-5").cache_ttl(), CacheTtl::FiveMinutes);
+    /// let hour = CachePlan::standard(CacheTtl::OneHour);
+    /// let opts = AgentOptions::new("anthropic:claude-opus-5-5").with_cache_policy(hour);
+    /// assert!(opts.cache_policy().is_some());
+    /// assert!(AgentOptions::new("anthropic:claude-opus-5-5").cache_policy().is_none());
     /// ```
     #[must_use]
-    pub fn with_cache_ttl(mut self, ttl: CacheTtl) -> Self {
-        self.cache.ttl = ttl;
+    pub fn with_cache_policy(mut self, policy: impl Into<CachePolicyRef>) -> Self {
+        self.cache.policy = Some(policy.into());
         self
     }
 
@@ -34,7 +78,8 @@ impl AgentOptions {
     /// OpenRouter keeps requests with the same key on the provider holding
     /// their cache. A host passes something stable for the conversation, such
     /// as its session id. Without it none is sent. OpenAI's own API never
-    /// gets it: there a key partitions the cache.
+    /// gets it: there a key partitions the cache
+    /// ([`CachePlan::partition_key`]).
     ///
     /// ```
     /// use haest_core::AgentOptions;
@@ -48,10 +93,10 @@ impl AgentOptions {
         self
     }
 
-    /// How long the provider keeps what each model call caches. Becomes
-    /// [`Agent::cache_ttl`].
-    pub fn cache_ttl(&self) -> CacheTtl {
-        self.cache.ttl
+    /// The cache policy set; None is the default. Becomes
+    /// [`Agent::cache_policy`].
+    pub fn cache_policy(&self) -> Option<&CachePolicyRef> {
+        self.cache.policy.as_ref()
     }
 
     /// The prompt-cache routing key each model call sends; None sends none.
@@ -61,40 +106,45 @@ impl AgentOptions {
     }
 }
 
-/// The cache TTL and key between turns, as [`Agent::set_effort`] changes
-/// the effort.
+/// The cache policy and key between turns, as [`Agent::set_effort`] changes
+/// the effort, and the plan the last request sent.
 ///
 /// ```
 /// # #[cfg(feature = "testing")]
-/// # fn main() {
+/// # #[tokio::main(flavor = "current_thread")]
+/// # async fn main() {
 /// use haest_core::{
-///     Agent, AgentDeps, AgentOptions, SharedDeps, ShutWorkspace, Tools, cache::CacheTtl,
-///     testing::ScriptedProvider,
+///     Agent, AgentDeps, AgentOptions, LoopEvent, SharedDeps, ShutWorkspace, Tools,
+///     cache::{CachePlan, CacheTtl},
+///     testing::{ScriptedProvider, text_answer},
 /// };
 ///
-/// let shared = SharedDeps::new(ScriptedProvider::new([]).resolver(), "/", ShutWorkspace);
+/// let provider = ScriptedProvider::new([text_answer("hi")]);
+/// let shared = SharedDeps::new(provider.resolver(), "/", ShutWorkspace);
 /// let deps = AgentDeps::new(shared, Tools::new(), "Be brief.");
 /// let mut agent = Agent::new(deps, AgentOptions::new("scripted:m").with_cache_key("s-1"));
-/// assert_eq!((agent.cache_ttl(), agent.cache_key()), (CacheTtl::FiveMinutes, Some("s-1")));
 ///
 /// // The human steps away often: an hour from the next model call on.
-/// agent.set_cache_ttl(CacheTtl::OneHour);
-/// agent.set_cache_key("s-2");
-/// assert_eq!((agent.cache_ttl(), agent.cache_key()), (CacheTtl::OneHour, Some("s-2")));
+/// agent.set_cache_policy(CachePlan::standard(CacheTtl::OneHour));
+/// agent.run("hello", &mut Vec::<LoopEvent>::new()).await;
+/// let sent = &provider.requests()[0];
+/// assert_eq!(sent.cache.history, Some(CacheTtl::OneHour));
+/// assert_eq!(sent.cache_key.as_deref(), Some("s-1"));
+/// assert_eq!(agent.last_cache_plan(), Some(&sent.cache));
 /// # }
 /// # #[cfg(not(feature = "testing"))]
 /// # fn main() {}
 /// ```
 impl Agent {
-    /// How long the provider keeps what the next model call caches.
-    pub fn cache_ttl(&self) -> CacheTtl {
-        self.cache.ttl
+    /// The policy that plans each model call's cache breakpoints.
+    pub fn cache_policy(&self) -> &CachePolicyRef {
+        &self.cache.policy
     }
 
-    /// The TTL from the next model call on. The entries already cached keep
+    /// `policy` from the next model call on. The entries already cached keep
     /// the TTL they were written with.
-    pub fn set_cache_ttl(&mut self, ttl: CacheTtl) {
-        self.cache.ttl = ttl;
+    pub fn set_cache_policy(&mut self, policy: impl Into<CachePolicyRef>) {
+        self.cache.policy = policy.into();
     }
 
     /// The prompt-cache routing key the next model call sends; None sends none.
@@ -105,5 +155,43 @@ impl Agent {
     /// `key` as the routing key from the next model call on.
     pub fn set_cache_key(&mut self, key: impl Into<String>) {
         self.cache.key = Some(key.into());
+    }
+
+    /// The cache plan the loop's last model call sent, as checked; None
+    /// before the first.
+    pub fn last_cache_plan(&self) -> Option<&CachePlan> {
+        self.cache.last_plan.as_ref()
+    }
+
+    /// `req`'s cache plan: the policy's for its shape, checked against
+    /// what the model's cache can do. A fix is told once per agent: to the
+    /// human when it [`is_warning`](PlanFix::is_warning), else to the
+    /// diagnostic log.
+    pub(crate) fn plan_cache(&mut self, req: &mut ProviderRequest) {
+        let spec = self.model_spec().to_string();
+        let facts = self.deps().shared().facts().cache_facts(&spec);
+        let shape = RequestShape::new(&spec, &req.tools, &req.system, &req.messages);
+        let shape = match &facts {
+            Some(facts) => shape.with_facts(facts),
+            None => shape,
+        };
+        let (plan, fixes) = self.cache.policy.plan(&shape).checked(&shape);
+        req.cache = plan;
+        for fix in fixes {
+            self.tell(&spec, &fix);
+        }
+    }
+
+    fn tell(&mut self, spec: &str, fix: &PlanFix) {
+        let text = format!("Prompt cache of {spec}: {fix}.");
+        if !self.cache.told.insert(text.clone()) {
+            return;
+        }
+        let shared = self.deps().shared();
+        if fix.is_warning() {
+            shared.hooks().on_warning(&text);
+        } else {
+            shared.services().debug(&text);
+        }
     }
 }

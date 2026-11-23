@@ -155,6 +155,12 @@ name = "threshold"
 path = "examples/threshold.rs"
 test = true
 
+# A host's own prompt-cache policy (system prompt an hour, conversation five minutes), against a scripted model.
+[[example]]
+name = "cache_policy"
+path = "examples/cache_policy.rs"
+test = true
+
 # A host's own implementation of each plug point, driven through a turn.
 [[test]]
 name = "plug_in"

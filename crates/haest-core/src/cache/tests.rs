@@ -114,8 +114,8 @@ async fn a_pre_warm_resends_the_last_request_and_leaves_history_alone() {
     assert!(warm.prewarm && !last.prewarm);
     assert_eq!(warm.messages, last.messages);
     assert_eq!(
-        (&warm.system, &warm.tools, warm.effort, warm.cache_ttl),
-        (&last.system, &last.tools, last.effort, last.cache_ttl)
+        (&warm.system, &warm.tools, warm.effort, &warm.cache),
+        (&last.system, &last.tools, last.effort, &last.cache)
     );
     // The turn's calls had no price; the pre-warm's is on the ledger.
     assert_eq!(warmed.usage.cost_usd, Some(0.01));
@@ -199,25 +199,31 @@ async fn a_provider_without_pre_warm_refuses_before_anything_is_sent() {
 }
 
 #[tokio::test]
-async fn the_cache_ttl_and_key_ride_on_every_model_call() {
+async fn the_cache_policy_and_key_ride_on_every_model_call() {
     let p = ScriptedProvider::new([text_answer("hi"), text_answer("hi again")]);
     let shared = SharedDeps::new(p.resolver(), "/", ShutWorkspace);
     let opts = AgentOptions::new("scripted:m")
-        .with_cache_ttl(CacheTtl::OneHour)
+        .with_cache_policy(CachePlan::standard(CacheTtl::OneHour))
         .with_cache_key("session-1");
     let mut agent = Agent::new(AgentDeps::new(shared, Tools::new(), "sys"), opts);
     collect(&mut agent, "hello").await;
-    agent.set_cache_ttl(CacheTtl::FiveMinutes);
+    agent.set_cache_policy(CachePlan::none().with_history(CacheTtl::FiveMinutes));
     agent.set_cache_key("session-2");
     collect(&mut agent, "again").await;
     let sent: Vec<_> = (p.requests().into_iter())
-        .map(|r| (r.cache_ttl, r.cache_key))
+        .map(|r| (r.cache.system, r.cache.history, r.cache_key))
         .collect();
+    let hour = Some(CacheTtl::OneHour);
     assert_eq!(
         sent,
         [
-            (CacheTtl::OneHour, Some("session-1".to_string())),
-            (CacheTtl::FiveMinutes, Some("session-2".to_string())),
+            (hour, hour, Some("session-1".to_string())),
+            (
+                None,
+                Some(CacheTtl::FiveMinutes),
+                Some("session-2".to_string())
+            ),
         ]
     );
+    assert_eq!(agent.last_cache_plan(), Some(&p.requests()[1].cache));
 }

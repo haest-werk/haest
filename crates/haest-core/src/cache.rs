@@ -1,14 +1,24 @@
-//! The provider's prompt cache: how long it keeps what a request wrote
-//! ([`CacheTtl`]), keeping it warm while a conversation is idle
+//! The provider's prompt cache: where a request's breakpoints go and how
+//! long each lives ([`CachePolicy`], [`CachePlan`], [`CacheTtl`]), keeping it
+//! warm while a conversation is idle
 //! ([`Agent::warm_cache`](crate::Agent::warm_cache)), and whether that pays ([`ping_pays`]).
 //!
-//! **Choosing a TTL.** Every breakpoint haest places in a request carries the
-//! conversation's one [`CacheTtl`] ([`AgentOptions::with_cache_ttl`](crate::AgentOptions::with_cache_ttl)).
-//! A read refreshes an entry for free, so a conversation that sends a request
-//! at least every five minutes keeps `5m`, the cheaper write (1.25x the input
-//! price on Anthropic, against 2x for `1h`). `1h` pays when the human
-//! often pauses for longer than five minutes and less than an hour: one 2x
-//! write instead of a 1.25x write after every pause.
+//! **The policy.** Before every model call the agent's [`CachePolicy`]
+//! ([`AgentOptions::with_cache_policy`](crate::AgentOptions::with_cache_policy))
+//! plans the request's breakpoints: the tools, the system prompt, the
+//! newest message, and messages it chooses, each with its own TTL. haest
+//! checks the plan against the provider's rules and the model's
+//! [`CacheFacts`](crate::catalog::CacheFacts) before it is sent
+//! ([`CachePlan::checked`]), so a policy never makes a request fail. The
+//! default places the three standard breakpoints at five minutes.
+//!
+//! **Choosing a TTL.** A read refreshes an entry for free, so a conversation
+//! that sends a request at least every five minutes keeps `5m`, the cheaper
+//! write (1.25x the input price on Anthropic, against 2x for `1h`). `1h`
+//! pays when the human often pauses for longer than five minutes and less
+//! than an hour: one 2x write instead of a 1.25x write after every pause. A
+//! system prompt that rarely changes may live an hour while the
+//! conversation after it lives five minutes.
 //!
 //! **Pre-warm.** [`Agent::warm_cache`](crate::Agent::warm_cache) sends the conversation's last request
 //! again as a pre-warm ([`ProviderRequest::prewarm`](crate::ProviderRequest::prewarm):
@@ -21,21 +31,29 @@
 //! Only a provider whose [`Provider::check_prewarm`](crate::Provider::check_prewarm)
 //! says yes takes one.
 
+mod check;
+mod fix;
+mod plan;
+mod policy;
 mod prefs;
 mod warm;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_plan;
 
-pub(crate) use prefs::CachePrefs;
+pub use fix::{Breakpoint, MAX_BREAKPOINTS, PlanFix, TOOL_PROMPT_ALLOWANCE};
+pub use plan::CachePlan;
+pub use policy::{CachePolicy, CachePolicyRef, IdleAction, IdleState, RequestShape};
+pub(crate) use prefs::{CachePrefs, CacheState};
 
 use std::time::Duration;
 
 use crate::{catalog::ModelPricing, messages::Usage, provider::ModelError};
 
 crate::word_enum! {
-    /// How long a provider keeps the prompt cache a request writes. Every
-    /// breakpoint of one request carries the same TTL.
+    /// How long a provider keeps the prompt cache a breakpoint writes.
     ///
     /// Anthropic's Messages API takes both, and so does OpenRouter for its
     /// `anthropic/` models: a write costs 1.25x the input price for five

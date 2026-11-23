@@ -53,8 +53,9 @@
 //!   new work at a set share of a cap.
 //! - Context: [`context`] builds the system prompt, [`compaction`] summarises
 //!   a full window, [`deferred_tools`] keeps large tool lists out of the request.
-//!   [`cache`] says how long the provider's prompt cache lives, and keeps it
-//!   warm while the conversation is idle.
+//!   [`cache`] plans where each request's prompt-cache breakpoints go and
+//!   how long each lives ([`CachePolicy`]), and keeps the cache warm while
+//!   the conversation is idle.
 //! - Durable runs (opt-in): [`run`] lets a turn stopped part way go on where
 //!   it stopped, and returns a finished run's result under the same key.
 //!
@@ -246,7 +247,10 @@ pub use prelude::*;
 /// prelude has both.
 pub mod prelude {
     pub use crate::agent::{Agent, AgentControl, AgentOptions};
-    pub use crate::cache::{CacheTtl, PrewarmRefused};
+    pub use crate::cache::{
+        CachePlan, CachePolicy, CachePolicyRef, CacheTtl, IdleAction, IdleState, PrewarmRefused,
+        RequestShape,
+    };
     pub use crate::caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef};
     pub use crate::catalog::{InputModality, ModelFacts, ModelFactsRef, NoFacts, Reasoning};
     pub use crate::deps::{

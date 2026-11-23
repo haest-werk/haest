@@ -3,7 +3,10 @@
 use tokio_util::sync::CancellationToken;
 
 use super::{Effort, ToolSpec, WebSearchOptions};
-use crate::{cache::CacheTtl, messages::Message};
+use crate::{
+    cache::{CachePlan, CacheTtl},
+    messages::Message,
+};
 
 /// One model call, provider-neutral: everything an adapter turns into its wire
 /// request.
@@ -32,24 +35,17 @@ pub struct ProviderRequest {
     pub max_tokens: Option<u32>,
     /// Only providers that run one (OpenRouter) send it.
     pub web_search: Option<WebSearchOptions>,
-    /// How long the provider keeps the prompt cache this request writes, on
-    /// every breakpoint it places; a provider with no choice ignores it.
-    pub cache_ttl: CacheTtl,
+    /// Where the prompt-cache breakpoints go, how long each lives, and the
+    /// partition key: the agent's [`CachePolicy`](crate::cache::CachePolicy)
+    /// plans it, checked. Each provider sends what it takes of it.
+    pub cache: CachePlan,
     /// What groups this request with the others of its conversation for the
     /// provider's prompt cache (the conversation's id, say); None = nothing.
     /// OpenRouter takes it as `session_id`, its sticky routing: the
     /// conversation stays on the provider holding its cache. Every other
     /// provider leaves it out; OpenAI's own API in particular, where a key
-    /// partitions the cache ([`partition_key`](Self::partition_key)).
+    /// partitions the cache ([`CachePlan::partition_key`]).
     pub cache_key: Option<String>,
-    /// A key that partitions the provider's prompt cache: only requests with
-    /// the same key share entries. OpenAI's own API takes it as
-    /// `prompt_cache_key` (on GPT-5.6 and later it partitions the cache; on
-    /// earlier models it routes); no other provider has one. None (the
-    /// default) sends none, so every conversation that starts on the same
-    /// prompt reads what another cached. Set it only to keep apart what must
-    /// not share a cache (one customer's conversations from another's).
-    pub partition_key: Option<String>,
     /// A cache pre-warm: the provider reads the request into its prompt
     /// cache and generates as little as it can (nothing on Anthropic's own
     /// API, one token on OpenRouter). A provider sends one only when
@@ -62,8 +58,8 @@ pub struct ProviderRequest {
 impl ProviderRequest {
     /// A call to `model` with `messages`: no system prompt, no tools, a fresh
     /// cancel token, the model's own effort, output cap and search, the
-    /// five-minute cache TTL, no cache key or partition key, and not a
-    /// pre-warm.
+    /// default cache plan ([`CachePlan::default`]: five minutes), no cache
+    /// key or partition key, and not a pre-warm.
     pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
@@ -74,9 +70,8 @@ impl ProviderRequest {
             effort: None,
             max_tokens: None,
             web_search: None,
-            cache_ttl: CacheTtl::default(),
+            cache: CachePlan::default(),
             cache_key: None,
-            partition_key: None,
             prewarm: false,
         }
     }
@@ -124,17 +119,37 @@ impl ProviderRequest {
         self
     }
 
-    /// Cached for `ttl` instead of five minutes ([`cache_ttl`](Self::cache_ttl)).
+    /// Cached as `plan` says ([`cache`](Self::cache)).
     ///
     /// ```
-    /// use haest_core::{ProviderRequest, cache::CacheTtl};
+    /// use haest_core::{ProviderRequest, cache::{CachePlan, CacheTtl}};
+    ///
+    /// let plan = CachePlan::none().with_system(CacheTtl::OneHour);
+    /// let req = ProviderRequest::new("claude-opus-5-5", vec![]).with_cache(plan.clone());
+    /// assert_eq!(req.cache, plan);
+    /// ```
+    #[must_use]
+    pub fn with_cache(mut self, plan: CachePlan) -> Self {
+        self.cache = plan;
+        self
+    }
+
+    /// The standard breakpoints, each cached for `ttl` instead of five
+    /// minutes ([`CachePlan::standard`]); the partition key stays.
+    ///
+    /// ```
+    /// use haest_core::{ProviderRequest, cache::{CachePlan, CacheTtl}};
     ///
     /// let req = ProviderRequest::new("claude-opus-5-5", vec![]).with_cache_ttl(CacheTtl::OneHour);
-    /// assert_eq!(req.cache_ttl, CacheTtl::OneHour);
+    /// assert_eq!(req.cache, CachePlan::standard(CacheTtl::OneHour));
     /// ```
     #[must_use]
     pub fn with_cache_ttl(mut self, ttl: CacheTtl) -> Self {
-        self.cache_ttl = ttl;
+        let key = self.cache.partition_key.take();
+        self.cache = CachePlan {
+            partition_key: key,
+            ..CachePlan::standard(ttl)
+        };
         self
     }
 
@@ -154,17 +169,17 @@ impl ProviderRequest {
     }
 
     /// Its prompt cache kept apart from requests under any other `key`
-    /// ([`partition_key`](Self::partition_key)).
+    /// ([`CachePlan::partition_key`]).
     ///
     /// ```
     /// use haest_core::ProviderRequest;
     ///
     /// let req = ProviderRequest::new("gpt-6.1-sol", vec![]).with_partition_key("customer-7");
-    /// assert_eq!(req.partition_key.as_deref(), Some("customer-7"));
+    /// assert_eq!(req.cache.partition_key.as_deref(), Some("customer-7"));
     /// ```
     #[must_use]
     pub fn with_partition_key(mut self, key: impl Into<String>) -> Self {
-        self.partition_key = Some(key.into());
+        self.cache.partition_key = Some(key.into());
         self
     }
 

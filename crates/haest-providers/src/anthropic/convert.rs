@@ -8,7 +8,7 @@
 //!     provider (the endpoint) that signed them.
 
 use haest_core::{
-    cache::CacheTtl,
+    cache::{CachePlan, CacheTtl},
     media::dropped_note,
     messages::{AssistantMessage, AssistantPart, MediaKind, MediaPart, Message, ToolResultMessage},
     provider::{Effort, ToolSpec},
@@ -118,37 +118,62 @@ fn blocks_of(msg: &Message, provider_id: &str) -> (&'static str, Vec<Value>) {
     }
 }
 
-/// `messages` as the Messages API's `messages` array.
+/// A thinking block, which takes no cache breakpoint.
+fn is_thinking(block: &Value) -> bool {
+    let kind = block.get("type").and_then(Value::as_str);
+    kind == Some("thinking") || kind == Some("redacted_thinking")
+}
+
+/// `messages` as the Messages API's `messages` array, with the breakpoints
+/// `cache` places on them (a [`CacheTtl`] is the standard plan at that TTL).
 ///
 /// Consecutive messages of one role merge into one turn (tool results and a
 /// queued user message become one user turn). Thinking replays only from a
 /// message whose provider is `provider_id`, and only with its signature. Images
 /// and PDFs go as base64 blocks; audio and video, which the API does not take,
-/// become a text note. The newest block gets a prompt-cache breakpoint that
-/// lives `ttl`.
+/// become a text note. The newest block gets the rolling breakpoint, with
+/// `cache.history`'s TTL; a message the plan chose gets one on its last
+/// block that is not thinking, with its own.
 pub(crate) fn to_anthropic_messages(
     messages: &[Message],
     provider_id: &str,
-    ttl: CacheTtl,
+    cache: impl Into<CachePlan>,
 ) -> Vec<Value> {
+    let cache = cache.into();
     let mut out: Vec<(&'static str, Vec<Value>)> = Vec::new();
-    for msg in messages {
+    // Each chosen message's blocks: its TTL, its turn, where its blocks start.
+    let mut chosen = Vec::new();
+    for (i, msg) in messages.iter().enumerate() {
         let (role, blocks) = blocks_of(msg, provider_id);
         if blocks.is_empty() {
             continue;
         }
+        let count = blocks.len();
         match out.last_mut() {
             Some((last, content)) if *last == role => content.extend(blocks),
             _ => out.push((role, blocks)),
         }
+        let turn = out.len() - 1;
+        let start = out[turn].1.len() - count;
+        let ttl = cache.messages.iter().find(|(at, _)| *at == i).map(|m| m.1);
+        chosen.extend(ttl.map(|ttl| (ttl, turn, start)));
+    }
+    for (ttl, turn, start) in chosen {
+        let last = out[turn].1[start..]
+            .iter_mut()
+            .rev()
+            .find(|b| !is_thinking(b));
+        if let Some(block) = last {
+            block["cache_control"] = cache_control(ttl);
+        }
     }
     // Rolling cache breakpoint on the newest block: the next request re-reads
     // everything up to here from cache.
-    if let Some(tail) = out.last_mut().and_then(|(_, c)| c.last_mut()) {
-        let kind = tail.get("type").and_then(Value::as_str);
-        if kind != Some("thinking") && kind != Some("redacted_thinking") {
-            tail["cache_control"] = cache_control(ttl);
-        }
+    let tail = out.last_mut().and_then(|(_, c)| c.last_mut());
+    if let (Some(tail), Some(ttl)) = (tail, cache.history)
+        && !is_thinking(tail)
+    {
+        tail["cache_control"] = cache_control(ttl);
     }
     out.into_iter()
         .map(|(role, content)| json!({"role": role, "content": content}))
@@ -156,8 +181,12 @@ pub(crate) fn to_anthropic_messages(
 }
 
 /// `tools` as Messages API tool definitions, the last with a prompt-cache
-/// breakpoint that lives `ttl`.
-pub(crate) fn to_anthropic_tools(tools: &[ToolSpec], ttl: CacheTtl) -> Vec<Value> {
+/// breakpoint that lives `ttl` (None: no breakpoint).
+pub(crate) fn to_anthropic_tools(
+    tools: &[ToolSpec],
+    ttl: impl Into<Option<CacheTtl>>,
+) -> Vec<Value> {
+    let ttl = ttl.into();
     tools
         .iter()
         .enumerate()
@@ -167,7 +196,7 @@ pub(crate) fn to_anthropic_tools(tools: &[ToolSpec], ttl: CacheTtl) -> Vec<Value
                 "description": t.description,
                 "input_schema": t.parameters,
             });
-            if i + 1 == tools.len() {
+            if let Some(ttl) = ttl.filter(|_| i + 1 == tools.len()) {
                 tool["cache_control"] = cache_control(ttl);
             }
             tool

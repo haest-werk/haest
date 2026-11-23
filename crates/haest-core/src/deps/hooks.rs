@@ -308,10 +308,13 @@ pub trait AgentHooks: Send + Sync {
     /// run ([`crate::run`]) flushes its own records before this.
     async fn before_effects(&self) {}
 
-    /// A turn's threshold warned the human
-    /// ([`Action::Warn`](crate::threshold::Action::Warn)): the human must hear
-    /// `text`, which ends with the host's remedy; the model does not see it.
-    /// Called at the step boundary it fired at, once per firing.
+    /// The human must hear `text`; the model does not see it. Called when a
+    /// turn's threshold warns
+    /// ([`Action::Warn`](crate::threshold::Action::Warn)), at the step
+    /// boundary it fired at, once per firing, with the host's remedy at the
+    /// end; and when haest changed a cache plan the model or the provider
+    /// could not take ([`PlanFix::is_warning`](crate::cache::PlanFix::is_warning)),
+    /// once per agent for each such change.
     fn on_warning(&self, _text: &str) {}
 }
 

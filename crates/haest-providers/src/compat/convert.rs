@@ -6,7 +6,7 @@
 //! applied here and nowhere else.
 
 use haest_core::{
-    cache::CacheTtl,
+    cache::{CachePlan, CacheTtl},
     catalog::Reasoning,
     messages::{AssistantMessage, Message},
     provider::{Effort, ProviderRequest, ToolSpec, nearest_accepted_effort},
@@ -59,18 +59,17 @@ fn cache_marker(flavor: CompatFlavor, model: &str, ttl: CacheTtl) -> Option<Valu
 }
 
 /// The last of `tools` (the function tools, before any server tool) with a
-/// breakpoint, for an Anthropic model on OpenRouter: the tool list then
-/// reads from the cache when the system prompt changes but the tools do
-/// not, as on Anthropic's own API.
+/// breakpoint that lives `ttl`, for an Anthropic model on OpenRouter: the
+/// tool list then reads from the cache when the system prompt changes but
+/// the tools do not, as on Anthropic's own API. None: no breakpoint.
 pub(super) fn mark_last_tool(
     tools: &mut [Value],
     flavor: CompatFlavor,
     model: &str,
-    ttl: CacheTtl,
+    ttl: Option<CacheTtl>,
 ) {
-    if let Some(last) = tools
-        .last_mut()
-        .filter(|_| openrouter_anthropic(flavor, model))
+    if let (Some(last), Some(ttl)) = (tools.last_mut(), ttl)
+        && openrouter_anthropic(flavor, model)
     {
         last["cache_control"] = cache_control(ttl);
     }
@@ -87,7 +86,7 @@ const SESSION_ID_MAX: usize = 256;
 /// since there a key partitions the cache instead of routing to it.
 pub(super) fn cache_key_extras(opts: &CompatOptions, req: &ProviderRequest) -> Map<String, Value> {
     let mut extras = Map::new();
-    match (opts.flavor, &req.cache_key, &req.partition_key) {
+    match (opts.flavor, &req.cache_key, &req.cache.partition_key) {
         (CompatFlavor::OpenRouter, Some(key), _) if key.chars().count() <= SESSION_ID_MAX => {
             extras.insert("session_id".into(), json!(key));
         }
@@ -166,64 +165,93 @@ fn replayed_reasoning(data: Option<&Value>) -> Map<String, Value> {
 /// reasoning back (`reasoning_details`, `reasoning_content`); one from any
 /// other provider goes as text and tool calls only. A tool result's media,
 /// which a `tool` message cannot hold, follows the run of tool results as a
-/// user message. On OpenRouter, an `anthropic/` or `google/` model gets cache
-/// breakpoints on the system prompt and the newest user or tool message,
-/// an `anthropic/` one's living `ttl` ([`cache_marker`]).
+/// user message.
+///
+/// On OpenRouter the breakpoints of `cache` go in (a [`CacheTtl`] is the
+/// standard plan at that TTL): an `anthropic/` model's on the system prompt,
+/// the newest user or tool message and the messages the plan chose, each
+/// with its TTL; a `google/` model's on the system prompt and the newest
+/// user or tool message only, at five minutes ([`cache_marker`]). A
+/// breakpoint goes on a message's last text part, so a chosen assistant
+/// message, or one with no text, gets none.
 pub(crate) fn to_chat_messages(
     system: &str,
     messages: &[Message],
     flavor: CompatFlavor,
     model: &str,
-    ttl: CacheTtl,
+    cache: impl Into<CachePlan>,
     provider_id: &str,
 ) -> Vec<Value> {
-    let cache = cache_marker(flavor, model, ttl);
+    let cache = cache.into();
+    let marker = |ttl: Option<CacheTtl>| ttl.and_then(|ttl| cache_marker(flavor, model, ttl));
     let mut out = Vec::new();
-    let system_content = match &cache {
+    let system_content = match marker(cache.system) {
         Some(marker) => json!([{"type": "text", "text": system, "cache_control": marker}]),
         None => json!(system),
     };
     out.push(json!({"role": "system", "content": system_content}));
-    with_tool_media(messages, &CHAT, &mut out, |m, out| match m {
-        Message::User(u) => {
-            out.push(json!({"role": "user", "content": CHAT.user_content(&u.content, &u.media)}))
+    // Where each message landed in `out`, for the plan's chosen ones.
+    let mut landed = Vec::with_capacity(messages.len());
+    with_tool_media(messages, &CHAT, &mut out, |m, out| {
+        let before = out.len();
+        match m {
+            Message::User(u) => out
+                .push(json!({"role": "user", "content": CHAT.user_content(&u.content, &u.media)})),
+            Message::Tool(t) => out.push(
+                json!({"role": "tool", "tool_call_id": t.tool_call_id, "content": result_text(t)}),
+            ),
+            Message::Assistant(a) if !a.content.is_empty() => {
+                out.push(assistant_msg(a, provider_id))
+            }
+            Message::Assistant(_) => {}
         }
-        Message::Tool(t) => out.push(
-            json!({"role": "tool", "tool_call_id": t.tool_call_id, "content": result_text(t)}),
-        ),
-        Message::Assistant(a) if !a.content.is_empty() => out.push(assistant_msg(a, provider_id)),
-        Message::Assistant(_) => {}
+        landed.push((out.len() > before).then(|| out.len() - 1));
     });
-    if let Some(marker) = cache {
-        mark_last_user_cacheable(&mut out, marker);
+    if openrouter_anthropic(flavor, model) {
+        for (index, ttl) in &cache.messages {
+            if let Some(Some(at)) = landed.get(*index) {
+                mark_cacheable(&mut out[*at], &cache_control(*ttl));
+            }
+        }
+    }
+    if let Some(marker) = marker(cache.history) {
+        for m in out.iter_mut().skip(1).rev() {
+            if mark_cacheable(m, &marker) {
+                break;
+            }
+        }
     }
     out
 }
 
-fn mark_last_user_cacheable(out: &mut [Value], marker: Value) {
-    for m in out.iter_mut().skip(1).rev() {
-        let role = m.get("role").and_then(Value::as_str);
-        if role != Some("user") && role != Some("tool") {
-            continue;
+/// `m` with `marker` on its last text part, when it is a user or tool
+/// message that has one (a string content becomes one text part); whether
+/// it took it.
+fn mark_cacheable(m: &mut Value, marker: &Value) -> bool {
+    let role = m.get("role").and_then(Value::as_str);
+    if role != Some("user") && role != Some("tool") {
+        return false;
+    }
+    match m.get_mut("content") {
+        Some(Value::String(text)) => {
+            let text = std::mem::take(text);
+            m["content"] = json!([{"type": "text", "text": text, "cache_control": marker}]);
+            true
         }
-        match m.get_mut("content") {
-            Some(Value::String(text)) => {
-                let text = std::mem::take(text);
-                m["content"] = json!([{"type": "text", "text": text, "cache_control": marker}]);
-                return;
-            }
-            Some(Value::Array(parts)) => {
-                let last_text = parts
-                    .iter_mut()
-                    .rev()
-                    .find(|p| p.get("type").and_then(Value::as_str) == Some("text"));
-                if let Some(part) = last_text {
-                    part["cache_control"] = marker;
-                    return;
+        Some(Value::Array(parts)) => {
+            let last_text = parts
+                .iter_mut()
+                .rev()
+                .find(|p| p.get("type").and_then(Value::as_str) == Some("text"));
+            match last_text {
+                Some(part) => {
+                    part["cache_control"] = marker.clone();
+                    true
                 }
+                None => false,
             }
-            _ => {}
         }
+        _ => false,
     }
 }
 

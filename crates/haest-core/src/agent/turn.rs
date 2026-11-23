@@ -261,7 +261,9 @@ impl Agent {
             provider: resolved.provider().id().to_string(),
             model: resolved.model().to_string(),
         });
-        let req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
+        let mut req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
+        self.plan_cache(&mut req);
+        self.cache.last_plan = Some(req.cache.clone());
         let mut msg = resolved
             .complete_streaming(req, |ev| match ev {
                 ProviderEvent::TextDelta(text) => t.sink.emit(LoopEvent::TextDelta { text }),

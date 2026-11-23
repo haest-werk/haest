@@ -30,7 +30,7 @@ pub(super) fn warm_messages(history: &[Message]) -> Vec<Message> {
 impl Agent {
     /// Sends the conversation's last request again as a cache pre-warm, so
     /// the provider's prompt cache holds it for the next turn: the system
-    /// prompt, tools, effort, cache TTL and history the next model call
+    /// prompt, tools, effort, cache plan and history the next model call
     /// would send, ending where the last request ended (its last user or
     /// tool message), with nothing after it. The provider generates as
     /// little as it can (Anthropic: `max_tokens: 0`, not streamed, nothing;
@@ -101,9 +101,10 @@ impl Agent {
         let accepts = shared.facts().input_modalities(self.model_spec());
         let messages = fit_for_model(&messages, accepts.as_ref(), &model, &NoHooks);
         let prefix = self.request_prefix(&model).await;
-        let req = prefix
+        let mut req = prefix
             .request(model, messages, cancel.clone())
             .with_prewarm(true);
+        self.plan_cache(&mut req);
         if let Err(source) = resolved.provider().check_prewarm(&req) {
             return Err(WarmError::Refused {
                 model_spec: self.model_spec().to_string(),

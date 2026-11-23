@@ -7,6 +7,7 @@ use std::{path::Path, sync::Arc};
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, ChildEnv, SharedDeps, ToolSourceRef, WorkspaceRef,
+    cache::CachePlan,
     deferred_tools::ToolDeferral,
     fs::FsRef,
     ledger::Ledger,
@@ -254,7 +255,7 @@ where
     // prompt cache; a /clear keeps it, since the new conversation starts on
     // the same system prompt and tools.
     let mut agent_opts = AgentOptions::new(model)
-        .with_cache_ttl(s.cache_ttl)
+        .with_cache_policy(CachePlan::standard(s.cache_ttl))
         .with_cache_key(hooks.store().session_id());
     if let Some(effort) = effort {
         agent_opts = agent_opts.with_effort(effort);

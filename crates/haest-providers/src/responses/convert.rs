@@ -148,6 +148,7 @@ pub(crate) fn build_responses_body(opts: &ResponsesOptions, req: &ProviderReques
     body.insert("include".into(), json!(["reasoning.encrypted_content"]));
     body.insert("stream".into(), json!(true));
     if let Some(key) = req
+        .cache
         .partition_key
         .as_deref()
         .filter(|_| is_openai_api(opts.base_url()))

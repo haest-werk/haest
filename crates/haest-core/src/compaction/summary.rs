@@ -96,11 +96,9 @@ pub(super) async fn summarize(
     let prefix = agent.request_prefix(&model).await;
     let mut messages = agent.sendable(agent.history(), &model);
     messages.push(Message::user(warm_instruction(kept, asked)));
-    let warm = ask(
-        &resolved,
-        prefix.request(model.clone(), messages, cancel.clone()),
-    )
-    .await;
+    let mut req = prefix.request(model.clone(), messages, cancel.clone());
+    agent.plan_cache(&mut req);
+    let warm = ask(&resolved, req).await;
     agent.spent_outside_the_loop(&warm.usage);
     if warm.text.is_ok() || cancel.is_cancelled() {
         return Ok((warm, SummaryPath::Warm));
