@@ -9,7 +9,7 @@ use std::{
 };
 
 use haest_core::{
-    __private::{check_pattern, is_var_name},
+    __private::{BadPattern, PatternOf, check_pattern, is_var_name},
     fs::resolve_path,
 };
 use haest_providers::http::check_endpoint_url;
@@ -135,20 +135,28 @@ pub(crate) fn var_parts(checked: &str) -> (&str, &str) {
     checked.split_once('=').unwrap_or((checked, ""))
 }
 
-/// A list of name patterns ([`Kind::Patterns`]), each checked by
+/// A list of tool-name patterns ([`Kind::Patterns`]), each checked by
 /// haest-core's one check: what a matcher would read as no name at all is
 /// refused here, where the human can see which setting holds it.
 fn patterns(raw: &str) -> Result<String, String> {
     let checked = list(raw, None)?;
-    match split_list(&checked)
-        .into_iter()
-        .find(|p| check_pattern(p).is_err())
-    {
-        Some(item) => Err(format!(
-            "\"{item}\" is not haest's pattern: a name (`Bash`) or a prefix ending in `*` (`mcp__github__*`); a regular expression is not read (`Edit|Write` is two names), and `*` only ends a prefix"
-        )),
-        None => Ok(checked),
+    for item in split_list(&checked) {
+        match check_pattern(&item, PatternOf::Tools) {
+            Ok(()) => {}
+            // The list is split at its commas, so a space is left.
+            Err(BadPattern::List) => {
+                return Err(format!(
+                    "\"{item}\" holds a space, which no tool's name does: the list's names are split by `,` (`Edit,Write`)"
+                ));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "\"{item}\" is not haest's pattern: a name (`Bash`) or a prefix ending in `*` (`mcp__github__*`); a regular expression is not read (`Edit|Write` is two names), and `*` only ends a prefix"
+                ));
+            }
+        }
     }
+    Ok(checked)
 }
 
 fn list(raw: &str, allowed: Option<&[&str]>) -> Result<String, String> {

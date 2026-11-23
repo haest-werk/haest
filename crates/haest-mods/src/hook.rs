@@ -6,7 +6,7 @@ use std::{fmt, future::Future, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::{
-    __private::{check_pattern, name_matches},
+    __private::{PatternOf, check_pattern, name_matches},
     error::BoxError,
 };
 use tokio_util::sync::CancellationToken;
@@ -239,14 +239,15 @@ impl<E: ToolEvent> Binding<E> {
     /// # Panics
     ///
     /// In a debug build, when `pattern` is not haest's pattern (a regular
-    /// expression such as Claude Code's `Edit|Write`, a `*` inside, the
-    /// empty text): it would match no tool, so the hook would never be
-    /// asked. The `hooks` setting refuses such a matcher when it is read.
+    /// expression such as Claude Code's `Edit|Write` or `Bash.*`, a `*`
+    /// inside, a list such as `Edit,Write`, the empty text): it would match
+    /// no tool, so the hook would never be asked. The `hooks` setting
+    /// refuses such a matcher when it is read.
     #[must_use]
     pub fn with_matcher(mut self, pattern: impl Into<String>) -> Self {
         let pattern = pattern.into();
         debug_assert!(
-            check_pattern(&pattern).is_ok(),
+            check_pattern(&pattern, PatternOf::Tools).is_ok(),
             "`{pattern}` is not haest's pattern: a tool's name or a prefix ending in `*`"
         );
         self.matcher = Some(Matcher {

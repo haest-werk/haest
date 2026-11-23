@@ -1,6 +1,8 @@
 //! Garbage is refused, never read as a default: the error names the setting
 //! (`key`) and the layer it was given in (`at`), so a host can point at it.
 
+use haest_settings::BreakpointTtl;
+
 use super::*;
 
 #[tokio::test]
@@ -138,6 +140,8 @@ async fn a_pattern_that_would_match_nothing_is_refused_naming_the_setting() {
             "code_tools",
             "mcp__*__search",
         ),
+        // A tool's name holds no dot: `Bash.*` is Claude Code's regex.
+        ("code_tools = [\"Bash.*\"]", "code_tools", "Bash.*"),
         ("[cache.models.\"a*b\"]\nsystem = \"off\"", "cache", "a*b"),
         (
             "[cache.models.\"openrouter:(google|openai)/*\"]\nkeep_warm = true",
@@ -166,13 +170,31 @@ async fn a_pattern_that_would_match_nothing_is_refused_naming_the_setting() {
         Some((&by_flag, "code_tools")),
         "{flag_err}"
     );
-    // An exact name, a prefix and `*` alone are patterns.
+    // A name with a space in it is no tool's: the list splits at `,` only.
+    let spaced = run(
+        "/w",
+        &[(USER_FILE, "code_tools = [\"Edit Write\"]")],
+        &[],
+        &[],
+    )
+    .await;
+    let spaced = spaced.unwrap_err();
+    assert_eq!(refused(&spaced), Some((&at, "code_tools")), "{spaced}");
+    assert!(spaced.to_string().contains("holds a space"), "{spaced}");
+    // An exact name, a prefix and `*` alone are patterns; a model spec's
+    // prefix may end in `.*`, as specs hold dots.
     let good = [(
         USER_FILE,
-        "code_tools = [\"Bash\", \"mcp__github__*\", \"*\"]\n[cache.models.\"openrouter:google/*\"]\nsystem = \"off\"",
+        "code_tools = [\"Bash\", \"mcp__github__*\", \"*\"]\n[cache.models.\"openrouter:google/*\"]\nsystem = \"off\"\n[cache.models.\"openrouter:openai/gpt-6.*\"]\nsystem = \"1h\"",
     )];
     let s = run("/w", &good, &[], &[]).await.unwrap().config.settings;
     assert_eq!(s.code_tools, ["Bash", "mcp__github__*", "*"]);
+    let gpt = |spec| s.cache.for_model(spec).system;
+    assert_eq!(gpt("openrouter:openai/gpt-6.1-sol"), BreakpointTtl::OneHour);
+    assert_eq!(
+        gpt("openrouter:openai/gpt-6-luna"),
+        BreakpointTtl::FiveMinutes
+    );
 }
 
 /// A count (steps, tokens) given a fraction must not quietly become a

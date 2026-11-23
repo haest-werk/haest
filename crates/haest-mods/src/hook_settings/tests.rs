@@ -145,6 +145,29 @@ fn what_an_entry_may_not_hold_is_refused_naming_the_entry() {
     }
 }
 
+/// A matcher is one tool's name or one prefix: Claude Code's `Bash.*` and a
+/// list (`Edit,Write`, `Edit Write`) match no tool, so a guard bound with
+/// one never fires. Each is refused saying which it is.
+#[test]
+fn a_matcher_that_is_a_regular_expression_or_a_list_says_which() {
+    let why = |matcher: &str| {
+        read(json!({ "tool.before": [{ "command": "x", "matcher": matcher }] })).unwrap_err()
+    };
+    let regex = why("Bash.*");
+    assert!(
+        regex.contains("`matcher = \"Bash.*\"` is not haest's pattern")
+            && regex.contains("Claude Code's regular expressions are not read"),
+        "{regex}"
+    );
+    for list in ["Edit,Write", "Edit Write", "Edit, Write"] {
+        let refused = why(list);
+        assert!(
+            refused.contains("is a list") && refused.contains("`,` or a space"),
+            "{refused}"
+        );
+    }
+}
+
 /// Neither a header's value nor a URL (which may carry a password) is in a
 /// refusal.
 #[test]

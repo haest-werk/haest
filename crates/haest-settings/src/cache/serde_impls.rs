@@ -5,7 +5,9 @@
 
 use std::{collections::BTreeMap, fmt, time::Duration};
 
-use haest_core::__private::{BadPattern, DurationIn, TimeUnit, check_pattern, deserialize_in};
+use haest_core::__private::{
+    BadPattern, DurationIn, PatternOf, TimeUnit, check_pattern, deserialize_in,
+};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, MapAccess, Visitor, value::MapAccessDeserializer},
@@ -81,19 +83,25 @@ pub(super) mod minutes {
 }
 
 /// `[models."<pattern>"]`, each key haest's pattern: a model spec, or a
-/// prefix ending in `*`. One that is not would match no model, so the
-/// override would quietly do nothing.
+/// prefix ending in `*` (`openrouter:openai/gpt-6.*` too: a spec holds
+/// dots). One that is not would match no model, so the override would
+/// quietly do nothing.
 pub(super) fn models<'de, D: Deserializer<'de>>(
     d: D,
 ) -> Result<BTreeMap<String, CacheOverride>, D::Error> {
     let models = BTreeMap::<String, CacheOverride>::deserialize(d)?;
     for key in models.keys() {
-        match check_pattern(key) {
+        match check_pattern(key, PatternOf::Models) {
             Ok(()) => {}
             Err(BadPattern::Empty) => {
                 return Err(de::Error::custom(
                     "models.\"\": an empty pattern matches no model",
                 ));
+            }
+            Err(BadPattern::List) => {
+                return Err(de::Error::custom(format!(
+                    "models.\"{key}\" is a list, and a key is one model spec or one prefix: no spec holds a `,` or a space (one table per pattern)"
+                )));
             }
             // Not a pattern, and a refusal newer than this match.
             Err(_) => {

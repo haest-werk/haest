@@ -134,6 +134,35 @@ fn a_misspelt_key_or_a_value_it_does_not_take_is_refused() {
     );
 }
 
+/// A `.*` end is a prefix in a model spec, which holds dots:
+/// `openrouter:openai/gpt-6.*` is every `gpt-6.1-*` spec, not `gpt-6-luna`.
+/// A list in a key (`a,b`, `a b`) would match no model, and is refused.
+#[test]
+fn a_model_key_ending_in_dot_star_is_a_prefix_and_a_list_is_refused() {
+    let cache = read("[models.\"openrouter:openai/gpt-6.*\"]\nsystem = \"1h\"").unwrap();
+    let system = |spec| cache.for_model(spec).system;
+    assert_eq!(
+        system("openrouter:openai/gpt-6.1-sol"),
+        BreakpointTtl::OneHour
+    );
+    assert_eq!(
+        system("openrouter:openai/gpt-6-luna"),
+        BreakpointTtl::FiveMinutes
+    );
+    for list in [
+        "openai:gpt-6.1-sol,openai:gpt-6-luna",
+        "openai:gpt-6.1-sol openai:gpt-6-luna",
+        "openai:gpt-6.1-sol, openai:gpt-6-luna",
+    ] {
+        let text = format!("[models.\"{list}\"]\nsystem = \"off\"");
+        let why = read(&text).unwrap_err().to_string();
+        assert!(
+            why.contains("is a list") && why.contains("`,` or a space"),
+            "{why}"
+        );
+    }
+}
+
 /// $3 in, $0.30 a read, $3.75 a 5m write: a read is 1/12.5 of a write, so
 /// pings pay through the first 11.
 fn priced() -> ModelPricing {

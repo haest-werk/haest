@@ -87,8 +87,8 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   the window between 0 and 1 such as `0.6`, while its cache is still warm
   and only when that costs less). Per model
   under `[cache.models."<spec or prefix*>"]`; a key that is neither (a
-  regular expression, a `*` inside) is refused when read. A table setting
-  kind in haest-config carries it.
+  regular expression, a `*` inside, a list) is refused when read. A table
+  setting kind in haest-config carries it.
 - haest-core: `Agent::warm_cache` sends the last request's prefix as a
   pre-warm (Anthropic `max_tokens: 0`; OpenRouter's Anthropic models
   `max_tokens: 1`, since OpenRouter does not honour 0) and books what it
@@ -205,13 +205,17 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 
 ### Fixed
 
-- haest-config: `code_tools` took a regular expression (`Edit|Write`) or a
-  `*` inside a name and quietly matched no tool. haest's pattern is an
-  exact name or a prefix ending in `*`, and anything else is now refused
-  at load, the error naming `code_tools`: a config file holding one no
-  longer loads. The setting is of a new kind, `Kind::Patterns`. Every
-  place that takes the pattern (`code_tools`, a hook's `matcher`, a
-  `[cache.models."<pattern>"]` key) runs the same check.
+- haest-config: `code_tools` took a regular expression (`Edit|Write`,
+  `Bash.*`), a `*` inside a name or a name with a space in it, and quietly
+  matched no tool. haest's pattern is an exact name or a prefix ending in
+  `*`, and anything else is now refused at load, the error naming
+  `code_tools`: a config file holding one no longer loads. The setting is
+  of a new kind, `Kind::Patterns`. Every place that takes the pattern
+  (`code_tools`, a hook's `matcher`, a `[cache.models."<pattern>"]` key)
+  runs the same check, which also refuses a list (`Edit,Write`,
+  `Edit Write`). A `.*` end is a regular expression only in a
+  tool's name: a model spec holds dots, so `openrouter:openai/gpt-6.*` is
+  the prefix of every `gpt-6.1-*` spec.
 - haest-mods: when a `tool.before` guard failed, the refusal the model
   read carried the guard's error but not its causes. It now carries both.
 - haest-mods: a `tool.after` hook that replaced a tool's output dropped what

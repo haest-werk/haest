@@ -8,7 +8,8 @@ use std::{collections::BTreeMap, fmt, time::Duration};
 
 use haest_core::{
     __private::{
-        BadPattern, DurationIn, TimeUnit, check_pattern, deserialize_in, expand_vars, unset_note,
+        BadPattern, DurationIn, PatternOf, TimeUnit, check_pattern, deserialize_in, expand_vars,
+        unset_note,
     },
     words::UnknownWord,
 };
@@ -497,12 +498,17 @@ impl HookEntry {
                 ));
             }
             // haest's pattern: a regular expression (Claude Code's matchers
-            // are) would match no tool, and a guard that never fires is
-            // worse than an error.
-            match check_pattern(pattern) {
+            // are) or a list would match no tool, and a guard that never
+            // fires is worse than an error.
+            match check_pattern(pattern, PatternOf::Tools) {
                 Ok(()) => {}
                 Err(BadPattern::Empty) => {
                     return Err("`matcher` is empty: leave it out for every tool".into());
+                }
+                Err(BadPattern::List) => {
+                    return Err(format!(
+                        "`matcher = \"{pattern}\"` is a list, and a matcher is one tool's name or one prefix: no tool's name holds a `,` or a space (`Edit,Write` is two entries)"
+                    ));
                 }
                 // Not a pattern, and a refusal newer than this match.
                 Err(_) => {

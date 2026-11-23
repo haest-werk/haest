@@ -227,8 +227,9 @@ pub mod __private {
     pub use crate::panics::panic_message;
     /// The one name pattern settings take (exact, or `prefix*`): Code's
     /// `code_tools`, hook matchers, per-model cache settings. `check_pattern`
-    /// is the one check that a text is one, wherever a setting takes it.
-    pub use crate::pattern::{BadPattern, check as check_pattern, name_matches};
+    /// is the one check that a text is one, wherever a setting takes it,
+    /// told by `PatternOf` whether it names tools or models.
+    pub use crate::pattern::{BadPattern, PatternOf, check as check_pattern, name_matches};
     /// The one way a duration setting is spelled as a number of a unit:
     /// haest-settings' minutes (`keep_warm_minutes`), the `hooks`
     /// setting's seconds (`timeout`).
