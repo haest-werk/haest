@@ -207,6 +207,34 @@ async fn a_mod_failure_reaches_the_human_with_its_cause() {
     assert!(errors[0].contains("disk gone"), "{errors:?}");
 }
 
+/// A guard whose `tool.before` fails with an error whose cause says what broke.
+struct UnreadGuard;
+
+#[async_trait]
+impl Mod for UnreadGuard {
+    fn name(&self) -> &str {
+        "unread-guard"
+    }
+    async fn tool_before(
+        &self,
+        _c: &ModToolCall,
+        _x: &ToolContext,
+        _k: &ModEnv,
+    ) -> Result<Before, BoxError> {
+        Err(RulesUnread(std::io::Error::other("disk gone")).into())
+    }
+}
+
+#[tokio::test]
+async fn a_guard_that_failed_tells_the_model_its_cause_too() {
+    let mods = Mods::new(env(TestUi::new(), WorkspaceMode::Real), [UnreadGuard]);
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
+    match tools[0].execute(input(json!({})), &ctx()).await {
+        Err(ToolError::Failed(why)) => assert!(why.contains("disk gone"), "{why}"),
+        other => panic!("not refused as failed: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn an_interrupt_while_a_mod_decides_is_not_reported_as_a_mod_failure() {
     let ui = TestUi::new();

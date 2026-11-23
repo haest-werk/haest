@@ -166,8 +166,9 @@ impl Mods {
                 Err(e) => {
                     self.report(m.as_ref(), ModEvent::ToolBefore.as_str(), &e);
                     return Err(ToolError::Failed(format!(
-                        "the mod {} failed before this call, so it did not run: {e}",
-                        m.name()
+                        "the mod {} failed before this call, so it did not run: {}",
+                        m.name(),
+                        report(&*e)
                     )));
                 }
             }
