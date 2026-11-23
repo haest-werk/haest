@@ -74,29 +74,42 @@ interface Group {
   models: Row[]
 }
 
+const given = <T>(values: (T | undefined)[]): T[] => values.filter((v): v is T => v !== undefined)
+
+/** A price: every amount it has is a number. */
+function pricingOk(p: Pricing): boolean {
+  return [p.input, p.cachedInput, p.output, ...given([p.cacheWrite, p.cacheWrite1h])].every(n => typeof n === 'number')
+}
+
+/** Cache facts: only keys haest knows, whole numbers, true or false. */
+function cacheOk(c: Cache): boolean {
+  return (
+    Object.keys(c).every(k => CACHE_KEYS.has(k)) &&
+    given([c.minCacheableTokens, c.prewarmMaxTokens]).every(Number.isInteger) &&
+    given([c.ttl1h, c.toolChanges]).every(b => typeof b === 'boolean')
+  )
+}
+
+/** A label for an optional text fact: absent, or a non-empty string. */
+const optionalText = (v: unknown) => v === undefined || (typeof v === 'string' && v !== '')
+
+/** What a row must hold, each with the problem named when it does not. */
+const CHECKS: [string | ((row: Row) => string), (row: Row) => boolean][] = [
+  ['spec is not provider:model', row => /^[^:]+:.+/.test(row.spec)],
+  ['no label', row => Boolean(row.label)],
+  [row => `input ${JSON.stringify(row.input)}`, row => Boolean(row.input?.length) && row.input.every(m => MODALITIES.has(m))],
+  ['contextWindow', row => Number.isInteger(row.contextWindow) && row.contextWindow > 0],
+  ['unknown effort', row => !row.reasoning || row.reasoning.efforts.every(e => EFFORTS.has(e))],
+  ['pricing', row => !row.pricing || pricingOk(row.pricing)],
+  ['cache', row => !row.cache || cacheOk(row.cache)],
+  ['family', row => optionalText(row.family)],
+  ['tier', row => optionalText(row.tier)],
+  ['generation', row => row.generation === undefined || Number.isFinite(row.generation)],
+]
+
 /** Every reason this row would not load as a haest-core `ModelInfo`. */
 function problems(row: Row): string[] {
-  const out: string[] = []
-  if (!/^[^:]+:.+/.test(row.spec)) out.push('spec is not provider:model')
-  if (!row.label) out.push('no label')
-  if (!row.input?.length || row.input.some(m => !MODALITIES.has(m))) out.push(`input ${JSON.stringify(row.input)}`)
-  if (!Number.isInteger(row.contextWindow) || row.contextWindow <= 0) out.push('contextWindow')
-  if (row.reasoning && row.reasoning.efforts.some(e => !EFFORTS.has(e))) out.push('unknown effort')
-  const p = row.pricing
-  const optional = p ? [p.cacheWrite, p.cacheWrite1h].filter(n => n !== undefined) : []
-  if (p && ![p.input, p.cachedInput, p.output, ...optional].every(n => typeof n === 'number')) out.push('pricing')
-  const c = row.cache
-  if (c) {
-    const numbers = [c.minCacheableTokens, c.prewarmMaxTokens].filter(n => n !== undefined)
-    const flags = [c.ttl1h, c.toolChanges].filter(b => b !== undefined)
-    const known = Object.keys(c).every(k => CACHE_KEYS.has(k))
-    if (!known || !numbers.every(Number.isInteger) || !flags.every(b => typeof b === 'boolean')) out.push('cache')
-  }
-  for (const key of ['family', 'tier'] as const) {
-    if (row[key] !== undefined && (typeof row[key] !== 'string' || !row[key])) out.push(key)
-  }
-  if (row.generation !== undefined && !Number.isFinite(row.generation)) out.push('generation')
-  return out
+  return CHECKS.filter(([, ok]) => !ok(row)).map(([name]) => (typeof name === 'string' ? name : name(row)))
 }
 
 /** The hand-written facts and prices of every row models.json has now, by spec. */
@@ -119,13 +132,10 @@ async function keptFacts(path: string): Promise<Map<string, Kept>> {
  * TypeScript row's, else the kept ones.
  */
 function withFacts(row: Row, kept: Kept | undefined): Row {
-  const { spec, label, family, tier, generation, pricing, cache, ...rest } = row
-  const facts: Facts = {
-    family: family ?? kept?.family,
-    tier: tier ?? kept?.tier,
-    generation: generation ?? kept?.generation,
-  }
-  return { spec, label, ...facts, ...rest, pricing: pricing ?? kept?.pricing, cache: cache ?? kept?.cache }
+  const { spec, label, family: _f, tier: _t, generation: _g, pricing: _p, cache: _c, ...rest } = row
+  const pick = <K extends keyof Kept>(key: K): Kept[K] => row[key] ?? kept?.[key]
+  const facts: Facts = { family: pick('family'), tier: pick('tier'), generation: pick('generation') }
+  return { spec, label, ...facts, ...rest, pricing: pick('pricing'), cache: pick('cache') }
 }
 
 const source = process.argv[2]
