@@ -121,13 +121,15 @@ impl Mod for Mods {
         Ok(Step::Pass)
     }
 
+    /// Its mods see whether the outer mods already kept the turn going.
     async fn turn_end(
         &self,
         agent: &mut Agent,
         outcome: &TurnOutcome,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<TurnEnd, BoxError> {
+        self.env().follow(haest);
         let goes_on = Mods::turn_end(self, agent, outcome, cancel).await;
         Ok(goes_on.map_or(TurnEnd::Pass, TurnEnd::Continue))
     }

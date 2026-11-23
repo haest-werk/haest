@@ -4,6 +4,7 @@
 use std::{
     error::Error,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use async_trait::async_trait;
@@ -55,12 +56,17 @@ haest_core::plug_ref! {
 /// Where haest runs, and the human: what every mod event can reach.
 ///
 /// One per conversation, shared by every mod in [`Mods`](crate::Mods); the
-/// events get it as their `haest` argument. Cheap to clone.
+/// events get it as their `haest` argument. Cheap to clone: a clone shares
+/// what the conversation's turns left in it (which turn a `turn.end`
+/// decision kept going, [`TurnEndPayload::continued`](crate::TurnEndPayload::continued)).
 #[derive(Debug, Clone)]
 pub struct ModEnv {
     cwd: PathBuf,
     workspace: WorkspaceMode,
     ui: ModUiRef,
+    /// The turn a `turn.end` decision last kept going, by its cancel token
+    /// (a turn's own, the same for every event in it).
+    kept_going: Arc<Mutex<Option<CancellationToken>>>,
 }
 
 impl ModEnv {
@@ -71,7 +77,37 @@ impl ModEnv {
             cwd: cwd.into(),
             workspace,
             ui: ui.into(),
+            kept_going: Arc::default(),
         }
+    }
+
+    /// The turn a `turn.end` decision last kept going. Held only to read or
+    /// set the token, so a poisoned lock is a bug here.
+    fn kept(&self) -> MutexGuard<'_, Option<CancellationToken>> {
+        self.kept_going
+            .lock()
+            .expect("the mod env's turn lock poisoned")
+    }
+
+    /// A `turn.end` decision kept `turn` (its cancel token) going.
+    pub(crate) fn kept_going(&self, turn: &CancellationToken) {
+        *self.kept() = Some(turn.clone());
+    }
+
+    /// Whether a `turn.end` decision already kept `turn` going.
+    pub(crate) fn continued(&self, turn: &CancellationToken) -> bool {
+        self.kept().as_ref() == Some(turn)
+    }
+
+    /// Take what `outer`'s turns left: a [`Mods`](crate::Mods) inside another
+    /// runs on its own env, and its mods must see what the outer one's
+    /// decided (a `turn.end` there kept the turn going).
+    pub(crate) fn follow(&self, outer: &ModEnv) {
+        if Arc::ptr_eq(&self.kept_going, &outer.kept_going) {
+            return;
+        }
+        let kept = outer.kept().clone();
+        *self.kept() = kept;
     }
 
     /// The conversation's working directory.

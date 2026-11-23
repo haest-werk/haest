@@ -6,13 +6,14 @@
 use std::path::PathBuf;
 
 use haest_core::{
-    Agent, AssistantMessage, Effort, StopReason, TurnOutcome,
+    Agent, AssistantMessage, Effort, Message, StopReason, TurnOutcome,
     tool::{ToolContext, ToolOutput},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
-use crate::{api::ModToolCall, events::ToolEvent};
+use crate::{api::ModToolCall, env::ModEnv, events::ToolEvent};
 
 /// Where a tool call runs, as a tool event's payload says it: a mod file's
 /// handler gets it as `ctx` (with its own `signal` added), and so does a mod
@@ -216,7 +217,8 @@ impl ModelAfterPayload {
 /// `turn.end`: a turn is about to end on its own. A hook answers a
 /// [`TurnEndDecision`](crate::TurnEndDecision).
 ///
-/// JSON: `{ modelSpec, effort, historyLength, stopReason, error }`.
+/// JSON: `{ modelSpec, effort, historyLength, stopReason, error, answer,
+/// continued }`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
@@ -228,15 +230,36 @@ pub struct TurnEndPayload {
     pub stop_reason: StopReason,
     /// What went wrong; `null` for a turn that ended normally.
     pub error: Option<String>,
+    /// The answer that ends the turn, as `model.after` has it (less media
+    /// bytes, thinking signatures and provider state); `null` when the
+    /// history does not end in one.
+    pub answer: Option<Value>,
+    /// Whether a `turn.end` decision already kept this turn going: a hook
+    /// that keeps it going once checks this, or a turn it holds runs to its
+    /// caps. A new turn starts `false`; the host's own
+    /// [`before_turn_end`](haest_core::AgentHooks::before_turn_end) does not
+    /// count.
+    pub continued: bool,
 }
 
 impl TurnEndPayload {
     /// The payload of [`Mod::turn_end`](crate::Mod::turn_end)'s arguments.
-    pub fn new(agent: &Agent, outcome: &TurnOutcome) -> Self {
+    pub fn new(
+        agent: &Agent,
+        outcome: &TurnOutcome,
+        cancel: &CancellationToken,
+        haest: &ModEnv,
+    ) -> Self {
+        let answer = match agent.history().last() {
+            Some(Message::Assistant(answer)) => Some(light(answer)),
+            _ => None,
+        };
         Self {
             agent: AgentView::new(agent),
             stop_reason: outcome.stop_reason,
             error: outcome.error.clone(),
+            answer,
+            continued: haest.continued(cancel),
         }
     }
 }

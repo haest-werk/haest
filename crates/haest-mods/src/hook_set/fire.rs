@@ -171,7 +171,7 @@ impl Mod for Hooks {
         if bindings.is_empty() {
             return Ok(TurnEnd::Pass);
         }
-        let payload = TurnEndPayload::new(agent, outcome);
+        let payload = TurnEndPayload::new(agent, outcome, cancel, haest);
         let goes_on = |d: &TurnEndDecision| d.r#continue.is_some();
         let decided = self
             .decide(bindings, &payload, goes_on, cancel, haest)

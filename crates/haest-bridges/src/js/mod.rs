@@ -97,7 +97,7 @@ use tool::JsTool;
 /// | `system.prompt` | nothing | text to append, or nothing |
 /// | `model.before` | `{ modelSpec, effort, historyLength, lastMessage }` | `{ stop: reason }` ends the turn, `{ steer: text }` steers it, `{ compact: true }` or `{ compact: { instructions } }` compacts it first; anything else passes |
 /// | `model.after` | `{ modelSpec, effort, historyLength, answer }` | `{ stop: reason }` ends the turn and its calls do not run, `{ steer: text }` steers it; anything else passes |
-/// | `turn.end` | `{ modelSpec, effort, historyLength, stopReason, error }` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
+/// | `turn.end` | `{ modelSpec, effort, historyLength, stopReason, error, answer, continued }` | `{ continue: text }` keeps the turn going with `text`, `{ compact: ... }` compacts it as it ends; anything else passes |
 ///
 /// What a handler gets is its event's payload and what it returns is read
 /// as its event's decision, the types [`Event`] ties together
@@ -108,7 +108,8 @@ use tool::JsTool;
 /// and returns a string or `{ content, isError }`. `lastMessage` and
 /// `answer` are messages as a session file writes them, less media bytes,
 /// thinking signatures and provider state; the loop events never see the
-/// whole history. A loop event's handlers run in order: every steer is
+/// whole history. `continued` is true once a `turn.end` answer has kept
+/// this turn going: a handler that keeps a turn going once checks it. A loop event's handlers run in order: every steer is
 /// kept, the first compact counts, the first stop or continue ends the run.
 /// `tool.before`, `tool.after`, the loop events, `execute` and commands may
 /// be async (an interrupt stops the wait); `prompt.submit` and
@@ -242,9 +243,9 @@ impl Mod for JsMod {
         agent: &mut Agent,
         outcome: &TurnOutcome,
         cancel: &CancellationToken,
-        _haest: &ModEnv,
+        haest: &ModEnv,
     ) -> Result<TurnEnd, BoxError> {
-        let payload = || TurnEndPayload::new(agent, outcome);
+        let payload = || TurnEndPayload::new(agent, outcome, cancel, haest);
         let decided = self.answer(payload, Some(cancel)).await?;
         TurnEndDecision::apply(decided, agent, cancel).await
     }

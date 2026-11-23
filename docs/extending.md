@@ -57,8 +57,9 @@ The gates hold the lists equal: `JsMod` and `Hooks` implement every `Mod` method
 prompt ("keep every file path"). Each payload's JSON shape is on its type in
 [payload.rs](../crates/haest-mods/src/payload.rs): `tool.before` gets
 `{ call: { name, input, readOnly }, ctx: { cwd, toolCallId } }`, the loop events get
-`{ modelSpec, effort, historyLength, .. }` plus their own field (`lastMessage`, `answer`,
-`stopReason` and `error`).
+`{ modelSpec, effort, historyLength, .. }` plus their own fields (`model.before`: `lastMessage`;
+`model.after`: `answer`; `turn.end`: `stopReason`, `error`, `answer` and `continued`, whether a
+`turn.end` decision already kept this turn going).
 
 These are the mod files' own words, typed once in haest-mods (`Event` and its payload and
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the

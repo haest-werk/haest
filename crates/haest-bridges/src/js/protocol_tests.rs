@@ -6,15 +6,17 @@
 //! decision takes from a `Hooks` closure (haest-mods' decision cases).
 
 use haest_core::{
-    Agent, AgentDeps, AgentOptions, Effort, Message, SharedDeps, StopReason, ToolOutput, Tools,
-    TurnOutcome,
+    Agent, AgentDeps, AgentOptions, Effort, Message, NoHooks, SharedDeps, StopReason, ToolOutput,
+    Tools, TurnOutcome,
+    error::BoxError,
     testing::{ScriptedProvider, text_answer},
     tool::ToolContext,
     workspace::{ShutWorkspace, WorkspaceMode},
 };
 use haest_mods::{
-    Event, Mod, ModEvent, ModToolCall, ModelAfterPayload, ModelBeforePayload, Mods,
-    PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndPayload,
+    Event, Hooks, Mod, ModEvent, ModRef, ModToolCall, ModelAfterPayload, ModelBeforePayload, Mods,
+    PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, TurnEndDecision,
+    TurnEndPayload,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -159,7 +161,12 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
             ModEvent::TurnEnd => {
                 let mut expected = with("stopReason", json!("end_turn"));
                 expected["error"] = json!("a cap");
-                writes(&TurnEndPayload::new(&agent, &ended), &expected);
+                expected["answer"] = light_answer(&answer);
+                expected["continued"] = json!(false);
+                writes(
+                    &TurnEndPayload::new(&agent, &ended, &cancel, &haest),
+                    &expected,
+                );
                 m.turn_end(&mut agent, &ended, &cancel, &haest)
                     .await
                     .unwrap();
@@ -172,6 +179,57 @@ async fn every_payload_is_the_json_a_ts_handler_receives() {
         assert_eq!(handed(*event, &seen), expected, "{event}");
     }
     assert_eq!(ui.infos().len(), ModEvent::ALL.len());
+}
+
+/// `turn.end`'s `answer` and `continued` are computed once, in haest-mods:
+/// a `.ts` handler and a Rust hook in the same loop are handed the same,
+/// turn after turn, while a third hook keeps each turn going once.
+#[tokio::test]
+async fn a_ts_mod_and_a_rust_hook_see_the_same_answer_and_continued() {
+    let ui = TestUi::new();
+    let haest = env(ui.clone(), WorkspaceMode::Sandbox);
+    const SEEN_TS: &str = "export default function (haest: any): void {
+      haest.on('turn.end', (turn: any): void => {
+        haest.notice(JSON.stringify({ answer: turn.answer, continued: turn.continued }))
+      })
+    }";
+    let ts = js("seen.ts", SEEN_TS, &haest).await.expect("the mod loads");
+    let rust_seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let log = rust_seen.clone();
+    let rust = Hooks::new().on_turn_end(move |p: TurnEndPayload, _: CancellationToken| {
+        log.lock()
+            .unwrap()
+            .push(json!({ "answer": p.answer, "continued": p.continued }));
+        async { Ok::<_, BoxError>(TurnEndDecision::default()) }
+    });
+    let once = Hooks::new().on_turn_end(|p: TurnEndPayload, _: CancellationToken| async move {
+        let decision = TurnEndDecision::default();
+        Ok::<_, BoxError>(if p.continued {
+            decision
+        } else {
+            decision.with_continue("check once more")
+        })
+    });
+    let mods = Mods::new(
+        haest,
+        [ModRef::new(ts), ModRef::new(rust), ModRef::new(once)],
+    );
+    let p = ScriptedProvider::new(["one", "two", "three", "four"].map(text_answer));
+    let mut agent = looped(&p, NoHooks, &mods, Tools::new());
+    for input in ["go", "again"] {
+        assert_eq!(agent.run(input, &mut Vec::new()).await.error, None);
+    }
+
+    let from_ts: Vec<Value> = ui.infos().iter().map(|line| parse(line)).collect();
+    let from_rust = rust_seen.lock().unwrap().clone();
+    assert_eq!(from_ts, from_rust);
+    let flags: Vec<&Value> = from_rust.iter().map(|v| &v["continued"]).collect();
+    assert_eq!(flags, [false, true, false, true]);
+    let said: Vec<&Value> = from_rust
+        .iter()
+        .map(|v| &v["answer"]["content"][0]["text"])
+        .collect();
+    assert_eq!(said, ["one", "two", "three", "four"]);
 }
 
 /// A `.ts` mod that answers `answer` the first time `event` fires.

@@ -89,7 +89,8 @@ impl Mods {
     }
 
     /// `turn.end` across every mod: the first text that keeps the turn
-    /// going, or None to let it end.
+    /// going, or None to let it end. The turn (`cancel`, its own token) is
+    /// noted as kept going, for the next `turn.end` payload in it.
     pub(crate) async fn turn_end(
         &self,
         agent: &mut Agent,
@@ -102,7 +103,10 @@ impl Mods {
             }
             match m.turn_end(agent, outcome, cancel, self.env()).await {
                 Ok(TurnEnd::Pass) => {}
-                Ok(TurnEnd::Continue(text)) => return Some(text),
+                Ok(TurnEnd::Continue(text)) => {
+                    self.env().kept_going(cancel);
+                    return Some(text);
+                }
                 Err(e) => self.failed(m.as_ref(), ModEvent::TurnEnd, &e, cancel),
             }
         }
