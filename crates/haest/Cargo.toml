@@ -43,6 +43,12 @@ mods = ["dep:haest-mods", "haest-session?/approvals"]
 # The JS bridge: `.js` / `.ts` mod files in embedded QuickJS, a conversation's
 # mod files reloaded as they change. Turns on `mods`.
 bridge-js = ["dep:haest-bridges", "haest-bridges/js", "mods"]
+# The shell bridge: a hook that is a command run on the host per event (JSON on
+# stdin and stdout), in haest's dialect or Claude Code's. Turns on `mods`.
+bridge-shell = ["dep:haest-bridges", "haest-bridges/shell", "mods"]
+# The HTTP bridge: a hook behind a URL, POSTed each event through the `http`
+# seam, in haest's dialect or Claude Code's. Turns on `mods` and `http`.
+bridge-http = ["dep:haest-bridges", "haest-bridges/http", "mods", "http"]
 # Settings as plain values a host writes out: no files, no environment, no flags.
 settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
@@ -161,6 +167,14 @@ name = "cache_policy"
 path = "examples/cache_policy.rs"
 test = true
 
+# Hooks in another process: a Claude Code hook script guarding Bash, a turn.end
+# server keeping the turn going once, against a scripted model.
+[[example]]
+name = "external_hooks"
+path = "examples/external_hooks.rs"
+required-features = ["bridge-shell", "bridge-http", "reqwest"]
+test = true
+
 # A host's own implementation of each plug point, driven through a turn.
 [[test]]
 name = "plug_in"
@@ -173,7 +187,8 @@ required-features = ["tools", "workspace"]
 [dev-dependencies]
 # The front page's runnable examples drive whole turns with the scripted model.
 haest-core = { workspace = true, features = ["testing"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+# net and io-util: the external_hooks example's stand-in for a service.
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
 futures = { workspace = true }
 serde = { workspace = true }
 # The broker example's broker end.

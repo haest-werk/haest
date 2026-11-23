@@ -193,6 +193,8 @@
 //! | `code` | [`code`]: the Code tool and the sandbox `js` command, in embedded QuickJS | yes |
 //! | `mods` | [`mods`]: change how haest behaves without forking it, in Rust: native mods, hooks per event; approvals, plan mode | yes |
 //! | `bridge-js` | [`bridges`]: `.js` / `.ts` mod files in embedded QuickJS, reloaded as they change; turns on `mods` | yes |
+//! | `bridge-shell` | `bridges::ShellHook`: a hook that is a command run on the host per event, JSON on its stdin and stdout, in haest's dialect or Claude Code's (`bridges::Claude`, so its hook scripts run as they are); turns on `mods` | no |
+//! | `bridge-http` | `bridges::HttpHook`: a hook behind a URL, a POST per event through [`http`], in the same two dialects; turns on `mods` and `http` | no |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
 //! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json` | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI | no |
@@ -276,7 +278,11 @@ pub mod prelude {
     pub use serde_json::{Value, json};
 }
 
-#[cfg(feature = "bridge-js")]
+#[cfg(any(
+    feature = "bridge-js",
+    feature = "bridge-shell",
+    feature = "bridge-http"
+))]
 #[doc(inline)]
 pub use haest_bridges as bridges;
 #[cfg(feature = "code")]
