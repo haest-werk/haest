@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `header` | once, first line: the ids, the cwd, when it was created |
 //! | `message` | one [`Message`] appended to history |
-//! | `compaction` | history was summarised: keep the last `kept` messages, prefix the summary |
+//! | `compaction` | history was summarised: keep the last `kept` messages, less their tool changes, prefix the summary |
 //! | `config` | model / effort changed |
 //! | `ledger` | the conversation's spend so far (absolute; the last one wins -- [`crate::ledger`]) |
 //! | `tasks` | the whole task list (absolute; the last one wins -- [`crate::task_board`]) |
@@ -60,7 +60,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use file::{JsonlSessionFile, SessionSink, SessionSinkRef};
-pub(crate) use replay::{INTERRUPTED, Line, compact, interrupted, parse_line, split_pending};
+pub(crate) use replay::{
+    INTERRUPTED, Line, compact, interrupted, parse_line, split_pending, summarized,
+};
 pub use replay::{ReplayedSession, replay};
 pub use time::iso_utc;
 
@@ -107,14 +109,16 @@ pub enum SessionRecord {
         message: Message,
     },
     /// History was summarised: replay keeps the last `kept` messages and puts
-    /// the summary before them ([`compaction_summary_message`]).
+    /// the summary before them ([`compaction_summary_message`]), the tool
+    /// changes among them dropped as the live compaction dropped them.
     Compaction {
         /// When it was written, in ms since the epoch.
         #[serde(deserialize_with = "millis")]
         t: u64,
         /// What the summarised messages said.
         summary: String,
-        /// How many of the latest messages were kept as they were.
+        /// How many of the latest messages were kept as they were, counted
+        /// before their tool changes were dropped.
         kept: usize,
     },
     /// The model or the effort changed.

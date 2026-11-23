@@ -42,16 +42,32 @@ use super::{ToolRef, ToolSource, Tools};
 /// cannot tell from the old tool (the same name, description and schema, and
 /// the same line in the prompt's tool guide, [`Tool::prompt_guide`](super::Tool::prompt_guide))
 /// leaves the request's bytes and the cache as they were: that is why a
-/// replacement keeps its place. Any other change (a tool added, removed,
-/// disabled or enabled, or a new description or schema) changes the request
-/// from the tools on, and the next model call pays one cache miss.
+/// replacement keeps its place.
+///
+/// Any other change (a tool added, removed, disabled or enabled, or a new
+/// description or schema) depends on the model:
+///
+/// - On a model that takes mid-conversation tool changes (its
+///   [`CacheFacts::tool_changes`](crate::catalog::CacheFacts::tool_changes),
+///   Anthropic's own API for Claude Opus 5.5 and Sonnet 5.5 in the bundled
+///   catalog), it costs no miss. The request keeps sending the tools as the
+///   conversation first sent them, and the loop tells the model what changed
+///   in a [`Message::ToolChange`](crate::messages::Message::ToolChange) in
+///   history, right after the next user message or tool results. A change
+///   made after a turn ended waits for the next user message; changes made
+///   before one model call go out as one.
+/// - On any other model (OpenRouter's Anthropic models included) the
+///   request is sent the current tools, which changes it from the tools on:
+///   the next model call pays one cache miss.
 ///
 /// A host that changes its tools' schemas or descriptions often defers those
 /// tools ([`DeferMode::Proxy`](crate::deferred_tools::DeferMode::Proxy)): the
 /// model is sent only a deferred tool's name and the first sentence of its
 /// description (in ToolSearch's), never its schema, so a change to the rest
 /// costs no miss. A deferred tool added, removed, disabled or enabled still
-/// changes ToolSearch's list of names, and costs the one miss.
+/// changes ToolSearch's list of names: a new definition of ToolSearch, which
+/// a model that takes tool changes hears as one and any other pays the one
+/// miss for.
 ///
 /// # Examples
 ///

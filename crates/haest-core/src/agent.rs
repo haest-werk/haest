@@ -23,6 +23,7 @@ mod durable;
 mod hooks;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod tool_changes;
 mod turn;
 
 use std::{fmt, time::Instant};
@@ -371,11 +372,16 @@ impl Agent {
     ///
     /// `model` is the provider's model id the spec resolved to
     /// ([`ResolvedModel::model`](crate::ResolvedModel::model)). Builds the
-    /// system prompt and the tool list afresh.
+    /// system prompt and the tool list afresh; a model that takes
+    /// mid-conversation tool changes also gets the conversation's tool
+    /// baseline, so every request of the conversation (the loop's, the
+    /// compaction summary, a pre-warm) sends the same `tools`.
     pub(crate) async fn request_prefix(&self, model: &str) -> RequestPrefix {
+        let built = build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await;
         RequestPrefix {
             cache_key: self.cache.key.clone(),
-            ..build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
+            tool_baseline: self.tool_baseline(&built.tools),
+            ..built
         }
     }
 

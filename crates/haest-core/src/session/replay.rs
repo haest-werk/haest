@@ -183,14 +183,25 @@ fn apply(s: &mut ReplayedSession, r: SessionRecord) {
 }
 
 /// A compaction record: keep the `kept` latest messages behind the summary,
-/// after [`answer_interrupted`]'s repair. Returns how many results that
-/// dropped.
+/// after [`answer_interrupted`]'s repair, as [`summarized`] keeps them.
+/// Returns how many results that dropped.
 pub(crate) fn compact(messages: &mut Vec<Message>, summary: &str, kept: usize) -> usize {
     let repaired = answer_interrupted(std::mem::take(messages));
     *messages = repaired.messages;
     let from = messages.len().saturating_sub(kept);
-    messages.splice(..from, [compaction_summary_message(summary)]);
+    summarized(messages, from, summary);
     repaired.dropped
+}
+
+/// `messages` compacted: the ones before `cut` become the summary message
+/// ([`compaction_summary_message`]), and the tool changes among the rest
+/// are dropped, since a compaction starts the tools' baseline over
+/// ([`ToolChangeMessage`](crate::messages::ToolChangeMessage)). Live
+/// compaction and [`replay`] both do it here, so a resumed history matches
+/// the one the agent had.
+pub(crate) fn summarized(messages: &mut Vec<Message>, cut: usize, summary: &str) {
+    messages.splice(..cut, [compaction_summary_message(summary)]);
+    messages.retain(|m| !matches!(m, Message::ToolChange(_)));
 }
 
 /// Rebuild a session from a file's text. Split on '\n' only: U+2028/2029 are

@@ -51,7 +51,10 @@ pub struct CacheFacts {
     pub prewarm_max_tokens: Option<u32>,
     /// Whether the model takes tools added or removed mid-conversation
     /// without rewriting the cached prefix (Anthropic's mid-conversation
-    /// tool changes).
+    /// tool changes). When set, the loop keeps sending the tools as the
+    /// conversation first sent them and records each change as a
+    /// [`Message::ToolChange`](crate::messages::Message::ToolChange); when
+    /// not, a change is sent as the changed tools, one cache miss.
     #[serde(default)]
     pub tool_changes: bool,
 }

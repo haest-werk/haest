@@ -21,7 +21,7 @@ use crate::{
     agent::Agent,
     messages::{AssistantMessage, Message, StopReason, Usage},
     provider::ModelError,
-    session::compaction_summary_message,
+    session::summarized,
     threshold::{Action, Mark, Meter, Reading, Rearm, Threshold},
 };
 
@@ -200,7 +200,9 @@ crate::word_enum! {
 pub struct CompactionResult {
     /// The summary text. History now opens with it, in a user message.
     pub summary: String,
-    /// Messages kept verbatim after the summary.
+    /// Messages kept verbatim after the summary, counted before their tool
+    /// changes were dropped (a session file's `compaction` record says the
+    /// same count).
     pub kept: usize,
     /// Which request wrote the summary.
     pub path: SummaryPath,
@@ -255,7 +257,9 @@ impl CompactionError {
 /// warm first, then cold if the warm reply is not a whole summary (it failed,
 /// called a tool, was cut off, or said nothing), with `cfg`'s
 /// [`instructions`](CompactionOptions::instructions) after haest's own. The
-/// head of history is replaced by one user message carrying the summary, and
+/// head of history is replaced by one user message carrying the summary, the
+/// tool changes after it are dropped and the tools' baseline starts over
+/// ([`ToolChangeMessage`](crate::messages::ToolChangeMessage)), and
 /// the agent's hooks hear it through
 /// [`on_compaction`](crate::AgentHooks::on_compaction) (not `on_message`):
 /// a host that persists history records it there, whoever compacted.
@@ -364,9 +368,10 @@ pub async fn compact(
             });
         }
     };
-    agent
-        .history_mut()
-        .splice(..cut, [compaction_summary_message(&summary)]);
+    summarized(agent.history_mut(), cut, &summary);
+    // The head the tools' baseline was sent with is gone: the next request
+    // sends the current tools as the new one.
+    agent.cache.tool_baseline = None;
     let done = CompactionResult {
         summary,
         kept,

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use super::{CachePlan, CachePolicyRef, PlanFix, RequestShape};
 use crate::{
     agent::{Agent, AgentOptions},
-    provider::ProviderRequest,
+    provider::{ProviderRequest, ToolSpec},
 };
 
 /// The cache policy and the routing key a new agent starts with; None is
@@ -48,6 +48,12 @@ pub(crate) struct CacheState {
     /// Idle ticks are due: set by each answered loop call, cleared when a
     /// tick ends them.
     pub(crate) ticking: bool,
+    /// The tool baseline the last answered loop call sent, and the model
+    /// spec it went to: a model that takes tool changes keeps it until a
+    /// change records it in history ([`Message::ToolChange`](crate::Message::ToolChange)).
+    /// None after a call to any other model, and after a compaction, which
+    /// starts the baseline over.
+    pub(crate) tool_baseline: Option<(String, Vec<ToolSpec>)>,
     told: HashSet<String>,
 }
 
@@ -60,6 +66,7 @@ impl CacheState {
             last_call_ms: None,
             last_refresh_ms: None,
             ticking: false,
+            tool_baseline: None,
             told: HashSet::new(),
         }
     }

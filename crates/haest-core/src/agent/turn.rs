@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
+use super::tool_changes::{says_something, tool_change};
 use crate::{
     agent::Agent,
     caps::estimate_request_tokens,
@@ -248,11 +249,16 @@ impl Agent {
             Ok(r) => r,
             Err(e) => return refuse(&self.model_spec, &report(&e), t),
         };
+        let prefix = self.request_prefix(resolved.model()).await;
+        let mut messages = self.sendable(&self.history, resolved.model());
+        // The one place a tool change is found: on the tools this call
+        // would send, after every hook had its say.
+        let change = tool_change(prefix.tool_baseline.as_deref(), &prefix.tools, &messages);
+        messages.extend(change.clone().map(Message::ToolChange));
+        let mut req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
         // Sized before it is announced: a request too big to send never
         // went out, so no ModelStart says it did.
-        let prefix = self.request_prefix(resolved.model()).await;
-        let messages = self.sendable(&self.history, resolved.model());
-        let estimate = estimate_request_tokens(&prefix.system, &messages, &prefix.tools);
+        let estimate = estimate_request_tokens(&req.system, &req.messages, req.sent_tools());
         if let Some(too_big) = t.guard.too_big(estimate, self.turn_caps().as_ref()) {
             t.refused_by = too_big.limit;
             return refuse(resolved.model(), &too_big.text, t);
@@ -261,7 +267,7 @@ impl Agent {
             provider: resolved.provider().id().to_string(),
             model: resolved.model().to_string(),
         });
-        let mut req = prefix.request(resolved.model().to_string(), messages, t.cancel.clone());
+        let baseline = req.tool_baseline.clone();
         self.plan_cache(&mut req);
         self.cache.last_plan = Some(req.cache.clone());
         let sent_at = self.deps.shared().clock().now_ms();
@@ -285,6 +291,17 @@ impl Agent {
                 .retain(|part| !matches!(part, AssistantPart::ToolCall(_)));
         } else {
             self.cache.answered(sent_at);
+            self.cache.tool_baseline = baseline.map(|tools| (self.model_spec.clone(), tools));
+            // Recorded with its answer, right before it: a call that failed
+            // records nothing, and the next one sends the change again.
+            if let Some(change) = change.filter(|_| says_something(&msg)) {
+                append(
+                    &mut self.history,
+                    self.deps.shared().hooks().as_ref(),
+                    t.journal.as_ref(),
+                    Message::ToolChange(change),
+                );
+            }
         }
         append(
             &mut self.history,

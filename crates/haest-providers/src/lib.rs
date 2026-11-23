@@ -228,6 +228,8 @@ pub use haest_http as http;
 mod driver_tests;
 #[cfg(test)]
 mod media_tests;
+#[cfg(test)]
+mod tool_changes_tests;
 
 pub use anthropic::{AnthropicOptions, AnthropicProvider};
 pub use catalog::Catalog;
