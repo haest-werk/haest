@@ -119,13 +119,18 @@ impl JsThread {
         Self { tx }
     }
 
-    /// One request; `cancel` = stop waiting when it fires.
+    /// One request; `cancel` = stop waiting when it fires. Once it has
+    /// fired, nothing is sent: the mod's code does not run for a call that
+    /// is already interrupted.
     pub(crate) async fn call(
         &self,
         op: &'static str,
         payload: Value,
         cancel: Option<&CancellationToken>,
     ) -> Result<Value, CallError> {
+        if cancel.is_some_and(CancellationToken::is_cancelled) {
+            return Err(CallError::Interrupted);
+        }
         let (reply, rx) = oneshot::channel();
         let request = ToJs::Call {
             op,

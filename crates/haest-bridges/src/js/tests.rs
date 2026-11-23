@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
-use haest_mods::{CommandOutcome, Decision, Mods};
+use haest_mods::{CommandOutcome, Decision, Mod, ModToolCall, Mods};
 use serde_json::json;
 
 use super::{JsMod, ModCaps, ModLoadError};
@@ -234,6 +234,31 @@ async fn an_ask_under_ctx_signal_ends_when_the_call_is_interrupted() {
     assert!(out.is_err());
     assert!(bash.ran().is_empty());
     assert!(ui.errors().is_empty(), "an interrupt is not a mod failure");
+}
+
+/// A call whose token already fired is interrupted before it is sent: the
+/// mod's handler never runs.
+#[tokio::test]
+async fn a_call_already_interrupted_never_reaches_the_mod() {
+    let source = r#"export default function (haest) {
+      haest.on('tool.before', () => { haest.notice('asked') })
+      haest.on('prompt.submit', () => undefined)
+    }"#;
+    let ui = TestUi::new();
+    let haest = env(ui.clone(), WorkspaceMode::Sandbox);
+    let m = js("late.js", source, &haest).await.expect("the mod loads");
+    let c = ctx();
+    c.cancel().cancel();
+    let call = ModToolCall {
+        name: "Echo".into(),
+        input: input(json!({})),
+        read_only: true,
+    };
+    assert!(m.tool_before(&call, &c, &haest).await.is_err());
+    // The mod's thread takes requests in order: once this one is answered,
+    // one sent before it has run.
+    m.prompt_submit("flush", &haest).await.unwrap();
+    assert!(ui.infos().is_empty(), "{:?}", ui.infos());
 }
 
 #[tokio::test]
