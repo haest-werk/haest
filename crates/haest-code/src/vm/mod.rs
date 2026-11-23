@@ -1,7 +1,9 @@
-//! THE engine behind haest's JavaScript: QuickJS (native, via `rquickjs`) on a
-//! thread of its own, one per run. Two entry points share it -- the Code tool
-//! ([`crate::code`], the body of an async function that may `return`) and the
-//! sandbox `js` command ([`crate::sandbox_js`], an ES module file with imports).
+//! One run on haest's JavaScript engine ([`crate::engine`]: QuickJS, native,
+//! via `rquickjs`) on a thread of its own, one per run. Two entry points share
+//! it -- the Code tool ([`crate::code`], the body of an async function that
+//! may `return`) and the sandbox `js` command ([`crate::sandbox_js`], an ES
+//! module file with imports). haest-bridges' mod files run on the same engine
+//! with a protocol of their own.
 //!
 //! Why a thread: a CPU-bound guest blocks the thread it runs on, so on the async
 //! runtime neither the human's interrupt nor a timer could reach it. On a thread

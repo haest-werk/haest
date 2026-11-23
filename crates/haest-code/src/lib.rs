@@ -111,10 +111,26 @@
 
 mod call_gate;
 mod code;
+mod engine;
 mod sandbox_js;
 #[cfg(test)]
 mod testkit;
 mod vm;
+
+/// What the other haest crates share, and nothing a host needs: not part of
+/// the API, and not covered by semver. It changes in any release.
+#[doc(hidden)]
+pub mod __private {
+    /// The one QuickJS engine: haest-bridges' mod files run on it, as the
+    /// Code tool's runs do.
+    pub mod engine {
+        pub use crate::engine::{JsEngine, spawn_thread};
+    }
+
+    /// The QuickJS binding the engine is built on, for a crate that runs its
+    /// own code on a [`JsEngine`](engine::JsEngine).
+    pub use rquickjs;
+}
 
 pub use code::{
     CodeTool, MAX_CALLS, MAX_SEEN, OUTPUT_BEGIN, OUTPUT_END, code_callable, code_tool_names,

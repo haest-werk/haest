@@ -1,18 +1,19 @@
-//! One engine run, ON its own thread ([`super::thread`]): a fresh QuickJS runtime,
-//! torn down after it. The guest reaches exactly what the job names -- JSON
-//! values, the prelude that builds its API, async functions haest answers, module
-//! sources in module mode -- plus one pure built-in, `__path` (posix path ops),
-//! which needs nothing from haest ([`super::setup`]).
+//! One engine run, ON its own thread ([`super::thread`]): a fresh
+//! [`JsEngine`], torn down after it. The guest reaches exactly what the job
+//! names -- JSON values, the prelude that builds its API, async functions
+//! haest answers, module sources in module mode -- plus one pure built-in,
+//! `__path` (posix path ops), which needs nothing from haest ([`super::setup`]).
 //!
-//! Bounded on every axis: QuickJS memory and stack caps; the interrupt handler
-//! stops a CPU loop when the job's deadline passes or haest sets the stop flag (an
-//! atomic -- it reaches the handler even while the loop runs, where no message
-//! could); a run parked on haest's answers ends on the stop message. A run ends
-//! when its code has settled AND every call it started has answered.
+//! Bounded on every axis: the engine's memory and stack caps; its watch, armed
+//! for the whole run, stops a CPU loop when the job's deadline passes or haest
+//! sets the stop flag (an atomic -- it reaches the interrupt even while the
+//! loop runs, where no message could); a run parked on haest's answers ends on
+//! the stop message. A run ends when its code has settled AND every call it
+//! started has answered.
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
-use rquickjs::{Coerced, Context, Ctx, Exception, Persistent, Promise, Runtime, Value};
+use rquickjs::{Coerced, Ctx, Exception, Persistent, Promise, Value};
 
 use super::{
     parts::{BASE_PRELUDE, error_text},
@@ -20,33 +21,28 @@ use super::{
     thread::VmPort,
     types::{ToVm, VmJob, VmRun},
 };
+use crate::engine::JsEngine;
 
+/// QuickJS's stack cap for a run, half its own default.
 const STACK_BYTES: usize = 512 * 1024;
 const NEVER_SETTLES: &str =
     "The code awaited a promise that can never settle (no native call is running).";
 
 pub(crate) fn run_engine(job: &VmJob, port: &VmPort) -> VmRun {
-    let rt = match Runtime::new() {
-        Ok(rt) => rt,
+    let engine = match JsEngine::new(&job.caps, STACK_BYTES, job.stop.clone()) {
+        Ok(engine) => engine,
         Err(e) => return VmRun::failed(format!("haest's JS engine could not start: {e}")),
     };
-    rt.set_memory_limit(job.caps.memory_bytes);
-    rt.set_max_stack_size(STACK_BYTES);
     if let Some(modules) = &job.modules {
         let m = JobModules(Arc::new(modules.clone()));
-        rt.set_loader(m.clone(), m);
+        engine.runtime().set_loader(m.clone(), m);
     }
-    let context = match Context::full(&rt) {
-        Ok(c) => c,
-        Err(e) => return VmRun::failed(format!("haest's JS engine could not start: {e}")),
-    };
     let shared = Shared::new(job.caps.max_log_chars);
     let clock = Clock::new(job, shared.clone(), Box::new(port.beats()));
     let run = Run {
         job,
         port,
-        context,
-        rt,
+        engine,
         shared,
         clock,
         out: VmRun::default(),
@@ -54,12 +50,10 @@ pub(crate) fn run_engine(job: &VmJob, port: &VmPort) -> VmRun {
     run.go()
 }
 
-/// Fields drop in order: the context before its runtime.
 struct Run<'a> {
     job: &'a VmJob,
     port: &'a VmPort,
-    context: Context,
-    rt: Runtime,
+    engine: JsEngine,
     shared: Rc<Shared>,
     clock: Rc<Clock>,
     out: VmRun,
@@ -74,7 +68,7 @@ impl Run<'_> {
     /// Prelude, code, settle, drain; the error that ended it, if any.
     fn start(&mut self) -> Option<String> {
         let prelude = format!("{BASE_PRELUDE}\n{}", self.job.prelude);
-        let installed = self.context.with(|ctx| {
+        let installed = self.engine.context().with(|ctx| {
             install(&ctx, self.job, &self.shared, self.port)
                 .and_then(|()| eval_prelude(&ctx, &prelude))
                 .map_err(|e| caught(&ctx, e, "prelude.js"))
@@ -84,11 +78,10 @@ impl Run<'_> {
         }
         // Only now: a stop asked before the run began must stop the CODE, not our own prelude.
         let clock = self.clock.clone();
-        self.rt.set_interrupt_handler(Some(Box::new(move || {
-            clock.beat_if_due();
-            clock.stop_reason().is_some()
-        })));
-        let promise = self.context.with(|ctx| {
+        let watch = self.engine.watch();
+        watch.on_poll(move || clock.beat_if_due());
+        watch.arm(self.clock.started, self.job.caps.timeout);
+        let promise = self.engine.context().with(|ctx| {
             eval_code(&ctx, self.job)
                 .map(|p| Persistent::save(&ctx, p))
                 .map_err(|e| caught(&ctx, e, &self.job.filename))
@@ -107,16 +100,13 @@ impl Run<'_> {
         self.out.stopped = self.out.stopped.or(self.clock.stop_reason());
         // Every value haest still holds goes before the runtime does.
         self.shared.pending.borrow_mut().clear();
-        self.rt.set_interrupt_handler(None);
         let Run {
-            context,
-            rt,
+            engine,
             shared,
             mut out,
             ..
         } = self;
-        drop(context);
-        drop(rt);
+        drop(engine);
         let logs = shared.logs.take();
         out.logs = logs.text;
         out.stdout = logs.stdout;
@@ -141,7 +131,7 @@ impl Run<'_> {
             if self.out.stopped.is_some() {
                 return None;
             }
-            if self.shared.inflight() == 0 && !self.rt.is_job_pending() {
+            if self.shared.inflight() == 0 && !self.engine.runtime().is_job_pending() {
                 return Some(NEVER_SETTLES.into());
             }
             self.wait_once();
@@ -155,7 +145,7 @@ impl Run<'_> {
         keep_value: bool,
     ) -> Option<Result<(), String>> {
         let filename = &self.job.filename;
-        let (done, value) = self.context.with(|ctx| {
+        let (done, value) = self.engine.context().with(|ctx| {
             let p = match promise.clone().restore(&ctx) {
                 Ok(p) => p,
                 Err(e) => return Some((Err(e.to_string()), None)),
@@ -186,7 +176,7 @@ impl Run<'_> {
     /// Until an answer arrives, haest asks to stop, or the deadline passes -- with a heartbeat on the way.
     fn wait_once(&mut self) {
         // Not from the interrupt handler: that runs mid-execution, where the runtime is busy.
-        let used = self.rt.memory_usage().memory_used_size;
+        let used = self.engine.runtime().memory_usage().memory_used_size;
         self.shared.memory.set(used.max(0) as u64);
         self.clock.beat_if_due();
         let until =
@@ -210,7 +200,7 @@ impl Run<'_> {
         let Some((resolve, reject)) = self.shared.pending.borrow_mut().remove(&call_id) else {
             return;
         };
-        self.context.with(|ctx| {
+        self.engine.context().with(|ctx| {
             let settled = if ok {
                 resolve.restore(&ctx).and_then(|f| f.call::<_, ()>((text,)))
             } else {
@@ -227,7 +217,7 @@ impl Run<'_> {
 
     /// Run every queued job (promise reactions), unless the run is being stopped.
     fn pump(&self) {
-        self.context.with(|ctx| {
+        self.engine.context().with(|ctx| {
             while ctx.execute_pending_job() {
                 if self.clock.stop_reason().is_some() {
                     break;

@@ -2,33 +2,28 @@
 //! job in; haest's [`ToVm::Answer`]s and a [`ToVm::Stop`] while it runs;
 //! [`FromVm::Call`]s, [`FromVm::Beat`]s and exactly one [`FromVm::Done`] out.
 //!
-//! One thread per run, so the async runtime is never blocked by a guest and a
-//! CPU-bound guest never starves a neighbour. A thread cannot be killed from
-//! outside: the stop flag ends it at its next interrupt poll, which QuickJS makes
-//! inside every loop and every regex step.
+//! One thread per run ([`spawn_thread`]), so the async runtime is never
+//! blocked by a guest and a CPU-bound guest never starves a neighbour. A
+//! thread cannot be killed from outside: the stop flag ends it at its next
+//! interrupt poll, which QuickJS makes inside every loop and every regex step.
 
 use std::{
     io,
-    panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
-    thread,
     time::Duration,
 };
 
-use haest_core::__private::panic_message;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{
     engine::run_engine,
     types::{FromVm, ToVm, VmBeat, VmJob, VmRun},
 };
-
-/// Room for QuickJS's own 512 KB stack limit plus the Rust frames around it.
-const THREAD_STACK_BYTES: usize = 8 * 1024 * 1024;
+use crate::engine::spawn_thread;
 
 /// haest's end of one engine thread.
 pub(crate) struct Engine {
@@ -97,17 +92,11 @@ pub(crate) fn spawn_engine(job: VmJob) -> io::Result<Engine> {
         from_haest,
         stop: job.stop.clone(),
     };
-    thread::Builder::new()
-        .name("haest-js".into())
-        .stack_size(THREAD_STACK_BYTES)
-        .spawn(move || {
-            let run = catch_unwind(AssertUnwindSafe(|| run_engine(&job, &port))).unwrap_or_else(
-                |panic| {
-                    let said = panic_message(panic.as_ref()).unwrap_or("unknown panic");
-                    VmRun::failed(format!("haest's JS engine crashed: {said}"))
-                },
-            );
-            let _ = to_haest.send(FromVm::Done(run));
-        })?;
+    let done = move |run: Result<VmRun, String>| {
+        let run =
+            run.unwrap_or_else(|said| VmRun::failed(format!("haest's JS engine crashed: {said}")));
+        let _ = to_haest.send(FromVm::Done(run));
+    };
+    spawn_thread("haest-js", move || run_engine(&job, &port), done)?;
     Ok(Engine { to_vm, from_vm })
 }

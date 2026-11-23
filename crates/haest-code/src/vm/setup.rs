@@ -60,9 +60,10 @@ impl Shared {
     }
 }
 
-/// The run's clock and its heartbeat: read by the loop AND the interrupt handler.
+/// The run's clock and its heartbeat: read by the loop AND, through the
+/// engine's watch, the interrupt.
 pub(crate) struct Clock {
-    started: Instant,
+    pub started: Instant,
     pub deadline: Instant,
     stop: Arc<AtomicBool>,
     last_beat: Cell<Instant>,
