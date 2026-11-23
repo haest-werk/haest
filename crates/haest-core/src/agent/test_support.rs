@@ -1,4 +1,7 @@
 //! Fakes shared by the loop tests (agent, guard, limits, ledger, tool_*).
+//! The host that answers the loop hooks is in asking.rs.
+
+mod asking;
 
 use std::{
     future::Future,
@@ -24,6 +27,8 @@ use crate::{
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolRef, Tools, spelled},
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, Workspace, WorkspaceMode, WorkspaceRef},
 };
+
+pub(crate) use asking::{Asked, Asking, logging_tool};
 
 /// Every cap off; a test turns on the one it is about.
 pub(crate) fn uncapped() -> TurnCaps {

@@ -46,6 +46,37 @@ async fn the_hook_before_a_model_call_may_end_the_turn_as_an_error_without_the_c
     assert!(p.requests().is_empty(), "no model call was made");
 }
 
+/// What a hook's error says, over the cause that says what broke.
+#[derive(Debug, thiserror::Error)]
+#[error("cannot go on")]
+struct CannotGoOn(#[source] std::io::Error);
+
+/// A host whose error has a cause.
+struct FailsWithACause;
+#[async_trait]
+impl AgentHooks for FailsWithACause {
+    async fn before_model_call(
+        &self,
+        _: &mut Agent,
+        _: &CancellationToken,
+    ) -> Result<(), BoxError> {
+        Err(CannotGoOn(std::io::Error::other("the disk is full")).into())
+    }
+}
+
+/// Regression: the turn's error was the hook error's own text alone, so the
+/// cause that said what broke never reached the human.
+#[tokio::test]
+async fn a_hook_errors_cause_reaches_the_turns_error() {
+    let p = ScriptedProvider::new([text_answer("never")]);
+    let (mut agent, _) = agent_with(&p, Opts::default());
+    agent.map_deps(|d| d.with_hooks(FailsWithACause));
+    let ended = agent.run("go", &mut Vec::new()).await;
+    assert_eq!(ended.stop_reason, StopReason::Error);
+    let error = ended.error.unwrap_or_default();
+    assert!(error.contains("the disk is full"), "{error}");
+}
+
 #[tokio::test]
 async fn the_hook_before_each_model_call_may_replace_history() {
     let p = ScriptedProvider::new([text_answer("a")]);

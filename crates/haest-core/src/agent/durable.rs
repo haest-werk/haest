@@ -10,6 +10,7 @@ use crate::{
     run::{
         Journal, ReplayedRun, RunEnd, RunError, RunKey, RunOutcome, Served, finished, input_hash,
     },
+    session::INTERRUPTED,
     tool::OnResume,
     tool_batch::{Redo, tool_batches},
     tool_exec::ToolIndex,
@@ -29,7 +30,11 @@ impl Agent {
     /// where it goes on: what ran before the stop is not emitted again, and
     /// its messages do not reach [`AgentHooks::on_message`](crate::AgentHooks::on_message)
     /// again. Its [`TurnEnd`](crate::LoopEvent::TurnEnd) usage, like the
-    /// outcome's, includes what the run spent before the stop.
+    /// outcome's, includes what the run spent before the stop. The host's
+    /// hooks are asked as [`Agent::run`] asks them; a resumed turn may ask
+    /// [`after_model_call`](crate::AgentHooks::after_model_call) and
+    /// [`before_turn_end`](crate::AgentHooks::before_turn_end) again about the
+    /// answer it stopped after (those hooks say when).
     ///
     /// The run starts on the agent's history as it is (a call a dropped turn
     /// left without a result answered first, as [`Agent::run`] answers it),
@@ -201,6 +206,15 @@ impl Agent {
         // A resumed turn says nothing to the model about the stop. A note
         // telling it would go in here, after the redone calls' results.
         if !run.pending.is_empty() {
+            // None of the answer's calls has a result: the records do not say
+            // whether the host's hook returned before the stop, and the calls
+            // must not run unseen. A call of the first batch may have run.
+            if let Message::Assistant(answer) = &last
+                && let Some(end) = self.ask_after_model_call(answer, t).await
+            {
+                self.answer_unrun(&run.pending, INTERRUPTED, t);
+                return end;
+            }
             let (redo, rest) = self.redo_plan(&run.pending);
             self.run_tools(&redo, &rest, t).await;
             self.after_tools(t).await;
@@ -208,8 +222,11 @@ impl Agent {
             && a.tool_calls().next().is_none()
             && finished(a.stop_reason)
         {
-            // The last answer landed and the run's end did not: the turn was over.
-            return TurnOutcome::new(a.stop_reason);
+            // The last answer landed and the run's end did not: the turn was
+            // ending on its own, and the hooks may not have seen it.
+            if let Some(end) = self.answered(a, t).await {
+                return end;
+            }
         }
         self.steps(t).await
     }

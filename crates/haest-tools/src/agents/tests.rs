@@ -4,6 +4,7 @@
 mod budgets;
 mod fake;
 mod lifecycle;
+mod loop_hooks;
 mod options;
 mod post;
 mod rules;

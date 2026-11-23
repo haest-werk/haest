@@ -18,7 +18,9 @@
 //! land in call order.
 
 mod control;
+mod delivery;
 mod durable;
+mod hooks;
 #[cfg(test)]
 pub(crate) mod test_support;
 mod turn;
@@ -42,7 +44,7 @@ use crate::{
 
 pub use control::AgentControl;
 use control::Running;
-pub(crate) use turn::Delivery;
+pub(crate) use delivery::Delivery;
 use turn::Turn;
 
 /// How a new [`Agent`] starts: its model, its effort, and any history to resume.
@@ -283,9 +285,10 @@ impl Agent {
     ///
     /// `input` becomes a user message, with whatever
     /// [`attach_media`](crate::AgentHooks::attach_media) finds in it. The turn
-    /// then makes model calls until one answers without tools (its stop
-    /// reason, [`StopReason::MaxTokens`] when the model's output limit cut
-    /// it), a cap or the conversation budget stops it
+    /// then makes model calls until one answers without tools and neither
+    /// steering input nor [`before_turn_end`](crate::AgentHooks::before_turn_end)
+    /// keeps it going (its stop reason, [`StopReason::MaxTokens`] when the
+    /// model's output limit cut it), a cap or the conversation budget stops it
     /// ([`StopReason::MaxTokens`], with [`TurnOutcome::limit`] saying which),
     /// a hook or the provider fails ([`StopReason::Error`]), or it is aborted.
     ///

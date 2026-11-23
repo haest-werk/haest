@@ -1,13 +1,14 @@
-//! The inside of one turn: steps, model calls, tools, and the step boundary
-//! where steering input and the guard's nudge ride in.
+//! The inside of one turn: steps, model calls, and the step boundary where
+//! steering input and the guard's nudge ride in. The tools a step runs are
+//! answered in delivery.rs; what the loop asks the host's hooks, in hooks.rs.
 
-use std::{path::Path, time::Instant};
+use std::time::Instant;
 
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
-    caps::{TurnCaps, estimate_request_tokens},
+    caps::estimate_request_tokens,
     deps::AgentHooks,
     error::report,
     events::{EventSink, LoopEvent, TurnOutcome},
@@ -18,19 +19,21 @@ use crate::{
     remedy::Limit,
     run::Journal,
     session::{interrupted, split_pending},
-    tool::{Attempt, ToolContext},
-    tool_batch::{Answer, Redo, redo_calls, run_tool_batches},
-    tool_exec::{ToolIndex, error_assistant, tool_result_message},
+    tool_exec::{CANCELLED, error_assistant},
 };
+
+/// What a call of an answer is told when the turn ends before it ran, the
+/// turn not cancelled (a hook's error).
+const NOT_RUN: &str = "Not run: the turn ended before this tool call ran.";
 
 /// One running turn's state.
 pub(super) struct Turn<'s> {
-    cancel: CancellationToken,
-    usage: Usage,
-    guard: TurnGuard,
-    sink: &'s mut dyn EventSink,
+    pub(super) cancel: CancellationToken,
+    pub(super) usage: Usage,
+    pub(super) guard: TurnGuard,
+    pub(super) sink: &'s mut dyn EventSink,
     /// A durable run's records (durable.rs); None for a plain turn.
-    journal: Option<Journal>,
+    pub(super) journal: Option<Journal>,
     /// The cap that refused the model call this step made, if one did: the
     /// turn's ending names it.
     refused_by: Option<Limit>,
@@ -86,7 +89,7 @@ impl<'s> Turn<'s> {
 
 /// History grows here only: every message also goes to the persistence hook,
 /// and in a durable run to its journal.
-fn append(
+pub(super) fn append(
     messages: &mut Vec<Message>,
     hooks: &dyn AgentHooks,
     journal: Option<&Journal>,
@@ -132,7 +135,7 @@ impl Agent {
     }
 
     /// Queued steering input becomes a user message now; false when there was none.
-    async fn inject_queued(&mut self, t: &mut Turn<'_>) -> bool {
+    pub(super) async fn inject_queued(&mut self, t: &mut Turn<'_>) -> bool {
         let Some(text) = self.control.take_queued() else {
             return false;
         };
@@ -185,29 +188,8 @@ impl Agent {
 
     /// One model call and the tools it asked for. How the turn ends, or None to go on.
     async fn step(&mut self, t: &mut Turn<'_>) -> Option<TurnOutcome> {
-        let cancel = t.cancel.clone();
-        let ready = self
-            .deps
-            .shared()
-            .hooks()
-            .clone()
-            .before_model_call(self, &cancel)
-            .await;
-        // A summary the hook paid for counts toward this turn, and may stop it.
-        let side = self.take_side_spend();
-        t.usage += &side;
-        // Cancelled while the hook ran (an Esc during the summary): the turn
-        // was aborted, whatever the hook made of it.
-        if cancel.is_cancelled() {
-            return Some(TurnOutcome::new(StopReason::Aborted));
-        }
-        if let Err(why) = ready {
-            return Some(TurnOutcome::error(StopReason::Error, why.to_string()));
-        }
-        if side != Usage::default()
-            && let Some(over) = t.guard.stop(&t.usage, self.turn_caps().as_ref())
-        {
-            return Some(over.into());
+        if let Some(end) = self.ask_before_model_call(t).await {
+            return Some(end);
         }
         let msg = self.call_model(t).await;
         t.usage += &msg.usage;
@@ -220,10 +202,32 @@ impl Agent {
                 limit: t.refused_by.take(),
             });
         }
-        let calls: Vec<ToolCall> = msg.tool_calls().cloned().collect();
+        self.answered(&msg, t).await
+    }
+
+    /// The rest of a step once `answer` landed in history: the host's look at
+    /// it, then its tools, or the turn's end. How the turn ends, or None to go
+    /// on. A resumed durable run (durable.rs) whose run stopped after an
+    /// answer without tool calls goes on here.
+    pub(super) async fn answered(
+        &mut self,
+        answer: &AssistantMessage,
+        t: &mut Turn<'_>,
+    ) -> Option<TurnOutcome> {
+        let calls: Vec<ToolCall> = answer.tool_calls().cloned().collect();
+        if let Some(end) = self.ask_after_model_call(answer, t).await {
+            let why = if t.cancel.is_cancelled() {
+                CANCELLED
+            } else {
+                NOT_RUN
+            };
+            self.answer_unrun(&calls, why, t);
+            return Some(end);
+        }
         if calls.is_empty() {
-            let steered = self.inject_queued(t).await;
-            return (!steered).then(|| TurnOutcome::new(msg.stop_reason));
+            return self
+                .at_turn_end(TurnOutcome::new(answer.stop_reason), t)
+                .await;
         }
         self.run_tools(&[], &calls, t).await;
         self.after_tools(t).await;
@@ -288,40 +292,6 @@ impl Agent {
         });
         msg
     }
-
-    /// Read-only calls run in parallel batches (tool_batch.rs); results still land
-    /// in CALL order -- history, the guard's repeat count and the transcript all
-    /// read them that way -- each one as soon as every call before it has answered.
-    ///
-    /// `redo` is a resumed durable run's (durable.rs): calls that may have run
-    /// before the stop, answered one by one by their tool's `OnResume` before `calls`.
-    pub(super) async fn run_tools(&mut self, redo: &[Redo], calls: &[ToolCall], t: &mut Turn<'_>) {
-        let caps = self.turn_caps();
-        let ctx = ToolContext {
-            cwd: self.deps.shared().cwd().to_path_buf(),
-            cancel: t.cancel.clone(),
-            workspace: self.deps.shared().workspace().clone(),
-            services: self.deps.shared().services().clone(),
-            context_room_tokens: None,
-            tool_call_id: None,
-            spill_dir: self.deps.shared().spill_dir().map(Path::to_path_buf),
-            run_key: t.journal.as_ref().map(|j| j.key().clone()),
-            attempt: Attempt::First,
-            turn_time_left: t.guard.time_left(caps.as_ref()),
-            wind_down: t.guard.wind_down_watch(&t.usage, caps.clone()),
-        };
-        let tools = ToolIndex::new(self.deps.tools().callable());
-        let mut delivery = Delivery {
-            caps,
-            guard: &mut t.guard,
-            messages: &mut self.history,
-            hooks: self.deps.shared().hooks().as_ref(),
-            journal: t.journal.as_ref(),
-            sink: &mut *t.sink,
-        };
-        redo_calls(redo, &tools, &ctx, &mut t.usage, &mut delivery).await;
-        run_tool_batches(calls, &tools, &ctx, &mut t.usage, &mut delivery).await;
-    }
 }
 
 /// A model call that never went out: shown, NOT appended -- nothing was sent,
@@ -332,53 +302,4 @@ fn refuse(model: &str, error: &str, t: &mut Turn<'_>) -> AssistantMessage {
         message: msg.clone(),
     });
     msg
-}
-
-/// Where the loop's tool answers land: the guard, history, the sink, and a
-/// durable run's journal.
-pub(crate) struct Delivery<'a> {
-    caps: Option<TurnCaps>,
-    guard: &'a mut TurnGuard,
-    messages: &'a mut Vec<Message>,
-    hooks: &'a dyn AgentHooks,
-    journal: Option<&'a Journal>,
-    sink: &'a mut dyn EventSink,
-}
-
-impl Delivery<'_> {
-    /// Tokens the next batch may add to the context; read once per batch, after
-    /// every answer before it was delivered. None = uncapped.
-    pub(crate) fn room(&self) -> Option<u64> {
-        self.guard.room(self.caps.as_ref())
-    }
-
-    /// One answer, in CALL order; `usage` is the turn's, this answer's spend folded in.
-    pub(crate) fn answer(&mut self, a: Answer, usage: &Usage) {
-        self.guard.answered(&a.call, &a.output);
-        let result = tool_result_message(&a.call, &a.output);
-        append(
-            self.messages,
-            self.hooks,
-            self.journal,
-            Message::Tool(result.clone()),
-        );
-        if let Some(j) = self.journal {
-            j.turn(self.guard.state(usage));
-        }
-        self.sink.emit(LoopEvent::ToolResult {
-            call: a.call,
-            message: result,
-            output: a.output,
-            duration_ms: a.duration_ms,
-        });
-    }
-
-    /// Awaited before a batch that holds a call with side effects, so the
-    /// intent lands first: a durable run's records, then the host's own flush.
-    pub(crate) async fn before_effects(&mut self) {
-        if let Some(j) = self.journal {
-            j.flush().await;
-        }
-        self.hooks.before_effects().await;
-    }
 }

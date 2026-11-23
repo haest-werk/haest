@@ -1,9 +1,11 @@
 //! Durable runs, driven whole: the shortcut (shortcut.rs), a kill and a
 //! resume (resume.rs), the history and torn logs (edges.rs), the flush
-//! before effects (effects.rs). Shared fakes here.
+//! before effects (effects.rs), the hooks around an answer (hooks.rs).
+//! Shared fakes here.
 
 mod edges;
 mod effects;
+mod hooks;
 mod resume;
 mod shortcut;
 mod thresholds;

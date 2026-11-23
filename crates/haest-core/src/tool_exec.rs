@@ -24,6 +24,9 @@ use crate::{
     tool::{MAX_TOOL_OUTPUT, ToolContext, ToolError, ToolOutput, ToolRef, Tools, spelled},
 };
 
+/// The answer to a call that never ran because the turn was cancelled first.
+pub(crate) const CANCELLED: &str = "Interrupted by the user before this tool ran.";
+
 /// A model call that never went out (no provider, a refused request): an
 /// empty answer from provider `"none"` with [`StopReason::Error`] and `error`.
 pub(crate) fn error_assistant(model: &str, error: &str) -> AssistantMessage {
@@ -130,7 +133,7 @@ async fn spill_if_huge(out: ToolOutput, tool_name: &str, ctx: &ToolContext) -> T
 /// context is spilled to a file. Every call keeps its result.
 pub async fn run_call(tools: &ToolIndex, call: &ToolCall, ctx: &ToolContext) -> ToolOutput {
     if ctx.cancel.is_cancelled() {
-        return ToolOutput::error("Interrupted by the user before this tool ran.");
+        return ToolOutput::error(CANCELLED);
     }
     let out = run_unspilled(tools, call, ctx).await;
     spill_if_huge(out, &call.name, ctx).await

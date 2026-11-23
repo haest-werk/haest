@@ -8,7 +8,8 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use haest_core::{
     __private::panic_message,
-    Agent, AgentHooks, AgentHooksRef, BoxError, LoopEvent, StopReason, SystemPrompt,
+    Agent, AgentHooks, AgentHooksRef, AssistantMessage, BoxError, LoopEvent, StopReason,
+    SystemPrompt, TurnOutcome,
     caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef},
     messages::{MediaPart, Message},
     provider::Effort,
@@ -164,6 +165,26 @@ impl AgentHooks for ChildHooks {
         _cancel: &CancellationToken,
     ) -> Result<(), BoxError> {
         Ok(())
+    }
+    /// Not the conversation's answer: what the conversation's hook does with
+    /// one (refuse it, steer, switch models) was meant for its own agent.
+    async fn after_model_call(
+        &self,
+        _agent: &mut Agent,
+        _answer: &AssistantMessage,
+        _cancel: &CancellationToken,
+    ) -> Result<(), BoxError> {
+        Ok(())
+    }
+    /// Not the conversation's turn: a check that keeps the conversation's
+    /// turn going would hold every subagent's to it too.
+    async fn before_turn_end(
+        &self,
+        _agent: &mut Agent,
+        _outcome: &TurnOutcome,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<String>, BoxError> {
+        Ok(None)
     }
     /// Nothing persisted, so nothing to flush before its tools' effects.
     async fn before_effects(&self) {}

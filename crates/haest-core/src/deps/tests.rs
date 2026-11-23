@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    agent::AgentOptions,
+    agent::{Agent, AgentOptions},
     events::LoopEvent,
     testing::{ScriptedProvider, text_answer, tool_answer},
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolServices, Tools},

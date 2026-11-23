@@ -1,6 +1,7 @@
 //! The loop's turns. What a host plugs in (hooks, a tool source) is in
-//! `plug_points`.
+//! `plug_points`; the hooks around a model call's answer in `loop_hooks`.
 
+mod loop_hooks;
 mod plug_points;
 
 use std::sync::Arc;
