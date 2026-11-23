@@ -1,6 +1,6 @@
 [package]
 name = "haest-bridges"
-description = "haest's bridges: mods and hooks written outside Rust, speaking the mod protocol. Feature js: .js/.ts mod files in embedded QuickJS, reloaded as they change"
+description = "haest's bridges: mods and hooks written outside Rust, speaking the mod protocol. Features: js (.js/.ts mod files in embedded QuickJS, reloaded as they change), shell (a command per event), http (a POST per event); shell and http speak haest's JSON or Claude Code's hook JSON"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,6 +19,12 @@ workspace = true
 # TypeScript and JavaScript mod files in embedded QuickJS (`JsMod`), and a
 # conversation's mod files as one mod that reloads them (`ModFiles`).
 js = ["dep:rquickjs", "dep:haest-ts", "dep:haest-settings"]
+# A command per event (`ShellHook`): the event as JSON on its stdin, the
+# decision on its stdout, run on the host by haest-workspace's real exec.
+shell = ["dep:haest-workspace"]
+# A POST per event (`HttpHook`) through haest-http's `HttpClient`, the host's
+# own or the default.
+http = ["dep:haest-http"]
 
 [dependencies]
 haest-core = { workspace = true }
@@ -35,10 +41,18 @@ rquickjs = { version = "0.14", default-features = false, features = ["std"], opt
 haest-ts = { workspace = true, optional = true }
 # js: the `mod_reload` setting's word, `ModReload` (haest-settings links haest-core only).
 haest-settings = { workspace = true, optional = true }
+# shell: the real exec (process group, cancel, ChildEnv, output cap), given stdin.
+haest-workspace = { workspace = true, optional = true }
+# http: the request goes through the host's HttpClient (no client of its own).
+haest-http = { workspace = true, optional = true }
 
 [dev-dependencies]
 haest-core = { workspace = true, features = ["testing"] }
 haest-mods = { workspace = true, features = ["testing"] }
+# The HTTP hook's tests post to a server on 127.0.0.1 through the default client.
+haest-http = { workspace = true, features = ["reqwest"] }
+tokio = { workspace = true, features = ["net", "io-util"] }
+tempfile = "3"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -17,9 +17,17 @@
 //! | Feature | Bridge |
 //! |---|---|
 //! | `js` | `.js` / `.ts` mod files in embedded QuickJS: one file is a `JsMod`, a conversation's mod directories are one `ModFiles` that reloads them as they change |
+//! | `shell` | a command per event, `ShellHook`: the event as JSON on its stdin, the decision on its stdout, exit 2 a blocking answer; run on the host by haest-workspace's real exec |
+//! | `http` | a POST per event, `HttpHook`: the event as the JSON body, the decision as the response's, through haest-http's `HttpClient` |
 //!
-//! A shell bridge (a hook as a command, JSON on stdin and stdout) and an HTTP
-//! bridge (a hook behind a URL) are next, as features of this crate.
+//! `ShellHook` and `HttpHook` are [`Hook`](haest_mods::Hook)s, bound per
+//! event in [`Hooks`](haest_mods::Hooks) with a
+//! [`Binding`](haest_mods::Binding)'s timeout, `on_error` and tool matcher
+//! like a Rust closure. Each speaks a dialect: `Haest` (the default, every
+//! event: the payload's own JSON with the event's name, the decision's own
+//! JSON back) or `Claude` (Claude Code's hook JSON, so its hook scripts run
+//! as they are, on the events Claude Code has). Their pages hold the tables:
+//! what each answer and exit code does, and what fails closed.
 //!
 //! A bridge proves it takes every decision as a Rust
 //! [`Hooks`](haest_mods::Hooks) closure does with haest-mods' `testing`
@@ -28,10 +36,11 @@
 //!
 //! # When to use this crate directly
 //!
-//! The `haest` facade re-exports this crate as `haest::bridges` (feature
-//! `bridge-js`, on by default), and `haest-runtime` loads a conversation's
-//! mod files from its settings for you. Take this crate yourself when you
-//! assemble the mods by hand ([`haest_mods::load_mods`]).
+//! The `haest` facade re-exports this crate as `haest::bridges` (features
+//! `bridge-js`, on by default, `bridge-shell` and `bridge-http`, off), and
+//! `haest-runtime` loads a conversation's mod files from its settings for
+//! you. Take this crate yourself when you assemble the mods by hand
+//! ([`haest_mods::load_mods`]).
 //!
 //! # A mod file
 //!
@@ -173,10 +182,28 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(any(feature = "shell", feature = "http"))]
+mod dialect;
+#[cfg(all(test, any(feature = "shell", feature = "http")))]
+mod hook_tests;
+#[cfg(feature = "http")]
+mod http;
 #[cfg(feature = "js")]
 mod js;
+#[cfg(feature = "shell")]
+mod shell;
 #[cfg(all(test, feature = "js"))]
 mod testkit;
+
+#[cfg(any(feature = "shell", feature = "http"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "shell", feature = "http"))))]
+pub use dialect::{Claude, Haest};
+#[cfg(feature = "http")]
+#[cfg_attr(docsrs, doc(cfg(feature = "http")))]
+pub use http::HttpHook;
+#[cfg(feature = "shell")]
+#[cfg_attr(docsrs, doc(cfg(feature = "shell")))]
+pub use shell::ShellHook;
 
 /// The `mod_reload` setting's word, haest-settings' own: whether
 /// [`ModFiles`] reloads the files as they change.
