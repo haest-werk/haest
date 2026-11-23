@@ -115,6 +115,12 @@ fn has(v: &Value, text: &str) -> bool {
     v.to_string().contains(text)
 }
 
+/// A loop event's [`effect`] when its hook changed nothing: one model call
+/// on the human's `go`, no message added, and no stop.
+fn untouched(v: &Value) -> bool {
+    v["error"].is_null() && v["asked"] == json!(["go"]) && v["users"] == json!(["a", "b", "go"])
+}
+
 fn case(event: ModEvent, answer: Value, took_effect: fn(&Value) -> bool) -> DecisionCase {
     DecisionCase {
         event,
@@ -170,5 +176,19 @@ pub fn decision_cases() -> Vec<DecisionCase> {
         case(E::TurnEnd, json!({ "compact": true }), |v| {
             v["error"].is_null() && v["asked"].as_array().is_some_and(|a| a.len() == 2)
         }),
+        // Answers read by the one decoder (decision/json.rs) whatever
+        // carries them: `null` is absent, and a value that is not the
+        // key's type is the hook's failure (here: it changes nothing),
+        // never coerced to text.
+        case(E::ToolBefore, json!({ "deny": null }), |v| {
+            v["out"]["content"] == "echo:hi"
+        }),
+        case(E::PromptSubmit, json!(42), |v| *v == "hi"),
+        case(E::SystemPrompt, json!(42), |v| *v == ""),
+        case(E::ModelBefore, json!({ "stop": false }), untouched),
+        case(E::ModelBefore, json!({ "steer": 42 }), untouched),
+        case(E::ModelBefore, json!({ "compact": "yes" }), untouched),
+        case(E::ModelAfter, json!({ "steer": true }), untouched),
+        case(E::TurnEnd, json!({ "continue": 1 }), untouched),
     ]
 }

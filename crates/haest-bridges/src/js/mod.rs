@@ -26,6 +26,7 @@
 
 mod channel;
 mod files;
+mod handlers;
 mod load;
 #[cfg(test)]
 mod loop_tests;
@@ -46,19 +47,15 @@ use haest_core::{
     error::BoxError,
     tool::{ToolContext, ToolOutput, ToolSource},
 };
-use haest_mods::{
-    Before, Event, Mod, ModEnv, ModEvent, ModToolCall, ModelAfterDecision, ModelAfterPayload,
-    ModelBeforeDecision, ModelBeforePayload, PromptSubmitPayload, Step, SystemPromptPayload,
-    ToolAfterPayload, ToolBeforePayload, TurnEnd, TurnEndDecision, TurnEndPayload,
-};
-use serde::de::DeserializeOwned;
+use haest_mods::{__private::fold, Before, Event, Mod, ModEnv, ModToolCall, Step, TurnEnd};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use channel::{JsMeta, JsThread, ToolChange};
 pub use files::{ModFileOptions, ModFiles};
+use handlers::JsHandlers;
 pub use load::{ModCaps, ModLoadError};
-use returns::{BadReturn, text_of};
+use returns::text_of;
 use tool::JsTool;
 
 /// One loaded mod file: a `.js` or `.ts` ES module run in embedded QuickJS,
@@ -114,14 +111,25 @@ use tool::JsTool;
 /// `answer` are messages as a session file writes them, less media bytes,
 /// thinking signatures and provider state; the loop events never see the
 /// whole history. `continued` is true once a `turn.end` answer has kept
-/// this turn going: a handler that keeps a turn going once checks it. A loop event's handlers run in order: every steer is
-/// kept, the first compact counts, the first stop or continue ends the run.
-/// `tool.before`, `tool.after`, the loop events, `execute` and commands may
-/// be async (an interrupt stops the wait); `prompt.submit` and
-/// `system.prompt` must answer at once (a returned promise is an error).
-/// Several handlers of one event run in the order they were added. A handler
-/// that throws is a failed event ([`Mods`](haest_mods::Mods) says what that
-/// means).
+/// this turn going: a handler that keeps a turn going once checks it.
+///
+/// Each handler is asked on its own, and what it returns is read by
+/// haest-mods' one decoder, the one a shell or HTTP hook's answer goes
+/// through: a key whose value is `null` counts as absent (`{ deny: null }`
+/// passes), and a value of the wrong type (`{ stop: false }`,
+/// `{ steer: 42 }`, `{ compact: 'yes' }`, a number from `prompt.submit`) is
+/// that handler's failure, never turned into text. Several handlers of one
+/// event run in the order they were added, by the rules
+/// [`Hooks`](haest_mods::Hooks)' bindings run by: the next one sees the
+/// input, output or text the one before it left, and none is asked after
+/// the first deny, stop or continue. A loop event's steers are all kept and
+/// its first compact counts. `tool.before`, `tool.after`, the loop events,
+/// `execute` and commands may be async (an interrupt stops the wait);
+/// `prompt.submit` and `system.prompt` must answer at once (a returned
+/// promise is an error). A handler that throws, or answers what its event
+/// does not take, is a failed event ([`Mods`](haest_mods::Mods) says what
+/// that means): what the mod's handlers before it decided is dropped, and
+/// the ones after it are not asked.
 ///
 /// # What a mod file cannot do
 ///
@@ -152,28 +160,12 @@ impl std::fmt::Debug for JsMod {
 }
 
 impl JsMod {
-    fn hooks(&self, event: ModEvent) -> bool {
-        JsMeta::lock(&self.meta).events.contains(event.as_str())
-    }
-
-    /// `E`'s handlers on the payload `payload` builds (only when the mod
-    /// has one), and their answer: `E`'s decision, or a loop event's list
-    /// of them; its default (a pass) when the mod has no handler.
-    async fn answer<E: Event, T: DeserializeOwned + Default>(
-        &self,
-        payload: impl FnOnce() -> E,
-        cancel: Option<&CancellationToken>,
-    ) -> Result<T, BoxError> {
-        let event = E::NAME;
-        if !self.hooks(event) {
-            return Ok(T::default());
-        }
-        let payload = serde_json::to_value(payload())
-            .map_err(|source| BadReturn::Payload { event, source })?;
-        let got = self.thread.call(event.as_str(), payload, cancel).await?;
-        let answer: Option<T> =
-            serde_json::from_value(got).map_err(|source| BadReturn::Answer { event, source })?;
-        Ok(answer.unwrap_or_default())
+    /// The mod's handlers on `E`, as it has them now, asked under `cancel`.
+    fn handlers<'a, E: Event>(
+        &'a self,
+        cancel: Option<&'a CancellationToken>,
+    ) -> JsHandlers<'a, E> {
+        JsHandlers::new(&self.thread, &self.meta, cancel)
     }
 }
 
@@ -197,8 +189,7 @@ impl Mod for JsMod {
         ctx: &ToolContext,
         _haest: &ModEnv,
     ) -> Result<Before, BoxError> {
-        let payload = || ToolBeforePayload::new(call, ctx);
-        self.answer(payload, Some(ctx.cancel())).await
+        fold::tool_before(&self.handlers(Some(ctx.cancel())), call, ctx).await
     }
 
     async fn tool_after(
@@ -208,16 +199,15 @@ impl Mod for JsMod {
         ctx: &ToolContext,
         _haest: &ModEnv,
     ) -> Result<Option<ToolOutput>, BoxError> {
-        let payload = || ToolAfterPayload::new(call, output, ctx);
-        self.answer(payload, Some(ctx.cancel())).await
+        fold::tool_after(&self.handlers(Some(ctx.cancel())), call, output, ctx).await
     }
 
     async fn prompt_submit(&self, text: &str, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        self.answer(|| PromptSubmitPayload::new(text), None).await
+        fold::prompt_submit(&self.handlers(None), text).await
     }
 
     async fn system_prompt(&self, _haest: &ModEnv) -> Result<Option<String>, BoxError> {
-        self.answer(SystemPromptPayload::new, None).await
+        fold::system_prompt(&self.handlers(None)).await
     }
 
     async fn model_before(
@@ -226,9 +216,7 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         _haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        let payload = || ModelBeforePayload::new(agent);
-        let decided = self.answer(payload, Some(cancel)).await?;
-        ModelBeforeDecision::apply(decided, agent, cancel).await
+        fold::model_before(&self.handlers(Some(cancel)), agent, cancel).await?
     }
 
     async fn model_after(
@@ -238,9 +226,7 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         _haest: &ModEnv,
     ) -> Result<Step, BoxError> {
-        let payload = || ModelAfterPayload::new(agent, answer);
-        let decided = self.answer(payload, Some(cancel)).await?;
-        Ok(ModelAfterDecision::apply(decided, agent))
+        fold::model_after(&self.handlers(Some(cancel)), agent, answer).await
     }
 
     async fn turn_end(
@@ -250,9 +236,8 @@ impl Mod for JsMod {
         cancel: &CancellationToken,
         haest: &ModEnv,
     ) -> Result<TurnEnd, BoxError> {
-        let payload = || TurnEndPayload::new(agent, outcome, cancel, haest);
-        let decided = self.answer(payload, Some(cancel)).await?;
-        TurnEndDecision::apply(decided, agent, cancel).await
+        let handlers = self.handlers(Some(cancel));
+        fold::turn_end(&handlers, agent, outcome, cancel, haest).await?
     }
 
     /// The tools as the mod left them: what it added or replaced since the

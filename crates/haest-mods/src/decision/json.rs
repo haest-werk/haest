@@ -1,11 +1,15 @@
-//! Every decision as JSON: exactly what a mod file's handler returns, read
-//! the way the mod files read it, so a hook across a process or a network
-//! answers in the same words.
+//! Every decision as JSON, and the one decoder of a hook's answer: what a
+//! mod file's handler returns (haest-bridges hands it over as it was
+//! returned) and what a shell or HTTP hook answers are read by these impls
+//! and the event's own serde, so an answer means the same whatever carries it.
 //!
-//! An answer that is not an object (nothing, text, a number) passes, a key
-//! the event does not take is ignored, and a key whose value is `null`
-//! counts as absent. Where a key takes text the value is a string, and
-//! `input` an object: anything else is an answer haest does not take.
+//! A `tool.before` or loop-event answer that is not an object (nothing,
+//! text, a number) passes, a key the event does not take is ignored, and a
+//! key whose value is `null` counts as absent. Where a key takes text the
+//! value is a string, and `input` an object; `prompt.submit` and
+//! `system.prompt` answer text or nothing, `tool.after` an output or
+//! nothing. Anything else is an answer haest does not take: the hook
+//! failed. Nothing is coerced to text.
 
 use haest_core::tool::JsonMap;
 use serde::{

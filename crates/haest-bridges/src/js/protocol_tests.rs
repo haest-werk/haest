@@ -245,8 +245,10 @@ fn ts_answering(event: ModEvent, answer: &Value) -> String {
     )
 }
 
+/// Every case that differs is listed, not only the first.
 #[tokio::test]
 async fn a_decision_takes_the_same_effect_from_a_ts_mod_and_a_hooks_closure() {
+    let mut differ = Vec::new();
     for DecisionCase {
         event,
         answer,
@@ -264,10 +266,11 @@ async fn a_decision_takes_the_same_effect_from_a_ts_mod_and_a_hooks_closure() {
             "hooks",
         )
         .await;
-        assert_eq!(from_ts, from_hooks, "{event} answering {answer}");
-        assert!(
-            took_effect(&from_ts),
-            "{event} answering {answer}: {from_ts}"
-        );
+        if from_ts != from_hooks || !took_effect(&from_ts) {
+            differ.push(format!(
+                "{event} answering {answer}:\n  ts:    {from_ts}\n  hooks: {from_hooks}"
+            ));
+        }
     }
+    assert!(differ.is_empty(), "{}", differ.join("\n"));
 }

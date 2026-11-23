@@ -1,6 +1,11 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
-use haest_core::{Tools, tool::ToolError, workspace::WorkspaceMode};
+use haest_core::{
+    NoHooks, Tools,
+    testing::{ScriptedProvider, text_answer},
+    tool::ToolError,
+    workspace::WorkspaceMode,
+};
 use haest_mods::{CommandOutcome, Decision, Mods};
 use serde_json::json;
 
@@ -74,6 +79,44 @@ async fn prompt_submit_rewrites_the_humans_message_and_input_rewrites_reach_the_
     let tools = wrapped(mods, Tools::from_iter([Probe::new("Echo")]));
     let out = tools[0].execute(input(json!({"v": "hi"})), &ctx()).await;
     assert_eq!(out.unwrap().content, "ECHO:HI!");
+}
+
+/// One event's handlers in a mod file run in order by the rules every
+/// hook's do (haest-mods' fold): the next one sees the input the one before
+/// rewrote, every steer goes in in order, and none is asked after the first
+/// deny or stop.
+#[tokio::test]
+async fn a_mod_files_handlers_chain_and_none_is_asked_after_the_first_deny_or_stop() {
+    let source = r#"export default function (haest: any) {
+      haest.on('tool.before', (call: any) => ({ input: { v: call.input.v + '!' } }))
+      haest.on('tool.before', (call: any) => ({ deny: 'saw ' + call.input.v }))
+      haest.on('tool.before', () => { haest.notice('asked after a deny') })
+      haest.on('model.after', (v: any) => v.historyLength === 2 ? { steer: 'one' } : undefined)
+      haest.on('model.after', (v: any) => v.historyLength === 2 ? { steer: 'two' } : undefined)
+      haest.on('model.after', (v: any) => v.historyLength > 2 ? { stop: 'enough' } : undefined)
+      haest.on('model.after', (v: any) => { if (v.historyLength > 2) haest.notice('asked after a stop') })
+    }"#;
+    let ui = TestUi::new();
+    let mods = with_mod(ui.clone(), "order.ts", source).await;
+
+    let echo = Probe::new("Echo");
+    let tools = wrapped(mods.clone(), Tools::from_iter([echo.clone()]));
+    let refused = tools[0].execute(input(json!({ "v": "hi" })), &ctx()).await;
+    assert!(
+        refused.is_err_and(|e| e.to_string().contains("saw hi!")),
+        "the second handler saw the first one's rewrite"
+    );
+    assert!(echo.ran().is_empty());
+
+    let p = ScriptedProvider::new(["a", "b"].map(text_answer));
+    let mut agent = looped(&p, NoHooks, &mods, Tools::new());
+    let end = agent.run("go", &mut Vec::new()).await;
+    assert!(end.error.unwrap_or_default().contains("enough"));
+    // The steers queued between two calls go in as one message, in order.
+    let users: Vec<_> = agent.history().iter().filter_map(user_text).collect();
+    assert_eq!(users, ["go", "one\n\ntwo"]);
+    assert_eq!(p.requests().len(), 2);
+    assert!(ui.infos().is_empty(), "{:?}", ui.infos());
 }
 
 #[tokio::test]

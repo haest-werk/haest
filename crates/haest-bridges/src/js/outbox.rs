@@ -68,7 +68,7 @@ impl Js {
     fn forward(&mut self, out: Out) {
         match out {
             Out::On { event } => {
-                JsMeta::lock(&self.meta).events.insert(event);
+                *JsMeta::lock(&self.meta).handlers.entry(event).or_default() += 1;
             }
             Out::Tool { tool } => {
                 let change = ToolChange::Set(tool);

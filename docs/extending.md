@@ -69,6 +69,13 @@ These are the mod files' own words, typed once in haest-mods (`Event` and its pa
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the
 decision; the rules for applying it run in one place for every form.
 
+One decoder reads every answer, a mod file's handler's included. A key whose value is `null`
+counts as absent (`{ deny: null }` passes). A value of the wrong type (`{ stop: false }`,
+`{ steer: 42 }`, `{ compact: "yes" }`, a number from `prompt.submit` or `system.prompt`) is
+the hook's failure: a binding's `on_error` decides what that does, and in a mod file the
+event fails as a throw does. Nothing is turned into text. A mod file's handlers on one event
+are asked one at a time, by the same rules as a `Hooks` binding's, in the table's last column.
+
 ## Hooks: one handler per event
 
 `Hooks` is a mod made of bindings: a hook per event, each with

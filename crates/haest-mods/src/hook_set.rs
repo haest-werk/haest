@@ -1,15 +1,17 @@
 //! [`Hooks`]: hooks bound per event, as one [`Mod`](crate::Mod). Each event
-//! runs its bindings in the order added and folds their answers by the
-//! rules every mod's answers are folded by (fire.rs); decisions take effect
-//! in decision.rs.
+//! runs its bindings in the order added (fire.rs) and folds their answers
+//! by the rules a mod file's handlers are folded by too (fold.rs);
+//! decisions take effect in decision.rs.
 
 use std::fmt;
 
+use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     env::ModEnv,
     events::{Event, Slots},
+    fold::Handlers,
     hook::{Binding, HookError, OnError},
 };
 
@@ -197,28 +199,48 @@ impl Hooks {
         }
     }
 
-    /// A loop event's decisions, in order, up to the first that `ends` the
-    /// run: the bindings after it are not asked.
-    async fn decide<E: Event>(
-        &self,
-        bindings: &[Binding<E>],
-        payload: &E,
-        ends: impl Fn(&E::Decision) -> bool,
-        cancel: &CancellationToken,
-        haest: &ModEnv,
-    ) -> Result<Vec<E::Decision>, HookError> {
-        let mut decided = Vec::new();
-        for (nth, binding) in (1..).zip(bindings) {
-            let asked = self.ask(binding, nth, payload.clone(), cancel, haest);
-            let Some(decision) = asked.await? else {
-                continue;
-            };
-            let ended = ends(&decision);
-            decided.push(decision);
-            if ended {
-                break;
-            }
+    /// `bindings` as the folds (fold.rs) ask them, under `cancel`.
+    fn bound<'a, E: Event>(
+        &'a self,
+        bindings: &'a [Binding<E>],
+        cancel: &'a CancellationToken,
+        haest: &'a ModEnv,
+    ) -> Bound<'a, E> {
+        Bound {
+            hooks: self,
+            bindings,
+            cancel,
+            haest,
         }
-        Ok(decided)
+    }
+}
+
+/// One event's bindings, as the folds ask them: a binding that is not for
+/// the call is passed over, and one that fails does what its
+/// [`OnError`] says.
+struct Bound<'a, E: Event> {
+    hooks: &'a Hooks,
+    bindings: &'a [Binding<E>],
+    cancel: &'a CancellationToken,
+    haest: &'a ModEnv,
+}
+
+#[async_trait]
+impl<E: Event> Handlers<E> for Bound<'_, E> {
+    type Error = HookError;
+
+    fn count(&self) -> usize {
+        self.bindings.len()
+    }
+
+    async fn ask(&self, nth: usize, payload: E) -> Result<Option<E::Decision>, HookError> {
+        let binding = &self.bindings[nth - 1];
+        if !binding.takes(&payload) {
+            return Ok(None);
+        }
+        let asked = self
+            .hooks
+            .ask(binding, nth, payload, self.cancel, self.haest);
+        asked.await
     }
 }

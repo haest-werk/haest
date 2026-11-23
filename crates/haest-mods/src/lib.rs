@@ -267,6 +267,7 @@ mod decision;
 mod decorate;
 mod env;
 mod events;
+mod fold;
 mod gate;
 mod hook;
 mod hook_set;
@@ -280,6 +281,17 @@ mod registry;
 #[cfg(any(test, feature = "testing"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "testing")))]
 pub mod testing;
+
+/// What the other haest crates share, and nothing a host needs: not part of
+/// the API, and not covered by semver. It changes in any release.
+#[doc(hidden)]
+pub mod __private {
+    /// How a mod made of handlers asks them and folds their answers: a mod
+    /// file's (haest-bridges' `JsMod`) by the same code as [`Hooks`](crate::Hooks)'.
+    pub mod fold {
+        pub use crate::fold::*;
+    }
+}
 
 pub use api::{Before, Mod, ModRef, ModToolCall, Step, TurnEnd};
 pub use approval::{

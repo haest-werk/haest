@@ -182,6 +182,19 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-cli: when a hook kept a turn going, the second answer was printed
   glued to the end of the first (`removed.No tests here.`). Each answer
   now ends its line.
+- haest-bridges: a mod file's answers were read by its own JavaScript
+  rather than the decoder every other hook goes through, so the same
+  answer did different things. `{ deny: null }` refused the call with the
+  reason "null", `{ stop: false }` stopped the turn with "false", and
+  `{ steer: 42 }`, `{ compact: "yes" }` or a number returned from
+  `prompt.submit` or `system.prompt` were turned into text and acted on.
+  A mod file's answer now means what it means from a shell hook, an HTTP
+  hook or a Rust closure: a `null` value counts as absent, and a value of
+  the wrong type is the handler's failure, reported to the human, never
+  turned into text. Several handlers of one event still run in order,
+  each seeing the input, output or text the one before left, and none is
+  asked after the first deny, stop or continue; a later `tool.after`
+  handler now sees the output as haest read it (`isError` filled in).
 
 ## 0.4.1 (2026-11-20)
 

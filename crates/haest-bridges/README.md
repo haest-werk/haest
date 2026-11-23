@@ -24,6 +24,10 @@ never links an engine.
     event, add a tool or a slash command, hide any tool, ask the human). It
     runs on its own thread, bounded by `ModCaps` (memory, a time slice, a load
     timeout); `ModLoadError` says why one did not load.
+  - Its handlers are asked one at a time and each answer is decoded on the
+    Rust side by haest-mods, as a shell or HTTP hook's is: `{ deny: null }`
+    passes, and `{ stop: false }` or a number where text goes is the
+    handler's failure, never turned into text.
   - `ModFiles` is a conversation's mod files as one mod: the human's
     (`<config dir>/mods`) and, only in a directory the human trusts, the
     project's (`.haest/mods`), loaded in name order and run by haest-mods'

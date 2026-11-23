@@ -1,6 +1,8 @@
 //! What a hook answers: the decisions of the loop events, and the one place
-//! a decision takes effect. A file mod and [`Hooks`](crate::Hooks) both
-//! apply their answers here; how each reads and writes as JSON is json.rs.
+//! a decision takes effect. A file mod's handlers and
+//! [`Hooks`](crate::Hooks)' bindings are asked and folded in fold.rs,
+//! which applies their answers here; how each reads and writes as JSON is
+//! json.rs, the one decoder.
 
 use std::ops::ControlFlow;
 
@@ -91,7 +93,7 @@ impl ModelBeforeDecision {
     /// # Errors
     ///
     /// The compaction failed; nothing else was applied.
-    pub async fn apply(
+    pub(crate) async fn apply(
         decided: Vec<Self>,
         agent: &mut Agent,
         cancel: &CancellationToken,
@@ -140,7 +142,7 @@ impl ModelAfterDecision {
     /// What one `model.after` run's decisions, in the order they were
     /// made, do to `agent`, up to the first that stops: every steer goes
     /// in, in order, then that stop ends the turn ([`Step::Stop`]).
-    pub fn apply(decided: Vec<Self>, agent: &Agent) -> Step {
+    pub(crate) fn apply(decided: Vec<Self>, agent: &Agent) -> Step {
         let decided = up_to_first(decided, |d| d.stop.is_some());
         steer_then_stop(agent, decided.into_iter().map(|d| (d.steer, d.stop)))
     }
@@ -183,7 +185,7 @@ impl TurnEndDecision {
     /// # Errors
     ///
     /// The compaction failed; the turn ends.
-    pub async fn apply(
+    pub(crate) async fn apply(
         decided: Vec<Self>,
         agent: &mut Agent,
         cancel: &CancellationToken,
@@ -201,7 +203,7 @@ impl crate::api::Before {
     /// This decision applied to `call`: an input rewrite replaces its input
     /// (what comes after sees it), a deny breaks with the reason to refuse
     /// it. [`Mods`](crate::Mods) folds every mod's answer with it, and
-    /// [`Hooks`](crate::Hooks) every binding's.
+    /// fold.rs every handler's (a binding's, a mod file's).
     pub(crate) fn apply_to(self, call: &mut ModToolCall) -> ControlFlow<String> {
         match self {
             Self::Pass => {}

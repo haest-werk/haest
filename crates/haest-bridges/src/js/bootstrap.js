@@ -4,7 +4,11 @@
 // calls. Each mod has its own runtime, so nothing here is shared between mods.
 //
 // The events are the Rust side's list (events.rs), handed in at load: `ops`
-// handles exactly those, or the mod does not start.
+// handles exactly those, or the mod does not start. An event op runs ONE
+// handler and returns its answer as it gave it: the Rust half reads it as the
+// event's decision (haest-mods' one decoder), folds it with the answers
+// before it, and asks the next handler with what they left. Nothing here
+// reads an answer.
 ;(() => {
   const { parse, stringify } = JSON
   const P = Promise
@@ -21,7 +25,6 @@
   let askSeq = 0
 
   const isObject = v => v !== null && typeof v === 'object'
-  const given = (v, key) => isObject(v) && key in v && v[key] !== undefined && v[key] !== null
   const errorText = e => {
     try {
       return isObject(e) && 'message' in e ? String(e.message) : String(e)
@@ -103,26 +106,15 @@
       },
     })
 
-  // A loop event's handlers, in order, each answer as the Rust side reads it
-  // (only what this event `takes`, text as text; anything else passes), up
-  // to the first stop or continue: the handlers after it are not run. The
-  // Rust side applies the list (decision.rs): the first compact counts,
-  // every steer is kept.
-  const decide = async (event, takes, view) => {
-    const out = []
-    for (const fn of hooks[event]) {
-      const v = await fn(view)
-      const d = {}
-      if (takes.includes('compact') && isObject(v) && v.compact)
-        d.compact = given(v.compact, 'instructions') ? { instructions: String(v.compact.instructions) } : true
-      if (takes.includes('steer') && given(v, 'steer')) d.steer = String(v.steer)
-      const last = takes.find(k => (k === 'stop' || k === 'continue') && given(v, k))
-      if (last) d[last] = String(v[last])
-      if (Object.keys(d).length) out.push(d)
-      if (last) break
+  // The op of `event`: its handler `nth` (from 1) on `payload`, handed it as
+  // `args` spreads it, and the answer as `answer` lets it through.
+  const handler =
+    (event, args, answer = v => v) =>
+    ({ nth, payload }) => {
+      const fn = hooks[event][nth - 1]
+      if (!fn) throw new Error(`${event} has no handler ${nth}`)
+      return answer(fn(...args(payload)), event)
     }
-    return out
-  }
 
   const ops = {
     async load({ env, events }) {
@@ -137,47 +129,13 @@
       delete globalThis.__haestMod
       await main(api(env))
     },
-    async 'tool.before'({ call, ctx }) {
-      let changed = false
-      for (const fn of hooks['tool.before']) {
-        const v = await fn(call, ctx)
-        if (isObject(v) && 'deny' in v) return { deny: String(v.deny) }
-        if (isObject(v) && 'input' in v) {
-          call = { ...call, input: v.input }
-          changed = true
-        }
-      }
-      return changed ? { input: call.input } : null
-    },
-    async 'tool.after'({ call, output, ctx }) {
-      let changed = false
-      for (const fn of hooks['tool.after']) {
-        const v = await fn(call, output, ctx)
-        if (v !== undefined && v !== null) {
-          output = v
-          changed = true
-        }
-      }
-      return changed ? output : null
-    },
-    'prompt.submit'({ text }) {
-      let changed = false
-      for (const fn of hooks['prompt.submit']) {
-        const v = now(fn(text), 'prompt.submit')
-        if (v !== undefined && v !== null) {
-          text = String(v)
-          changed = true
-        }
-      }
-      return changed ? text : null
-    },
-    'system.prompt'() {
-      const parts = hooks['system.prompt'].map(fn => now(fn(), 'system.prompt')).filter(Boolean)
-      return parts.length ? parts.map(String).join('\n\n') : null
-    },
-    'model.before': view => decide('model.before', ['compact', 'steer', 'stop'], view),
-    'model.after': view => decide('model.after', ['steer', 'stop'], view),
-    'turn.end': view => decide('turn.end', ['compact', 'continue'], view),
+    'tool.before': handler('tool.before', ({ call, ctx }) => [call, ctx]),
+    'tool.after': handler('tool.after', ({ call, output, ctx }) => [call, output, ctx]),
+    'prompt.submit': handler('prompt.submit', ({ text }) => [text], now),
+    'system.prompt': handler('system.prompt', () => [], now),
+    'model.before': handler('model.before', view => [view]),
+    'model.after': handler('model.after', view => [view]),
+    'turn.end': handler('turn.end', view => [view]),
     async command({ name, args }) {
       const run = commands.get(name)
       if (!run) throw new Error(`this mod has no command "${name}"`)
@@ -199,7 +157,9 @@
       P.resolve()
         .then(() => {
           const args = parse(json)
-          if (isObject(args.ctx)) args.ctx.signal = freeze({ id })
+          // An event's `{ nth, payload }`, or a tool's `{ name, input, ctx }`.
+          const { ctx } = isObject(args.payload) ? args.payload : args
+          if (isObject(ctx)) ctx.signal = freeze({ id })
           return ops[op](args)
         })
         .then(v => stringify(v ?? null) ?? 'null')

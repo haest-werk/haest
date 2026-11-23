@@ -2,10 +2,11 @@
 //! sends them, and what the mod has registered so far.
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Mutex, MutexGuard, mpsc},
 };
 
+use haest_mods::ModEvent;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::oneshot;
@@ -52,7 +53,8 @@ pub(crate) enum ToolChange {
 /// What a file mod has registered so far (it may register more later).
 #[derive(Default)]
 pub(crate) struct JsMeta {
-    pub events: HashSet<String>,
+    /// How many handlers each event has (`haest.on`), by its name.
+    pub handlers: HashMap<String, usize>,
     /// Tool changes in the order the mod made them, not yet applied: the
     /// mod's thread cannot make a tool (a tool holds the thread's handle).
     pub tool_changes: Vec<ToolChange>,
@@ -67,6 +69,11 @@ impl JsMeta {
     /// poisoned one is a bug here.
     pub(super) fn lock(meta: &Mutex<Self>) -> MutexGuard<'_, Self> {
         meta.lock().expect("the mod's registrations lock poisoned")
+    }
+
+    /// How many handlers `event` has.
+    pub(super) fn handlers(&self, event: ModEvent) -> usize {
+        self.handlers.get(event.as_str()).copied().unwrap_or(0)
     }
 
     pub(super) fn add_command(&mut self, name: String) {
