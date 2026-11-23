@@ -156,7 +156,7 @@ The rest is in `docs/`:
 |---|---|
 | [docs/settings.md](https://github.com/haest-werk/haest/blob/main/docs/settings.md) | every setting: what it does, what it takes, its default, where it may be set, and an example in all three spellings; the built-in profiles. Written from the registry, so it is always the code's |
 | [docs/environment.md](https://github.com/haest-werk/haest/blob/main/docs/environment.md) | the variables haest reads (`HAEST_*`, `HOME`, the XDG dirs, provider keys), what a process haest starts gets (`env_passthrough`), passing a variable on purpose (`-E`, `[env]`), `${NAME}` in config files, recipes |
-| [docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md) | every way to change the agent while it runs: the host's `AgentHooks`, mods and their events, `Hooks` bound per event, tools that change (`LiveTools`), compaction from a hook, mod files; which form to use |
+| [docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md) | every way to change the agent while it runs: the host's `AgentHooks`, mods and their events, `Hooks` bound per event, tools that change (`LiveTools`), compaction from a hook (an auto-compact mod file and its Rust twin), the prompt cache policy, mod files and their reloading, hooks in another process (`ShellHook`, `HttpHook`); which form to use |
 | [docs/examples/](https://github.com/haest-werk/haest/tree/main/docs/examples/) | a whole `config.toml`, a project's `.haest/config.toml`, `.mcp.json`, `providers.json` and `HAEST_*` exports, each loaded by a test |
 
 ### Trust
