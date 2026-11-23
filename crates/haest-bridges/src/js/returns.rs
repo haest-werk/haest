@@ -15,9 +15,11 @@ pub(super) enum BadReturn {
         event: ModEvent,
         source: serde_json::Error,
     },
-    #[error("{event} returned an answer it does not take")]
+    #[error("handler {nth} on {event} returned an answer it does not take")]
     Answer {
         event: ModEvent,
+        /// Which of the event's handlers, from 1, in the order added.
+        nth: usize,
         source: serde_json::Error,
     },
 }
