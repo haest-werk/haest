@@ -97,40 +97,45 @@ impl<E: Event> Hook<E> for Noting {
     }
 }
 
+/// On every event, a `.ts` handler and a `HookSet` binding are handed the
+/// same session: `undefined` (never `null`) when the host names none, then
+/// s-1, then the host's new one after a /clear.
 #[tokio::test]
 async fn a_ts_handler_gets_the_session_a_hooks_binding_gets_and_undefined_when_none() {
     let ui = TestUi::new();
     let haest = env(ui.clone(), WorkspaceMode::Sandbox);
-    let events = [
-        ModEvent::ToolBefore,
-        ModEvent::SystemPrompt,
-        ModEvent::TurnEnd,
-    ];
-    let ts = js("session.ts", &noticing(&events), &haest)
+    let events = ModEvent::ALL;
+    let ts = js("session.ts", &noticing(events), &haest)
         .await
         .expect("the mod loads");
     let rust = Noting::default();
-    let hooks = HookSet::new()
-        .on_tool_before(rust.clone())
-        .on_system_prompt(rust.clone())
-        .on_turn_end(rust.clone());
+    let hooks = events
+        .iter()
+        .fold(HookSet::new(), |hooks, e| bind(hooks, *e, rust.clone()));
     let mods = Mods::new(haest, [ModRef::new(ts), ModRef::new(hooks)]);
     let tools = wrapped(mods.clone(), Tools::from_iter([Probe::new("Echo")]));
     let p = ScriptedProvider::new(["one", "two", "three"].map(text_answer));
     let mut agent = looped(&p, NoHooks, &mods, Tools::new());
 
-    // None named, then s-1, then the host's /clear: s-2.
+    // None named, then s-1, then the host's /clear: s-2. Each round fires
+    // every event once, in the order `ModEvent::ALL` lists them.
     for named in [None, Some(session(1)), Some(session(2))] {
         if let Some(s) = named {
             mods.env().set_session(s);
         }
         let call = input(json!({ "v": "hi" })).unwrap();
         tools[0].execute(call, &ctx()).await.unwrap();
+        mods.rewrite_prompt("hi").await;
         mods.system_append().await;
         assert_eq!(agent.run("go", &mut Vec::new()).await.error, None);
     }
 
-    let each = |session: Value| events.map(|e| json!({ "event": e.as_str(), "session": session }));
+    let each = |session: Value| {
+        events
+            .iter()
+            .map(|e| json!({ "event": e.as_str(), "session": session }))
+            .collect::<Vec<_>>()
+    };
     let expected = [
         each(json!("undefined")),
         each(session_json(1)),

@@ -25,11 +25,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::testkit::*;
 
-/// A `.ts` mod whose every handler writes down what it was handed.
+/// How the recorder writes an argument that is `undefined`, which JSON
+/// would make `null`.
+const UNDEFINED: &str = "<undefined>";
+
+/// A `.ts` mod whose every handler writes down what it was handed: every
+/// argument, an `undefined` one as [`UNDEFINED`].
 fn recorder() -> String {
     let on_every: String = ModEvent::WORDS
         .iter()
-        .map(|e| format!("  haest.on('{e}', (...args: unknown[]): void => {{ haest.notice(JSON.stringify(args)) }})\n"))
+        .map(|e| format!("  haest.on('{e}', (...args: unknown[]): void => {{ haest.notice(JSON.stringify(args.map(a => a === undefined ? '{UNDEFINED}' : a))) }})\n"))
         .collect();
     format!("export default function (haest: any): void {{\n{on_every}}}\n")
 }
@@ -49,10 +54,13 @@ fn writes<E: Event + PartialEq>(payload: &E, expected: &Value) {
 /// A handler's arguments as the payload they were handed in: a tool
 /// event's `(call, [output,] ctx, session)` with the mod file's own
 /// `ctx.signal` left out, `prompt.submit`'s `(text, session)`,
-/// `system.prompt`'s `(session)`, and a loop event's one view. A session
-/// the host does not name is `undefined`, `null` in the arguments' JSON:
-/// left out, as the payload's JSON leaves it out.
+/// `system.prompt`'s `(session)`, and a loop event's one view. Every one is
+/// handed, no more: a session the host does not name is `undefined`
+/// ([`UNDEFINED`]), left out as the payload's JSON leaves it out. Anything
+/// else in its place, `null` too, is the payload's `session`, which the
+/// payload without one does not match.
 fn handed(event: ModEvent, args: &Value) -> Value {
+    let args = args.as_array().expect("the arguments, as an array");
     let arg = |i: usize| args[i].clone();
     let ctx = |i: usize| {
         let mut c = arg(i);
@@ -60,20 +68,24 @@ fn handed(event: ModEvent, args: &Value) -> Value {
         c
     };
     let (mut payload, session) = match event {
-        ModEvent::ToolBefore => (json!({ "call": arg(0), "ctx": ctx(1) }), arg(2)),
+        ModEvent::ToolBefore => (json!({ "call": arg(0), "ctx": ctx(1) }), 2),
         ModEvent::ToolAfter => (
             json!({ "call": arg(0), "output": arg(1), "ctx": ctx(2) }),
-            arg(3),
+            3,
         ),
-        ModEvent::PromptSubmit => (json!({ "text": arg(0) }), arg(1)),
-        ModEvent::SystemPrompt => (json!({}), arg(0)),
-        ModEvent::ModelBefore | ModEvent::ModelAfter | ModEvent::TurnEnd => return arg(0),
+        ModEvent::PromptSubmit => (json!({ "text": arg(0) }), 1),
+        ModEvent::SystemPrompt => (json!({}), 0),
+        ModEvent::ModelBefore | ModEvent::ModelAfter | ModEvent::TurnEnd => {
+            assert_eq!(args.len(), 1, "{event}: its one view, no more");
+            return arg(0);
+        }
         // `ModEvent` is non-exhaustive outside haest-mods: a new event fails
         // the tests below at run time, as every event is driven through.
         other => panic!("{other} is not driven through a mod file here"),
     };
-    if !session.is_null() {
-        payload["session"] = session;
+    assert_eq!(args.len(), session + 1, "{event}: its session last");
+    if args[session] != UNDEFINED {
+        payload["session"] = arg(session);
     }
     payload
 }
