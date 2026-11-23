@@ -171,6 +171,7 @@ pub mod media;
 pub mod messages;
 pub mod newest;
 mod panics;
+mod pattern;
 mod plug_ref;
 mod pricing;
 pub mod provider;
@@ -221,6 +222,9 @@ pub mod __private {
     /// costs (haest-code's Code) adds only these, with `add_cost`.
     pub use crate::messages::usage::{add_cost, real_cost};
     pub use crate::panics::panic_message;
+    /// The one name pattern settings take (exact, or `prefix*`): Code's
+    /// `code_tools`, hook matchers, per-model cache settings.
+    pub use crate::pattern::name_matches;
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }
 

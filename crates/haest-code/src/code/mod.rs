@@ -10,6 +10,7 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use haest_core::{
+    __private::name_matches,
     ToolRef,
     tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput, ToolSourceRef, opt_num, req_str},
 };
@@ -25,13 +26,6 @@ use render::render_code_output;
 /// The Code tool's name, as the model calls it.
 pub(crate) const CODE_TOOL_NAME: &str = "Code";
 const MAX_TIMEOUT_MS: u64 = 300_000;
-
-fn matches(name: &str, pattern: &str) -> bool {
-    match pattern.strip_suffix('*') {
-        Some(prefix) => name.starts_with(prefix),
-        None => name == pattern,
-    }
-}
 
 /// Whether a Code program may call the tool `t`.
 ///
@@ -62,7 +56,7 @@ pub fn code_callable(t: &dyn Tool, allowed: &[impl AsRef<str>]) -> bool {
         return false;
     }
     (name.starts_with("mcp__") && t.read_only())
-        || allowed.iter().any(|p| matches(name, p.as_ref()))
+        || allowed.iter().any(|p| name_matches(name, p.as_ref()))
 }
 
 /// The names of `tools` a Code program may call ([`code_callable`] with
