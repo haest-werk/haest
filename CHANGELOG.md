@@ -30,6 +30,10 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `ModFiles`, with `ModOptions::with_mod`.
 - `Mods::names` lists the mod files as one entry, `mod files`;
   `ModFiles::names` lists their paths.
+- `Message` gains the variant `ToolChange`: a `match` on it needs the arm.
+- The session file gains a message kind, `"role": "tool_change"`, which
+  the TypeScript haest does not read: a session that changed its tools on
+  a model that takes tool changes resumes in this haest only.
 
 ### Added
 
@@ -72,6 +76,19 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   OpenRouter's Anthropic rows carry OpenRouter's prices, so `keep_warm`
   works on them (the CLI's default model is one); a cost OpenRouter
   reports still wins over the price.
+- haest-core, haest-providers: a tool change keeps the prompt cache on a
+  model that takes mid-conversation tool changes (`cache.toolChanges` in
+  the catalog: Anthropic's own API for Claude Opus 5.5 and Sonnet 5.5).
+  The request keeps the `tools` it first sent, byte for byte, and the loop
+  records each change (a tool added, removed, hidden, shown or redefined)
+  as a `Message::ToolChange` right after the next user message or tool
+  results; Anthropic gets it as a `system` message of `tool_addition` /
+  `tool_removal` blocks, with the beta `inline-tools-2026-09-15`. A change
+  after a finished turn waits for the next user message, changes between
+  two model calls go out as one, a resumed session sends the same bytes,
+  and compaction starts over from the tools on offer then. Every other
+  model, OpenRouter's Anthropic models included, gets the current tools
+  as before. `ProviderRequest::tool_baseline` carries the baseline.
 - haest-providers: OpenAI's own API gets no cache key by default (on
   GPT-5.6 and later a key partitions the cache instead of routing to it);
   OpenRouter gets the session id as its sticky-routing key.

@@ -99,11 +99,25 @@ Two ways, by who owns the tools:
 Rust mods load once and never reload. What changes lives inside a mod: its own `LiveTools`, or
 the mod files a file-loading mod holds.
 
-The prompt cache: tools come first in a request, so a tool added, removed, hidden or shown,
-or a new description or schema, costs the next model call one cache miss. A replacement the
-model cannot tell from the old tool (same name, description, schema) costs nothing. A host
-that changes tools often defers them (`DeferMode::Proxy`); a deferred tool's schema can then
-change for free, but adding or removing one still changes ToolSearch's list and costs the miss.
+The prompt cache: tools come first in a request. A replacement the model cannot tell from the
+old tool (same name, description, schema) costs nothing anywhere. Any other change (a tool
+added, removed, hidden or shown, or a new description or schema) depends on the model:
+
+- On a model whose catalog entry has `cache.toolChanges` (Anthropic's own API for Claude
+  Opus 5.5 and Sonnet 5.5 in the bundled catalog), it costs no miss. The request keeps the
+  `tools` it first sent, byte for byte, and the loop records what changed as a
+  `Message::ToolChange` in history, sent as a `system` message of `tool_addition` /
+  `tool_removal` blocks (beta `inline-tools-2026-09-15`) right after the next user message or
+  tool results. A change made after a turn ended waits for the next user message; changes
+  between two model calls go out as one. The session file keeps them, so a resumed
+  conversation sends the same bytes. Compaction drops them and starts over from the tools on
+  offer then.
+- On any other model (OpenRouter's Anthropic models included, which drop these blocks), the
+  request is sent the current tools, and the next model call pays one cache miss.
+
+On the other models, a host that changes tools often defers them (`DeferMode::Proxy`); a
+deferred tool's schema can then change for free, but adding or removing one still changes
+ToolSearch's list and costs the miss.
 
 ## Compaction from an extension
 
