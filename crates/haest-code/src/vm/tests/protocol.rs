@@ -94,11 +94,10 @@ async fn the_stop_flag_and_the_deadline_both_stop_a_cpu_loop() {
     let (_, run) = drive(spawn_engine(flagged).unwrap(), |_, _| None).await;
     assert_eq!(run.stopped, Some(VmStop::Interrupted));
     let mut timed = job("while (true) {}", &[]);
-    timed.caps = VmCaps {
-        timeout_ms: 200,
-        memory_bytes: 32 << 20,
-        max_log_chars: 100,
-    };
+    timed.caps = VmCaps::default()
+        .with_timeout(Duration::from_millis(200))
+        .with_memory_bytes(32 << 20)
+        .with_max_log_chars(100);
     let (_, run) = drive(spawn_engine(timed).unwrap(), |_, _| None).await;
     assert_eq!(run.stopped, Some(VmStop::Timeout));
 }

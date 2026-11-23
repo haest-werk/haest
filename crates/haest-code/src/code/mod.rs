@@ -6,7 +6,7 @@ mod report;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::{
@@ -80,7 +80,7 @@ fn description(names: &[String]) -> String {
 
 Callable: {}.",
         VM_MEMORY_BYTES / 1024 / 1024,
-        VmCaps::default().timeout_ms / 1000,
+        VmCaps::default().timeout.as_secs(),
         MAX_TIMEOUT_MS / 1000,
         names.join(", ")
     )
@@ -234,7 +234,7 @@ impl Tool for CodeTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let code = req_str(&input, "code")?;
         let timeout_ms = opt_num(&input, "timeout")?
-            .unwrap_or(VmCaps::default().timeout_ms as f64)
+            .unwrap_or(VmCaps::default().timeout.as_millis() as f64)
             .clamp(1000.0, MAX_TIMEOUT_MS as f64) as u64;
         let allowed: HashSet<&str> = self.names.iter().map(String::as_str).collect();
         let tools = self
@@ -247,10 +247,7 @@ impl Tool for CodeTool {
         let inner = ctx.cancel().child_token();
         let _stop_inner = inner.clone().drop_guard();
         let bridge = Bridge::new(tools, ctx, inner);
-        let caps = VmCaps {
-            timeout_ms,
-            ..VmCaps::default()
-        };
+        let caps = VmCaps::default().with_timeout(Duration::from_millis(timeout_ms));
         let spec = bridge.spec().with_caps(caps);
         let beat = |b: VmBeat| ctx.services().debug(&beat_line(ctx, b));
         let run = run_in_vm(code, &spec, ctx.cancel(), beat).await;

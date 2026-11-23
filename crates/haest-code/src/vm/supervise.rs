@@ -2,13 +2,10 @@
 //! stop it -- on the human's interrupt, at its deadline, or by abandoning it when
 //! it does not stop within [`super::STOP_GRACE`].
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    time::Duration,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
 };
 
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
@@ -60,7 +57,7 @@ pub(super) async fn supervise(
     cancel: &CancellationToken,
     on_beat: &(dyn Fn(VmBeat) + Send + Sync),
 ) -> VmRun {
-    let deadline = Instant::now() + Duration::from_millis(spec.caps.timeout_ms);
+    let deadline = Instant::now() + spec.caps.timeout;
     let mut answering = Answering::new();
     let Engine { to_vm, mut from_vm } = engine;
     let mut stopper = Stopper {

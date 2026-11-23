@@ -91,7 +91,7 @@ impl VmSpec {
     }
 
     /// The run's bounds (the default is [`VmCaps::default`]): past
-    /// [`VmCaps::timeout_ms`] it is stopped (wall clock, from when the
+    /// [`VmCaps::timeout`] it is stopped (wall clock, from when the
     /// engine starts, waiting on native functions included), memory past
     /// [`VmCaps::memory_bytes`] is an error inside the guest, and console
     /// output past [`VmCaps::max_log_chars`] is dropped.
@@ -210,19 +210,25 @@ static ENGINES: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_ENGINE
 /// # Examples
 ///
 /// ```
+/// use std::time::Duration;
+///
 /// use haest_code::{VmCaps, VmSpec, run_in_vm};
 /// use tokio_util::sync::CancellationToken;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), haest_core::error::BoxError> {
 /// // One native function: the guest's `shout(text)` resolves to the text in capitals.
+/// let caps = VmCaps::default()
+///     .with_timeout(Duration::from_secs(5))
+///     .with_memory_bytes(16 << 20)
+///     .with_max_log_chars(10_000);
 /// let spec = VmSpec::new()
 ///     .with_native_fn("shout", |args| async move {
 ///         let text = args.first().cloned().unwrap_or_default();
 ///         Ok(text.to_uppercase())
 ///     })
 ///     .with_value("WHO", "haest")
-///     .with_caps(VmCaps { timeout_ms: 5_000, memory_bytes: 16 << 20, max_log_chars: 10_000 });
+///     .with_caps(caps);
 ///
 /// let code = "console.log('working'); return { said: await shout('hi ' + WHO) }";
 /// let run = run_in_vm(code, &spec, &CancellationToken::new(), |_| {}).await;

@@ -4,40 +4,106 @@
 use std::{
     collections::HashMap,
     sync::{Arc, atomic::AtomicBool},
+    time::Duration,
 };
 
 use serde_json::{Map, Value};
 
-/// The bounds of one engine run, for [`run_in_vm`](super::run_in_vm).
+/// The bounds of one engine: a run of [`run_in_vm`](super::run_in_vm) (the
+/// Code tool's, the sandbox `js` command's) or a mod file (haest-bridges'
+/// `JsMod`). All of haest's JavaScript runs on the same engine, held to this
+/// one type; each field says which runs read it.
 ///
-/// The default is the Code tool's when the model sets no timeout: a minute,
-/// [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES), 100,000 characters of output.
+/// [`VmCaps::default`] is the Code tool's when the model sets no timeout: a
+/// minute, [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES), 100,000 characters of
+/// output. [`VmCaps::mod_file`] is a mod file's: 30 s to load, 128 MiB, 10 s
+/// of code without a pause.
 ///
 /// ```
+/// use std::time::Duration;
+///
 /// use haest_code::VmCaps;
 ///
-/// let quick = VmCaps { timeout_ms: 5_000, ..VmCaps::default() };
+/// let quick = VmCaps::default().with_timeout(Duration::from_secs(5));
 /// assert_eq!(quick.memory_bytes, haest_code::VM_MEMORY_BYTES);
+///
+/// let strict = VmCaps::mod_file().with_timeout(Duration::from_secs(5));
+/// assert_eq!(strict.memory_bytes, 128 << 20);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct VmCaps {
-    /// Wall-clock deadline in milliseconds, from when the engine starts; past
-    /// it the run is stopped as [`VmStop::Timeout`], even mid-loop.
-    pub timeout_ms: u64,
-    /// QuickJS heap limit in bytes; an allocation past it is an error in the guest.
+    /// QuickJS heap limit in bytes; an allocation past it is an error in the
+    /// guest. Every run reads it.
     pub memory_bytes: usize,
+    /// How long a run has, wall clock, waiting included. A run of
+    /// [`run_in_vm`](super::run_in_vm) is stopped past it, from when its
+    /// engine starts, even mid-loop ([`VmStop::Timeout`]). A mod file's
+    /// default export must return within it when the mod loads; after that
+    /// the mod's calls have no deadline, and [`slice`](Self::slice) bounds
+    /// its code.
+    pub timeout: Duration,
+    /// The longest a mod file's code may run without a pause (awaiting does
+    /// not count). Past it the code is stopped: every call into the mod in
+    /// flight fails, and the next call runs as usual. A run of
+    /// [`run_in_vm`](super::run_in_vm) does not read it: its
+    /// [`timeout`](Self::timeout) stops a CPU loop.
+    pub slice: Duration,
     /// Console output kept, in characters; the rest is dropped and
-    /// [`VmRun::logs_truncated`] set.
+    /// [`VmRun::logs_truncated`] set. A mod file has no console and does not
+    /// read it.
     pub max_log_chars: usize,
 }
 
 impl Default for VmCaps {
     fn default() -> Self {
         Self {
-            timeout_ms: 60_000,
             memory_bytes: super::VM_MEMORY_BYTES,
+            timeout: Duration::from_secs(60),
+            slice: Duration::from_secs(10),
             max_log_chars: 100_000,
         }
+    }
+}
+
+impl VmCaps {
+    /// A mod file's caps: 128 MiB of memory, 30 s for its default export to
+    /// return, 10 s of code without a pause.
+    pub fn mod_file() -> Self {
+        Self {
+            memory_bytes: 128 << 20,
+            timeout: Duration::from_secs(30),
+            ..Self::default()
+        }
+    }
+
+    /// The QuickJS heap limit, in bytes.
+    #[must_use]
+    pub fn with_memory_bytes(mut self, bytes: usize) -> Self {
+        self.memory_bytes = bytes;
+        self
+    }
+
+    /// How long a run has, wall clock, waiting included; for a mod file, how
+    /// long its default export has to return.
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// The longest a mod file's code may run without a pause.
+    #[must_use]
+    pub fn with_slice(mut self, slice: Duration) -> Self {
+        self.slice = slice;
+        self
+    }
+
+    /// Console output kept, in characters.
+    #[must_use]
+    pub fn with_max_log_chars(mut self, chars: usize) -> Self {
+        self.max_log_chars = chars;
+        self
     }
 }
 
@@ -45,7 +111,7 @@ impl Default for VmCaps {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VmStop {
-    /// It reached [`VmCaps::timeout_ms`].
+    /// It reached [`VmCaps::timeout`].
     Timeout,
     /// The caller's cancel token fired.
     Interrupted,

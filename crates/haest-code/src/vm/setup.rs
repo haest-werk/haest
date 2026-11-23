@@ -75,7 +75,7 @@ impl Clock {
         let started = Instant::now();
         Rc::new(Self {
             started,
-            deadline: started + Duration::from_millis(job.caps.timeout_ms),
+            deadline: started + job.caps.timeout,
             stop: job.stop.clone(),
             last_beat: Cell::new(started),
             shared,

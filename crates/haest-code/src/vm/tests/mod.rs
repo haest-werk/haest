@@ -19,11 +19,10 @@ use tokio_util::sync::CancellationToken;
 use super::{MAX_ENGINES, NativeFn, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_with_slots};
 
 fn caps(timeout_ms: u64) -> VmCaps {
-    VmCaps {
-        timeout_ms,
-        memory_bytes: 32 << 20,
-        max_log_chars: 10_000,
-    }
+    VmCaps::default()
+        .with_timeout(Duration::from_millis(timeout_ms))
+        .with_memory_bytes(32 << 20)
+        .with_max_log_chars(10_000)
 }
 
 /// A native fn from a closure over its args.

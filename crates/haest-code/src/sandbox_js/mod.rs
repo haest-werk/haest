@@ -291,11 +291,9 @@ pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsE
         end.saturating_duration_since(Instant::now())
     });
     let timeout = left.min(JS_TIMEOUT);
-    let caps = VmCaps {
-        timeout_ms: timeout.as_millis() as u64,
-        max_log_chars: JS_MAX_OUTPUT,
-        ..VmCaps::default()
-    };
+    let caps = VmCaps::default()
+        .with_timeout(timeout)
+        .with_max_log_chars(JS_MAX_OUTPUT);
     let filename = path
         .file_name()
         .map_or_else(|| "script.js".into(), |n| n.to_string_lossy().into_owned());

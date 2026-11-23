@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::{caps, native_fn, run, spec};
-use crate::vm::{VmCaps, VmSpec};
+use crate::vm::VmSpec;
 
 #[tokio::test]
 async fn function_mode_logs_the_returned_value_and_values_set_as_globals() {
@@ -121,10 +121,7 @@ async fn the_guest_has_no_host_reach_of_its_own() {
 #[tokio::test]
 async fn memory_is_capped() {
     let s = VmSpec::default();
-    let tight = VmCaps {
-        memory_bytes: 8 << 20,
-        ..caps(10_000)
-    };
+    let tight = caps(10_000).with_memory_bytes(8 << 20);
     let code = "const a = []; for (;;) a.push('x'.repeat(1024) + a.length)";
     let r = run(code, &s, tight, &CancellationToken::new()).await;
     assert!(r.error.is_some());
