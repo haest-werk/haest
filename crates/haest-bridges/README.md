@@ -33,8 +33,10 @@ its mods in Rust never links an engine.
     load keeps the version before and is reported. `ask` puts each change
     before the human first. The model's next request has the new tools.
 
-A shell bridge (a hook as a command, JSON on stdin and stdout) and an HTTP
-bridge (a hook behind a URL) come next, as features of this crate.
+- `shell`: `ShellHook`, a hook that is a command, run on the host once per
+  event: the event as JSON on its stdin, the decision on its stdout.
+- `http`: `HttpHook`, a hook behind a URL: each event is a POST of its JSON,
+  and the response's body is the decision.
 
 ```rust
 use haest_bridges::{ModFileOptions, ModFiles, ModReload};
@@ -70,8 +72,104 @@ async fn main() {
 }
 ```
 
-Through the facade this crate is `haest::bridges` (feature `bridge-js`, on by
-default). The docs on [docs.rs](https://docs.rs/haest-bridges/) have the
+## Hooks in another process: `shell` and `http`
+
+`ShellHook` and `HttpHook` are `Hook<E>`s: bind one per event in
+haest-mods' `Hooks`, alone or in a `Binding` with its timeout (60 s by
+default), `on_error` and tool matcher, as a Rust closure is bound.
+
+```rust
+use haest_bridges::{Claude, HttpHook, ShellHook};
+use haest_mods::{Binding, Hooks};
+
+let hooks = Hooks::new()
+    // A Claude Code hook script, as it is, on Bash calls only.
+    .on_tool_before(
+        Binding::new(ShellHook::new("sh .claude/hooks/no-rm-rf.sh").with_dialect(Claude::new()))
+            .with_matcher("Bash"),
+    )
+    // A service that sees every finished turn, in haest's own JSON.
+    .on_turn_end(HttpHook::new("https://review.internal/turn-end").with_header("authorization", "Bearer t0k3n"));
+```
+
+A command answers with its exit code and stdout:
+
+| Exit | stdout | What it is |
+|---|---|---|
+| 0 | empty | a pass: the event goes on as it was |
+| 0 | the event's decision, in the dialect | that decision |
+| 0 | anything else | a failure |
+| 2 | (ignored) | the event's blocking answer, stderr its text: `tool.before` refuses the call, `model.before` and `model.after` stop the turn, `turn.end` keeps it going; on any other event, a failure |
+| any other | (ignored) | a failure, stderr in its report |
+
+A server answers with its status and body: a 2xx with an empty body passes,
+a 2xx with the event's decision is that decision, anything else (another
+status, no answer, a body that is no decision, one past 64 MiB) is a failure.
+An HTTP hook has no exit 2: a block is an answer.
+
+A failure and a timeout do what the binding's `on_error` says. The defaults
+fail closed where it matters: a `tool.before` hook that breaks refuses the
+call (Claude Code's default lets it through), and on every other event the
+turn goes on and the human sees the failure.
+
+A command runs on the host, never in the agent's sandbox, through
+haest-workspace's real exec: `bash -c <command>` in a process group of its
+own, killed whole when its binding's time is up or the human interrupts. It
+runs in the conversation's directory (`with_cwd`, else a tool event's own),
+gets only the variables the host hands in (`with_env`), and the first 64 MiB
+of each stream are kept. A POST goes through haest-http's `HttpClient` (the
+host's own with `with_client`), with `content-type: application/json` and the
+headers set with `with_header`. A hook runs with the host's full trust: load a
+project's hooks only from a directory the human trusts, and an HTTP hook only
+from the human's own configuration, since it receives every tool input.
+
+### Dialects
+
+`Haest`, the default, speaks the protocol a mod file's handler does, on every
+event: the input is `{ "event": "tool.before", ...payload }` (the payload's own
+JSON, the event's name added), the answer is the decision's own JSON
+(`{ deny }`, `{ input }`, a tool output, text, `{ stop }`, `{ steer }`,
+`{ continue }`, `{ compact }`).
+
+`Claude` speaks Claude Code's hook JSON, so its hook scripts and HTTP hooks run
+as they are, on the events Claude Code has:
+
+| haest event | Claude Code event | What its answer does |
+|---|---|---|
+| `tool.before` | `PreToolUse` | `permissionDecision: "deny"` (or the older `decision: "block"`) refuses the call with its reason; `updatedInput` replaces the whole input; `allow` and `defer` pass; `ask` refuses too, with the hook's reason |
+| `tool.after` | `PostToolUse` | `updatedToolOutput` replaces the output (an object as its JSON text); `additionalContext` and a `decision: "block"`'s `reason` are added after the output the model reads |
+| `prompt.submit` | `UserPromptSubmit` | `additionalContext`, or plain text, is added after the prompt; `decision: "block"` is a failure |
+| `system.prompt` | `SessionStart` | `additionalContext`, or plain text, is added to the system prompt |
+| `turn.end` | `Stop` | `decision: "block"` with its `reason`, or `additionalContext`, keeps the turn going with that text |
+
+The input has the fields Claude Code sends that haest has: `hook_event_name`,
+`cwd`, `session_id` and `transcript_path` when the host gives them
+(`Claude::with_session_id`, `Claude::with_transcript_path`), and per event
+`tool_name`, `tool_input`, `tool_use_id`, `tool_response` (the output's text),
+`prompt`, `stop_hook_active` and `last_assistant_message`. A command also gets
+`CLAUDE_PROJECT_DIR`.
+
+Where Claude Code can do more than haest's event, haest fails closed or
+ignores it:
+
+- `ask` cannot reach the human from a hook: it refuses the call.
+- `prompt.submit` cannot refuse a prompt: `decision: "block"` and exit 2 are
+  failures, reported.
+- Exit 2 on `PostToolUse` is a failure, where Claude Code shows stderr to the
+  model.
+- `continue: false`, `stopReason`, `systemMessage`, `suppressOutput` and
+  `PreToolUse`'s `additionalContext` have no haest decision: ignored.
+- Matchers are haest's (an exact tool name or a `prefix*`), never Claude
+  Code's regular expressions.
+- `model.before` and `model.after` have no Claude Code event: a `Claude` hook
+  bound to one does not compile.
+- `transcript_path` names the host's own transcript, which is not Claude
+  Code's format; a script that parses it reads it wrong.
+- A command gets only the variables the host hands in, where a Claude Code
+  hook inherits Claude Code's whole environment.
+
+Through the facade this crate is `haest::bridges` (features `bridge-js`, on by
+default, `bridge-shell` and `bridge-http`, off). The docs on [docs.rs](https://docs.rs/haest-bridges/) have the
 details; the repository's
 [README](https://github.com/haest-werk/haest/blob/main/README.md) has the rest
 of haest.

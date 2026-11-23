@@ -29,7 +29,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest-mcp` | MCP client: stdio and streamable HTTP servers, their tools as haest tools |
 | `haest-code` | embedded QuickJS: the Code tool and the sandbox `js` command |
 | `haest-mods` | mods: change how haest behaves without forking it, in Rust: native mods, hooks bound per event, the events' protocol (payloads and decisions, typed once), approvals and plan mode. Links no script engine |
-| `haest-bridges` | mods and hooks written outside Rust, speaking haest-mods' protocol, one feature per bridge: `js` runs `.js`/`.ts` mod files in embedded QuickJS and reloads a conversation's mod files as they change (`mod_reload`) |
+| `haest-bridges` | mods and hooks written outside Rust, speaking haest-mods' protocol, one feature per bridge: `js` runs `.js`/`.ts` mod files in embedded QuickJS and reloads a conversation's mod files as they change (`mod_reload`); `shell` runs a command per event (`ShellHook`), `http` POSTs each event to a URL (`HttpHook`), both in haest's JSON or Claude Code's hook JSON, so Claude Code hook scripts run as they are |
 | `haest-ts` | the one TypeScript stripper Code, `js` and mod files share |
 | `haest-settings` | the settings as plain typed values (`Settings::bare`), no files, no environment, no flags |
 | `haest-config` | the opt-in loader, a builder (`Loader`): TOML files, `HAEST_*` variables and flags in the order a host adds them, profiles, trust; plus what the runtime is handed beside the settings (keys, `providers.json`, `.mcp.json`, a child's environment) |
@@ -61,6 +61,8 @@ each part a module of its name (`haest::workspace` is always the workspace crate
 | `code` | `haest::code` (the Code tool, the sandbox `js` command) | yes |
 | `mods` | `haest::mods` (native mods and hooks, approvals, plan mode; no script engine) | yes |
 | `bridge-js` | `haest::bridges` (`.js`/`.ts` mod files in embedded QuickJS, reloaded as they change); turns on `mods` | yes |
+| `bridge-shell` | `haest::bridges::ShellHook`: a hook that is a command run on the host per event, JSON on its stdin and stdout, in haest's dialect or Claude Code's; turns on `mods` | no |
+| `bridge-http` | `haest::bridges::HttpHook`: a hook behind a URL, a POST per event through `haest::http`, in the same two dialects; turns on `mods` and `http` | no |
 | `settings` | `haest::settings` (the values, plain) | yes |
 | `config` | `haest::config` (the loader: files, variables, flags, profiles, trust) | no |
 | `runtime` | `haest::runtime` (the conversation built from what it is handed) and everything above but `config` | no |
@@ -408,6 +410,11 @@ Elsewhere:
 - Unix only (macOS, Linux).
 - The `claude` profile reads part of Claude Code's setup, not all of it
   (see [The `claude` profile](#the-claude-profile)).
+- A shell or HTTP hook in Claude Code's dialect runs Claude Code's hook
+  scripts as they are, but haest's events take less than Claude Code's: an
+  `ask` refuses the call, a prompt cannot be refused, `continue: false` is
+  ignored, and matchers are haest's, not regular expressions. The list is in
+  [haest-bridges' README](crates/haest-bridges/README.md#dialects).
 
 ## License
 

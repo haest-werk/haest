@@ -106,6 +106,22 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   loop.
 - haest-bridges, a new crate: the ways to hook haest from outside Rust,
   one feature each. `js` is the mod files, as `ModFiles`.
+- haest-bridges: hooks in another process. `shell` is `ShellHook`, a
+  command per event (the event as JSON on stdin, the decision on stdout,
+  exit 2 the event's blocking answer), run on the host in its own process
+  group and killed whole at its binding's timeout or an interrupt. `http`
+  is `HttpHook`, a POST per event through haest-http's `HttpClient`. Both
+  speak haest's own JSON (`Haest`, every event) or Claude Code's hook JSON
+  (`Claude`: PreToolUse, PostToolUse, UserPromptSubmit, SessionStart and
+  Stop), so Claude Code hook scripts run as they are. The facade's
+  `bridge-shell` and `bridge-http`, off by default; the example
+  `external_hooks` and [docs/extending.md](docs/extending.md#hooks-in-another-process).
+- haest-mods: `TurnEndPayload` has `answer` (the turn's last answer, as
+  `model.after` has it) and `continued` (a `turn.end` decision already
+  kept this turn going), worked out once in haest-mods for every hook.
+  haest now needs tokio-util 0.7.19 or later.
+- haest-workspace: `RealWorkspace::shell_with_stdin` hands a command its
+  stdin, through the same exec as every command.
 - Mod files reload as they change: the setting `mod_reload` (`off`, the
   default; `ask`, where each new, changed or deleted file waits for the
   human's Allow; `auto`) has `ModFiles` read them again before each model

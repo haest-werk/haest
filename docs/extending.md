@@ -38,8 +38,9 @@ A host writes `AgentHooks` once. Everything else goes in as a mod: the built-ins
 | the host's loop | each step | `AgentHooks` | none: the host's own | none |
 
 The gates hold the lists equal: `JsMod` and `Hooks` implement every `Mod` method
-(`clippy::missing_trait_methods`), and tests drive each event through a `.ts` mod and a
-`Hooks` binding. A new `Mod` event without its twins fails the build's gates.
+(`clippy::missing_trait_methods`), and tests drive each event through a `.ts` mod, a
+`Hooks` binding, a `ShellHook` and an `HttpHook`. A new `Mod` event without its twins fails
+the build's gates.
 
 ## What each event may decide
 
@@ -195,6 +196,47 @@ never reload.
 
 Every mod, native or file, runs with the host's full trust, sandbox or not.
 
+## Hooks in another process
+
+[`ShellHook`](../crates/haest-bridges/src/shell.rs) (haest-bridges feature `shell`, the
+facade's `bridge-shell`) and [`HttpHook`](../crates/haest-bridges/src/http.rs) (`http`,
+`bridge-http`) are hooks: bound per event in `Hooks` as a closure is, with the binding's
+timeout, `on_error` and matcher. Both are off by default.
+
+| | `ShellHook` | `HttpHook` |
+|---|---|---|
+| per event | a command, `bash -c`, on the host (never in the sandbox) | a POST, through haest-http's `HttpClient` |
+| the input | on stdin | the body, `content-type: application/json` |
+| the decision | stdout on exit 0; empty passes | a 2xx response's body; empty passes |
+| a blocking answer | exit 2, stderr its text | the decision itself |
+| a failure (`on_error`) | any other exit, or stdout that is no decision | another status, no answer, or a body that is no decision |
+| at the timeout or an interrupt | its whole process group is killed | the request is dropped |
+| it gets | the variables the host hands in, nothing else of its environment | the headers the host sets |
+
+Exit 2 refuses a `tool.before` call, stops the turn on `model.before` and `model.after`, and
+keeps a `turn.end` going; on the other events it is a failure. haest fails closed: a broken
+`tool.before` hook refuses the call.
+
+Each speaks a dialect:
+
+| Dialect | The input | The answer | Events |
+|---|---|---|---|
+| `Haest`, the default | `{ "event": "<name>", ...payload }`: the payload above, with the event's name | the decision's JSON above | every one |
+| `Claude` | Claude Code's hook JSON (`hook_event_name`, `tool_name`, `tool_input`, `stop_hook_active`, ..), plus `CLAUDE_PROJECT_DIR` for a command | Claude Code's (`permissionDecision`, `updatedInput`, `updatedToolOutput`, `additionalContext`, `decision: "block"`) | `tool.before` (PreToolUse), `tool.after` (PostToolUse), `prompt.submit` (UserPromptSubmit), `system.prompt` (SessionStart), `turn.end` (Stop) |
+
+So a Claude Code hook script runs as it is. Where Claude Code can do more than haest's event
+(an `ask`, refusing a prompt, `continue: false`), haest refuses or ignores, and a `Claude` hook
+on `model.before` or `model.after` does not compile; the mapping and that list are on
+[`Claude`](../crates/haest-bridges/src/dialect/claude.rs) and in
+[haest-bridges' README](../crates/haest-bridges/README.md#dialects).
+[`examples/hooks/no-rm-rf.sh`](examples/hooks/no-rm-rf.sh) is such a script, and
+[`external_hooks.rs`](../crates/haest/examples/external_hooks.rs) runs it beside an HTTP hook
+on `turn.end`.
+
+A hook runs with the host's full trust. Load a project's hooks only in a directory the human
+trusts, and an HTTP hook only from the human's own configuration: it receives every tool
+input. There are no hook settings yet (`[[hooks.<event>]]`): a host binds them in Rust.
+
 ## Which form to use
 
 | You are | Use |
@@ -202,3 +244,5 @@ Every mod, native or file, runs with the host's full trust, sandbox or not.
 | a host embedding haest in Rust (brain) | `AgentHooks` for the host's own loop, native `Mod`s and `Hooks` for the rest. No bridge, no QuickJS |
 | a human customizing the CLI | mod files in `~/.config/haest/mods/` |
 | a project shipping rules with its repo | mod files in `.haest/mods/`, which the human turns on with `project_mods` in a directory they trust |
+| a host with Claude Code hook scripts, or a check in any language | `ShellHook`, in the `Claude` dialect for the scripts |
+| a host with a service that reviews or gates the agent | `HttpHook` |
