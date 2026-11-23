@@ -1,16 +1,19 @@
 //! The prompt cache over Chat Completions: the TTL and the tools breakpoint
 //! for Anthropic models on OpenRouter, the cache key on the servers that
-//! document one, and no pre-warm.
+//! document one, and the pre-warm only for Anthropic models on OpenRouter.
 
 use haest_core::{
     cache::{CacheTtl, PrewarmRefused},
     messages::StopReason,
-    provider::{ProviderRequest, ToolSpec, WebSearchEngine, WebSearchOptions},
+    provider::{Effort, ProviderRequest, ToolSpec, WebSearchEngine, WebSearchOptions},
 };
 use serde_json::{Value, json};
 
-use super::{tests::openrouter, *};
-use crate::testing::{FakeHttp, breakpoints, collect, request};
+use super::{
+    tests::{chunk, openrouter, usage_chunk},
+    *,
+};
+use crate::testing::{FakeHttp, FakeReply, breakpoints, chat_sse, collect, request};
 
 fn tooled(model: &str, ttl: CacheTtl) -> ProviderRequest {
     let tool = |name: &str| ToolSpec {
@@ -103,15 +106,96 @@ fn an_explicit_partition_key_goes_to_openais_own_api_only() {
 }
 
 #[tokio::test]
-async fn a_pre_warm_is_refused_and_nothing_is_sent() {
-    let t = FakeHttp::new([]);
+async fn an_anthropic_pre_warm_on_openrouter_is_the_real_request_capped_at_one_token() {
+    let usage = json!({"prompt_tokens": 8_420, "completion_tokens": 1,
+        "prompt_tokens_details": {"cached_tokens": 8_412}});
+    let reply = chat_sse(&[chunk(json!({"content": "Hi"})), usage_chunk(usage)]);
+    let t = FakeHttp::new([FakeReply::sse(reply)]);
+    let real = tooled("anthropic/claude-haiku-5.5", CacheTtl::OneHour)
+        .with_effort(Effort::High)
+        .with_max_tokens(8_000)
+        .with_cache_key("s-1");
     let provider = CompatProvider::new(openrouter(), t.clone());
-    let req = request("anthropic/claude-sonnet-5").with_prewarm(true);
-    assert!(matches!(
-        provider.check_prewarm(&req),
-        Err(PrewarmRefused::Unsupported { provider }) if provider == "openrouter"
-    ));
-    let (_, msg) = collect(provider.stream(req)).await;
-    assert_eq!(msg.stop_reason, StopReason::Error);
-    assert!(t.requests().is_empty());
+    assert_eq!(
+        provider.check_prewarm(&real.clone().with_prewarm(true)),
+        Ok(())
+    );
+    let (_, msg) = collect(provider.stream(real.clone().with_prewarm(true))).await;
+    assert_eq!((msg.usage.cache_read, msg.usage.cache_write), (8_412, 0));
+
+    let mut sent = t.last_body();
+    assert_eq!(sent["max_tokens"], 1);
+    sent["max_tokens"] = json!(8_000);
+    assert_eq!(
+        sent,
+        build_compat_body(&openrouter(), &real),
+        "otherwise the real request: messages, breakpoints, tools, effort, session"
+    );
+}
+
+#[test]
+fn a_pre_warm_without_a_cap_of_its_own_still_sends_one_token() {
+    let warm = request("anthropic/claude-opus-5.5").with_prewarm(true);
+    assert_eq!(build_compat_body(&openrouter(), &warm)["max_tokens"], 1);
+    let real = build_compat_body(&openrouter(), &request("anthropic/claude-opus-5.5"));
+    assert!(real.get("max_tokens").is_none());
+}
+
+#[tokio::test]
+async fn a_budget_thinking_model_warms_only_when_it_does_not_think() {
+    for model in [
+        "anthropic/claude-sonnet-4.5",
+        "anthropic/claude-opus-4.1",
+        "anthropic/claude-haiku-4.5:batch",
+        "anthropic/claude-3.7-sonnet",
+    ] {
+        let t = FakeHttp::new([]);
+        let provider = CompatProvider::new(openrouter(), t.clone());
+        let thinking = request(model).with_effort(Effort::High).with_prewarm(true);
+        assert!(
+            matches!(
+                provider.check_prewarm(&thinking),
+                Err(PrewarmRefused::BudgetThinking { model: m }) if m == model
+            ),
+            "{model}"
+        );
+        let (_, msg) = collect(provider.stream(thinking)).await;
+        assert_eq!(msg.stop_reason, StopReason::Error);
+        assert!(t.requests().is_empty(), "{model}: nothing sent");
+        for effort in [None, Some(Effort::Off)] {
+            let mut plain = request(model).with_prewarm(true);
+            plain.effort = effort;
+            assert_eq!(provider.check_prewarm(&plain), Ok(()), "{model} {effort:?}");
+        }
+    }
+    let adaptive = request("anthropic/claude-sonnet-4.6")
+        .with_effort(Effort::Max)
+        .with_prewarm(true);
+    let provider = CompatProvider::new(openrouter(), FakeHttp::new([]));
+    assert_eq!(provider.check_prewarm(&adaptive), Ok(()));
+}
+
+#[tokio::test]
+async fn a_pre_warm_elsewhere_is_refused_and_nothing_is_sent() {
+    let local = CompatOptions::new("local", "k").with_base_url("http://localhost:1/v1");
+    for (opts, model) in [
+        (openrouter(), "openai/gpt-6.1-sol"),
+        (openrouter(), "google/gemini-4-argon"),
+        (local, "anthropic/claude-opus-5.5"),
+    ] {
+        let t = FakeHttp::new([]);
+        let provider = CompatProvider::new(opts.clone(), t.clone());
+        let req = request(model).with_prewarm(true);
+        assert!(
+            matches!(
+                provider.check_prewarm(&req),
+                Err(PrewarmRefused::Unsupported { provider }) if provider == opts.id()
+            ),
+            "{model} on {}",
+            opts.id()
+        );
+        let (_, msg) = collect(provider.stream(req)).await;
+        assert_eq!(msg.stop_reason, StopReason::Error);
+        assert!(t.requests().is_empty(), "{model}: nothing sent");
+    }
 }

@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::{CompatFlavor, CompatOptions};
 use crate::{
+    anthropic::uses_budget_thinking,
     cache::cache_control,
     openai_media::{CHAT, with_tool_media},
     result_text,
@@ -23,9 +24,24 @@ use crate::{
 };
 
 /// An Anthropic model on OpenRouter: it takes `cache_control` with a TTL,
-/// and on a function tool too.
-fn openrouter_anthropic(flavor: CompatFlavor, model: &str) -> bool {
+/// and on a function tool too, and a cache pre-warm.
+pub(super) fn openrouter_anthropic(flavor: CompatFlavor, model: &str) -> bool {
     flavor == CompatFlavor::OpenRouter && model.starts_with("anthropic/")
+}
+
+/// Whether OpenRouter's Anthropic `model` (`anthropic/claude-sonnet-4.5`,
+/// a `:batch` variant too) thinks on a token budget at an `effort` above
+/// off: the Claude models before adaptive thinking, the same ones
+/// Anthropic's own API sends a budget for ([`uses_budget_thinking`] on the
+/// id with its dots as dashes). OpenRouter derives that budget from
+/// `max_tokens` and leaves the thinking out when the cap is too small for
+/// it, so a pre-warm capped at one token renders another prompt than the
+/// real requests do.
+pub(super) fn openrouter_budget_thinking(model: &str, effort: Option<Effort>) -> bool {
+    let thinks = effort.is_some_and(|e| e != Effort::Off);
+    let id = model.strip_prefix("anthropic/").unwrap_or(model);
+    let id = id.split_once(':').map_or(id, |(id, _)| id);
+    thinks && uses_budget_thinking(&id.replace('.', "-"))
 }
 
 /// The `cache_control` a breakpoint for `model` carries, or None where the

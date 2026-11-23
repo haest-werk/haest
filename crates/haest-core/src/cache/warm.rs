@@ -32,8 +32,9 @@ impl Agent {
     /// the provider's prompt cache holds it for the next turn: the system
     /// prompt, tools, effort, cache TTL and history the next model call
     /// would send, ending where the last request ended (its last user or
-    /// tool message), with nothing after it. The provider generates nothing
-    /// (Anthropic: `max_tokens: 0`, not streamed).
+    /// tool message), with nothing after it. The provider generates as
+    /// little as it can (Anthropic: `max_tokens: 0`, not streamed, nothing;
+    /// OpenRouter's `anthropic/` models: `max_tokens: 1`, one token).
     ///
     /// It changes no history and emits no event. What it cost goes on the
     /// conversation's ledger, and toward the running turn's caps when one

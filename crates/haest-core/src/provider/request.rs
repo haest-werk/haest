@@ -51,7 +51,8 @@ pub struct ProviderRequest {
     /// not share a cache (one customer's conversations from another's).
     pub partition_key: Option<String>,
     /// A cache pre-warm: the provider reads the request into its prompt
-    /// cache and generates nothing. A provider sends one only when
+    /// cache and generates as little as it can (nothing on Anthropic's own
+    /// API, one token on OpenRouter). A provider sends one only when
     /// [`Provider::check_prewarm`](super::Provider::check_prewarm) says it
     /// can; otherwise the call ends with that refusal as its error, and
     /// nothing is sent.

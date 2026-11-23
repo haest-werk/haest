@@ -12,7 +12,8 @@
 //!
 //! **Pre-warm.** [`Agent::warm_cache`](crate::Agent::warm_cache) sends the conversation's last request
 //! again as a pre-warm ([`ProviderRequest::prewarm`](crate::ProviderRequest::prewarm):
-//! `max_tokens: 0` on Anthropic, nothing generated), which reads the cached
+//! `max_tokens: 0` on Anthropic, nothing generated; `max_tokens: 1` for
+//! Anthropic's models on OpenRouter, which does not honour 0), which reads the cached
 //! prefix and so restarts its lifetime. A host that pings an idle
 //! conversation every [`CacheTtl::ping_every`] keeps its cache for the next
 //! turn, and [`ping_pays`] says, from the model's prices, how long that chain
@@ -87,17 +88,19 @@ impl CacheTtl {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PrewarmRefused {
-    /// The provider has no pre-warm request haest sends: only Anthropic's
-    /// Messages API does today.
+    /// The provider has no pre-warm request haest sends for this model:
+    /// only Anthropic's Messages API does today, and OpenRouter for its
+    /// `anthropic/` models.
     #[error("{provider} sends no cache pre-warm request")]
     Unsupported {
         /// The provider's id.
         provider: String,
     },
     /// The model thinks on a token budget (`thinking.type: "enabled"`, the
-    /// Claude models before adaptive thinking), and Anthropic refuses that
-    /// in a pre-warm. One without the thinking writes an entry the real
-    /// requests never read.
+    /// Claude models before adaptive thinking), and a pre-warm cannot carry
+    /// it: Anthropic refuses it at `max_tokens: 0`, and OpenRouter drops a
+    /// budget its one-token cap cannot hold. One without the thinking writes
+    /// an entry the real requests never read.
     #[error("{model} thinks on a token budget, which a pre-warm request cannot carry")]
     BudgetThinking {
         /// The provider's model id.

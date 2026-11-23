@@ -23,7 +23,9 @@ use haest_core::{
 };
 use serde_json::{Value, json};
 
-pub(crate) use convert::{thinking_params, to_anthropic_messages, to_anthropic_tools};
+pub(crate) use convert::{
+    thinking_params, to_anthropic_messages, to_anthropic_tools, uses_budget_thinking,
+};
 
 use haest_http::Request;
 

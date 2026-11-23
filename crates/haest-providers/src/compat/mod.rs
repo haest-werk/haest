@@ -37,7 +37,10 @@ use haest_http::Request;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use convert::{cache_key_extras, mark_last_tool, reasoning_effort_extras};
+use convert::{
+    cache_key_extras, mark_last_tool, openrouter_anthropic, openrouter_budget_thinking,
+    reasoning_effort_extras,
+};
 pub(crate) use convert::{flavor_extras, to_chat_messages, to_chat_tools};
 pub use options::CompatOptions;
 pub(crate) use stream::{StreamState, apply_chunk, finish_message};
@@ -48,6 +51,13 @@ use crate::{
     sse::SseEvent,
     web_search::web_search_tool,
 };
+
+/// The output cap of a cache pre-warm on OpenRouter: one token. OpenRouter
+/// does not honour `max_tokens: 0` (the model answers in full); at 1 the
+/// pre-warm reads the cached prefix and generates one token (measured on
+/// `anthropic/claude-haiku-5.5`, an 8.4k prefix: 8,412 tokens read, none
+/// written).
+pub(crate) const PREWARM_MAX_TOKENS: u32 = 1;
 
 /// Which kind of Chat Completions server a [`CompatProvider`] talks to; the
 /// extras it sends depend on it.
@@ -86,7 +96,10 @@ pub enum CompatFlavor {
 /// as `session_id` (its sticky routing; a key over 256 characters is not
 /// sent), and its [`partition_key`](haest_core::ProviderRequest::partition_key)
 /// to OpenAI's own API as `prompt_cache_key`; any other server gets
-/// neither. It sends no cache pre-warm ([`check_prewarm`](Self::check_prewarm)).
+/// neither. A [`prewarm`](haest_core::ProviderRequest::prewarm) request to
+/// an `anthropic/` model on OpenRouter goes out as the real request capped
+/// at `max_tokens: 1` (OpenRouter does not honour 0); every other is
+/// refused ([`check_prewarm`](Self::check_prewarm)).
 ///
 /// # Examples
 ///
@@ -126,27 +139,54 @@ impl CompatProvider {
         drive(&self.sender, self.http_request(&req), req.cancel, fold)
     }
 
-    /// Whether [`stream`](Self::stream) sends `req` as a cache pre-warm: never.
-    /// Neither OpenRouter nor OpenAI documents one for Chat Completions: a
-    /// pre-warm request ends with this refusal as its error, and nothing is
+    /// Whether [`stream`](Self::stream) sends `req` as a cache pre-warm: only
+    /// to an `anthropic/` model on OpenRouter, as the real request capped at
+    /// one output token (`max_tokens: 1`). OpenRouter ignores
+    /// `max_tokens: 0` and lets the model answer in full; at one token it
+    /// reads the prefix and writes the breakpoints as Anthropic's own
+    /// pre-warm does, for the price of that token. Not for a model that
+    /// thinks on a token budget at the request's effort (the Claude models
+    /// before adaptive thinking): OpenRouter drops a budget the one-token cap
+    /// cannot hold, so the pre-warm would cache a prompt the real requests
+    /// never send. No other server or model documents one. A refused
+    /// pre-warm request ends with the refusal as its error, and nothing is
     /// sent.
     ///
     /// ```
-    /// use haest_core::ProviderRequest;
-    /// use haest_providers::{CompatOptions, CompatProvider, http::HttpClientRef};
+    /// use haest_core::{ProviderRequest, cache::PrewarmRefused, provider::Effort};
+    /// use haest_providers::{CompatFlavor, CompatOptions, CompatProvider, http::HttpClientRef};
     ///
-    /// let provider = CompatProvider::new(CompatOptions::new("local", "k"), HttpClientRef::default());
-    /// let warm = ProviderRequest::new("qwen3-coder", vec![]).with_prewarm(true);
-    /// assert!(provider.check_prewarm(&warm).is_err());
+    /// let openrouter = CompatOptions::new("openrouter", "k").with_flavor(CompatFlavor::OpenRouter);
+    /// let provider = CompatProvider::new(openrouter, HttpClientRef::default());
+    /// let warm = |model: &str| ProviderRequest::new(model, vec![]).with_prewarm(true);
+    /// assert_eq!(provider.check_prewarm(&warm("anthropic/claude-opus-5.5").with_effort(Effort::High)), Ok(()));
+    /// assert!(matches!(
+    ///     provider.check_prewarm(&warm("anthropic/claude-sonnet-4.5").with_effort(Effort::High)),
+    ///     Err(PrewarmRefused::BudgetThinking { .. })
+    /// ));
+    /// assert!(matches!(
+    ///     provider.check_prewarm(&warm("openai/gpt-6.1-sol")),
+    ///     Err(PrewarmRefused::Unsupported { .. })
+    /// ));
     /// ```
     ///
     /// # Errors
     ///
-    /// Always [`PrewarmRefused::Unsupported`].
-    pub fn check_prewarm(&self, _req: &ProviderRequest) -> Result<(), PrewarmRefused> {
-        Err(PrewarmRefused::Unsupported {
-            provider: self.opts.id.clone(),
-        })
+    /// [`PrewarmRefused::Unsupported`] for any server but OpenRouter and any
+    /// model but Anthropic's; [`PrewarmRefused::BudgetThinking`] for a model
+    /// on a thinking budget.
+    pub fn check_prewarm(&self, req: &ProviderRequest) -> Result<(), PrewarmRefused> {
+        if !openrouter_anthropic(self.opts.flavor, &req.model) {
+            return Err(PrewarmRefused::Unsupported {
+                provider: self.opts.id.clone(),
+            });
+        }
+        if openrouter_budget_thinking(&req.model, req.effort) {
+            return Err(PrewarmRefused::BudgetThinking {
+                model: req.model.clone(),
+            });
+        }
+        Ok(())
     }
 
     fn http_request(&self, req: &ProviderRequest) -> Request {
@@ -165,7 +205,8 @@ impl CompatProvider {
 /// ([`to_chat_tools`], the last with a cache breakpoint where the model takes
 /// one ([`mark_last_tool`]), then the web search server tool when
 /// `req.web_search` is set and the flavor is OpenRouter), `max_tokens` when
-/// above 0, the flavor's extras ([`flavor_extras`]), a `reasoning_effort`
+/// above 0 ([`PREWARM_MAX_TOKENS`] for a pre-warm, which is otherwise the
+/// same body), the flavor's extras ([`flavor_extras`]), a `reasoning_effort`
 /// fitted to [`CompatOptions::with_reasoning_effort`], and the cache keys
 /// where the server takes them ([`cache_key_extras`]).
 pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> Value {
@@ -192,7 +233,12 @@ pub(crate) fn build_compat_body(opts: &CompatOptions, req: &ProviderRequest) -> 
     if !tools.is_empty() {
         map.insert("tools".into(), Value::Array(tools));
     }
-    if let Some(max) = req.max_tokens.filter(|m| *m > 0) {
+    let cap = if req.prewarm {
+        Some(PREWARM_MAX_TOKENS)
+    } else {
+        req.max_tokens.filter(|m| *m > 0)
+    };
+    if let Some(max) = cap {
         map.insert("max_tokens".into(), json!(max));
     }
     map.extend(flavor_extras(
