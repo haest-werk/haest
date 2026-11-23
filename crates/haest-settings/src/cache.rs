@@ -54,8 +54,8 @@ impl BreakpointTtl {
 /// tools = "1h"             # the last tool definition
 /// history = "5m"           # the newest message: the rolling breakpoint
 /// keep_warm = true         # ping an idle conversation while it pays
-/// keep_warm_for = 120      # minutes, from the last turn
-/// compact_before_expire = { min_context = "60%", instructions = "Keep the open TODOs." }
+/// keep_warm_minutes = 120  # from the last turn
+/// compact_before_expire = { min_context = 0.6, instructions = "Keep the open TODOs." }
 ///
 /// [cache.models."openrouter:google/*"]
 /// keep_warm = false
@@ -92,10 +92,11 @@ pub struct CacheSettings {
     /// writing the cache again (haest-core's [`ping_pays`]). A ping that
     /// wrote instead of read ends it, and the human is told. Default off.
     pub keep_warm: bool,
-    /// How long after the last turn keep-warm goes on. Spelled in minutes,
-    /// like every time setting. Default an hour.
-    #[serde(with = "serde_impls::minutes")]
-    pub keep_warm_for: Duration,
+    /// How long after the last turn keep-warm goes on: `keep_warm_minutes`
+    /// in a file, in minutes like every time setting but a hook's `timeout`
+    /// (seconds, Claude Code's key as it is). Default an hour.
+    #[serde(rename = "keep_warm_minutes", with = "serde_impls::minutes")]
+    pub keep_warm_time: Duration,
     /// Compact an idle conversation while its cache is still warm, so the
     /// next turn writes a small prefix instead of the whole one. Default off.
     pub compact_before_expire: CompactBeforeExpire,
@@ -115,7 +116,7 @@ impl Default for CacheSettings {
             tools: BreakpointTtl::FiveMinutes,
             history: BreakpointTtl::FiveMinutes,
             keep_warm: false,
-            keep_warm_for: Duration::from_secs(3_600),
+            keep_warm_time: Duration::from_secs(3_600),
             compact_before_expire: CompactBeforeExpire::Off,
             models: BTreeMap::new(),
         }
@@ -139,12 +140,13 @@ pub struct CacheOverride {
     /// [`CacheSettings::keep_warm`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keep_warm: Option<bool>,
-    /// [`CacheSettings::keep_warm_for`], in minutes.
+    /// [`CacheSettings::keep_warm_time`], `keep_warm_minutes` in a file.
     #[serde(
+        rename = "keep_warm_minutes",
         skip_serializing_if = "Option::is_none",
         with = "serde_impls::minutes::option"
     )]
-    pub keep_warm_for: Option<Duration>,
+    pub keep_warm_time: Option<Duration>,
     /// [`CacheSettings::compact_before_expire`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_before_expire: Option<CompactBeforeExpire>,
@@ -169,15 +171,18 @@ pub enum CompactBeforeExpire {
     },
 }
 
-/// A size of conversation: tokens, or a share of the model's context window.
+/// A size of conversation: tokens, or a share of the model's context
+/// window. A file writes a whole number of tokens, 1 or more (`120000`), or
+/// a share strictly between 0 and 1 (`0.6`), as `wind_down_at = 0.8` takes a
+/// share.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum MinContext {
     /// This many tokens (`120000`).
     Tokens(u64),
-    /// This percentage of the context window (`"60%"`); not reached while
+    /// This share of the context window (`0.6`); not reached while
     /// the window is unknown.
-    Percent(f64),
+    Share(f64),
 }
 
 impl MinContext {
@@ -185,7 +190,7 @@ impl MinContext {
     pub fn reached(self, tokens: u64, window: Option<u64>) -> bool {
         match self {
             MinContext::Tokens(min) => tokens >= min,
-            MinContext::Percent(p) => window.is_some_and(|w| tokens as f64 >= w as f64 * p / 100.0),
+            MinContext::Share(share) => window.is_some_and(|w| tokens as f64 >= w as f64 * share),
         }
     }
 }
@@ -222,7 +227,7 @@ impl CacheSettings {
             out.tools = o.tools.unwrap_or(out.tools);
             out.history = o.history.unwrap_or(out.history);
             out.keep_warm = o.keep_warm.unwrap_or(out.keep_warm);
-            out.keep_warm_for = o.keep_warm_for.unwrap_or(out.keep_warm_for);
+            out.keep_warm_time = o.keep_warm_time.unwrap_or(out.keep_warm_time);
             if let Some(compact) = o.compact_before_expire {
                 out.compact_before_expire = compact;
             }
@@ -235,7 +240,7 @@ impl CacheSettings {
 /// `compact_before_expire` is on, the conversation holds `min_context` and
 /// compacting pays ([`IdleState::compaction_pays`]); else ping when
 /// `keep_warm` is on, the human has been away for less than
-/// `keep_warm_for`, and [`ping_pays`]; else nothing. haest's own checks
+/// `keep_warm_minutes`, and [`ping_pays`]; else nothing. haest's own checks
 /// (the cache still warm, a compaction that pays) come after.
 impl CachePolicy for CacheSettings {
     fn plan(&self, request: &RequestShape<'_>) -> CachePlan {
@@ -262,7 +267,7 @@ impl CachePolicy for CacheSettings {
             }
         }
         if s.keep_warm
-            && idle.idle < s.keep_warm_for
+            && idle.idle < s.keep_warm_time
             && ping_pays(idle.pricing, idle.ttl, idle.idle)
         {
             return IdleAction::Ping;

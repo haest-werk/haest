@@ -61,10 +61,11 @@ history = "5m"
 # model's prices say the pings cost less than writing it again; at most for
 # two hours after the last turn.
 keep_warm = true
-keep_warm_for = 120
-# A long conversation left idle is compacted while its cache is still warm,
-# when that costs less than writing the whole prompt again next turn.
-compact_before_expire = { min_context = "60%", instructions = "Keep the open TODOs and the files touched." }
+keep_warm_minutes = 120
+# A long conversation left idle (past 0.6 of the model's window) is
+# compacted while its cache is still warm, when that costs less than writing
+# the whole prompt again next turn.
+compact_before_expire = { min_context = 0.6, instructions = "Keep the open TODOs and the files touched." }
 
 # Google's models on OpenRouter keep no cache entry for an hour and take no
 # pre-warm: five minutes, no pings.

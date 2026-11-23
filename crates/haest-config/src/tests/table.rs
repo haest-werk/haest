@@ -19,7 +19,7 @@ keep_warm = true"#;
     let r = run(
         "/w/app",
         &[(USER_FILE, &trust), project],
-        &[("HAEST_CACHE", "keep_warm_for = 30")],
+        &[("HAEST_CACHE", "keep_warm_minutes = 30")],
         &[
             ("cache", "{ tools = \"off\" }"),
             ("cache", "models.\"openrouter:*\".system = \"5m\""),
@@ -36,7 +36,7 @@ keep_warm = true"#;
         system: BreakpointTtl::OneHour,
         tools: BreakpointTtl::Off,
         history: BreakpointTtl::Off,
-        keep_warm_for: Duration::from_secs(1_800),
+        keep_warm_time: Duration::from_secs(1_800),
         models: [("openrouter:*".to_string(), openrouter.clone())].into(),
         ..CacheSettings::default()
     };

@@ -189,6 +189,7 @@ pub mod task_board;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod threshold;
+mod time_unit;
 pub mod tool;
 mod tool_batch;
 mod tool_exec;
@@ -228,6 +229,10 @@ pub mod __private {
     /// `code_tools`, hook matchers, per-model cache settings. `check_pattern`
     /// is the one check that a text is one, wherever a setting takes it.
     pub use crate::pattern::{BadPattern, check as check_pattern, name_matches};
+    /// The one way a duration setting is spelled as a number of a unit:
+    /// haest-settings' minutes (`keep_warm_minutes`), the `hooks`
+    /// setting's seconds (`timeout`).
+    pub use crate::time_unit::{DurationIn, TimeUnit, deserialize_in};
     pub use crate::tool_exec::{ToolIndex, run_call, run_unspilled};
 }
 

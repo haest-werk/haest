@@ -41,7 +41,7 @@ fn each_block_takes_off_five_minutes_or_an_hour() {
 fn the_most_specific_model_override_wins_key_by_key() {
     let cache = read(
         r#"
-keep_warm_for = 30
+keep_warm_minutes = 30
 [models."openrouter:*"]
 system = "off"
 keep_warm = true
@@ -58,7 +58,7 @@ history = "off"
         (BreakpointTtl::OneHour, BreakpointTtl::Off, true)
     );
     assert_eq!(
-        haiku.keep_warm_for,
+        haiku.keep_warm_time,
         Duration::from_secs(1_800),
         "from [cache]"
     );
@@ -83,14 +83,14 @@ fn it_writes_only_what_differs_and_reads_back_the_same() {
     let text = r#"
 system = "1h"
 keep_warm = true
-keep_warm_for = 90.5
-compact_before_expire = { min_context = "60%", instructions = "Keep the TODOs." }
+keep_warm_minutes = 90.5
+compact_before_expire = { min_context = 0.6, instructions = "Keep the TODOs." }
 [models."anthropic:*"]
 tools = "off"
 compact_before_expire = "off"
 "#;
     let cache = read(text).unwrap();
-    assert_eq!(cache.keep_warm_for, Duration::from_secs(5_430));
+    assert_eq!(cache.keep_warm_time, Duration::from_secs(5_430));
     let written = toml::to_string(&cache).unwrap();
     assert_eq!(read(&written).unwrap(), cache, "{written}");
     let tokens = read("compact_before_expire = { min_context = 120000 }").unwrap();
@@ -103,11 +103,12 @@ fn a_misspelt_key_or_a_value_it_does_not_take_is_refused() {
     for wrong in [
         "sytem = \"1h\"",
         "system = \"2h\"",
-        "keep_warm_for = -5",
+        "keep_warm_minutes = -5",
+        "keep_warm_minutes = 1e300",
         "compact_before_expire = \"on\"",
         "compact_before_expire = true",
         "compact_before_expire = { instructions = \"no size\" }",
-        "compact_before_expire = { min_context = \"160%\" }",
+        "compact_before_expire = { min_context = 1.6 }",
         "compact_before_expire = { min_context = -1 }",
         "compact_before_expire = { min_context = 100, when = \"idle\" }",
         "[models.\"anthropic:*\"]\nmodels = {}",
@@ -162,14 +163,14 @@ fn long_history() -> Vec<Message> {
 }
 
 #[test]
-fn keep_warm_pings_while_it_pays_and_not_past_keep_warm_for() {
+fn keep_warm_pings_while_it_pays_and_not_past_keep_warm_minutes() {
     let price = priced();
     let off = CacheSettings::default();
     assert_eq!(
         off.on_idle(&idle(&price, minutes(4), 50_000)),
         IdleAction::Nothing
     );
-    let warm = read("keep_warm = true\nkeep_warm_for = 30").unwrap();
+    let warm = read("keep_warm = true\nkeep_warm_minutes = 30").unwrap();
     assert_eq!(
         warm.on_idle(&idle(&price, minutes(4), 50_000)),
         IdleAction::Ping
@@ -184,18 +185,77 @@ fn keep_warm_pings_while_it_pays_and_not_past_keep_warm_for() {
         IdleAction::Nothing,
         "no price, no ping"
     );
-    let long = read("keep_warm = true\nkeep_warm_for = 600").unwrap();
+    let long = read("keep_warm = true\nkeep_warm_minutes = 600").unwrap();
     assert_eq!(
         long.on_idle(&idle(&price, minutes(4 * 13), 50_000)),
         IdleAction::Nothing
     );
 }
 
+/// A time setting puts its unit in its key: `keep_warm_minutes`, as
+/// `max_turn_minutes` and `subagent_minutes` do. The old spelling is no key.
+#[test]
+fn keep_warm_minutes_is_read_and_the_old_spelling_is_no_key() {
+    let price = priced();
+    let warm = read("keep_warm = true\nkeep_warm_minutes = 30").unwrap();
+    assert_eq!(
+        warm.on_idle(&idle(&price, minutes(29), 50_000)),
+        IdleAction::Ping
+    );
+    assert_eq!(
+        warm.on_idle(&idle(&price, minutes(31), 50_000)),
+        IdleAction::Nothing,
+        "past its 30 minutes"
+    );
+    let per_model = read("[models.\"anthropic:*\"]\nkeep_warm_minutes = 1.5").unwrap();
+    let written = toml::to_string(&per_model).unwrap();
+    assert!(written.contains("keep_warm_minutes = 1.5"), "{written}");
+    for old in [
+        "keep_warm_for = 30",
+        "[models.\"anthropic:*\"]\nkeep_warm_for = 30",
+    ] {
+        let why = read(old).unwrap_err().to_string();
+        assert!(why.contains("keep_warm_for"), "{why}");
+    }
+}
+
+/// `min_context` takes a whole number of tokens, or a share of the window
+/// strictly between 0 and 1 (`0.6`), as `wind_down_at = 0.8` takes a share.
+#[test]
+fn min_context_is_tokens_or_a_share_of_the_window() {
+    let (price, history) = (priced(), long_history());
+    let share = read("compact_before_expire = { min_context = 0.6 }").unwrap();
+    // 0.6 of the 200000-token window is 120000.
+    let at = |tokens| {
+        let state = idle(&price, minutes(4), tokens).with_messages(&history);
+        matches!(share.on_idle(&state), IdleAction::Compact(_))
+    };
+    assert!(at(120_000), "at 0.6 of the window");
+    assert!(!at(119_999), "below it");
+    let written = toml::to_string(&share).unwrap();
+    assert!(written.contains("min_context = 0.6"), "{written}");
+    assert_eq!(read(&written).unwrap(), share);
+    for wrong in [
+        "\"60%\"",
+        "0",
+        "0.0",
+        "1.0",
+        "1.5",
+        "-0.2",
+        "120000.5",
+        "\"120000\"",
+    ] {
+        let text = format!("compact_before_expire = {{ min_context = {wrong} }}");
+        assert!(read(&text).is_err(), "{text}");
+    }
+    assert!(read("compact_before_expire = { min_context = 1 }").is_ok());
+}
+
 #[test]
 fn compaction_comes_first_once_the_conversation_holds_min_context() {
     let (price, history) = (priced(), long_history());
     let cache = read(
-        "keep_warm = true\ncompact_before_expire = { min_context = \"50%\", instructions = \"Keep the TODOs.\" }",
+        "keep_warm = true\ncompact_before_expire = { min_context = 0.5, instructions = \"Keep the TODOs.\" }",
     )
     .unwrap();
     let past_half = idle(&price, minutes(4), 120_000).with_messages(&history);

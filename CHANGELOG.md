@@ -79,11 +79,13 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   a shorter one, nothing below the model's minimum) and fixes and notes a
   plan that breaks a rule instead of sending it to fail.
 - The setting `[cache]`, the default policy: `system`, `tools`, `history`
-  (`off`, `5m`, `1h`), `keep_warm` and `keep_warm_for` (ping an idle
-  conversation before its cache expires, while the prices say it pays),
-  and `compact_before_expire = { min_context, instructions }` (compact an
-  idle conversation over `min_context` tokens, or a share of the window,
-  while its cache is still warm and only when that costs less). Per model
+  (`off`, `5m`, `1h`), `keep_warm` and `keep_warm_minutes` (ping an idle
+  conversation before its cache expires, while the prices say it pays,
+  for at most that long after the last turn), and
+  `compact_before_expire = { min_context, instructions }` (compact an idle
+  conversation over `min_context`, a whole number of tokens or a share of
+  the window between 0 and 1 such as `0.6`, while its cache is still warm
+  and only when that costs less). Per model
   under `[cache.models."<spec or prefix*>"]`; a key that is neither (a
   regular expression, a `*` inside) is refused when read. A table setting
   kind in haest-config carries it.

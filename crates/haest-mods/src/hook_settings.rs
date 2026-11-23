@@ -7,7 +7,9 @@
 use std::{collections::BTreeMap, fmt, time::Duration};
 
 use haest_core::{
-    __private::{BadPattern, check_pattern, expand_vars, unset_note},
+    __private::{
+        BadPattern, DurationIn, TimeUnit, check_pattern, deserialize_in, expand_vars, unset_note,
+    },
     words::UnknownWord,
 };
 use haest_http::redacted_url;
@@ -137,7 +139,7 @@ pub struct HookSettings {
 /// | `url` | an `http://` or `https://` URL, POSTed the event's JSON per event, the response's body the decision (haest-bridges' `HttpHook`) | |
 /// | `dialect` | `haest` (the payload's own JSON, every event) or `claude` (Claude Code's hook JSON, not on `model.before` or `model.after`) | `haest` |
 /// | `matcher` | the tools it is for, on `tool.before` and `tool.after` only: a name (`Bash`) or a prefix ending in `*` (`mcp__github__*`) | every tool |
-/// | `timeout` | seconds it may take (`10`, `2.5`); past them it failed | 60 |
+/// | `timeout` | seconds it may take (`10`, `2.5`); past them it failed. The one time setting not in minutes: Claude Code's key, as it is | 60 |
 /// | `on_error` | what its failure does: `block` or `continue` | `block` on `tool.before`, else `continue` |
 /// | `headers` | a `url` hook's headers, `{ name = "value" }`; `${NAME}` in a value is filled in from haest's environment when loaded ([`HookSettings::filled`]) | none |
 ///
@@ -550,13 +552,11 @@ fn check_url(url: &str) -> Result<(), String> {
 /// What a `timeout` that is not one is refused with.
 const TIMEOUT: &str = "`timeout` must be a number of seconds above 0 (10, 2.5)";
 
-/// `timeout`: seconds above 0, a whole number or not.
+/// `timeout`: seconds, a whole number or not, read as every time setting
+/// is (haest-core's [`deserialize_in`]) but in seconds, Claude Code's unit
+/// for its key; [`HookEntry::check`] refuses 0.
 fn timeout(seconds: &Value) -> Result<Duration, String> {
-    seconds
-        .as_f64()
-        .filter(|s| s.is_finite() && *s > 0.0)
-        .and_then(|s| Duration::try_from_secs_f64(s).ok())
-        .ok_or_else(|| TIMEOUT.into())
+    deserialize_in(seconds, TimeUnit::Seconds).map_err(|_not_seconds| TIMEOUT.to_string())
 }
 
 /// `headers`: a table of names to text. An error names the header, never
@@ -608,7 +608,7 @@ impl Serialize for HookEntry {
             map.serialize_entry("matcher", matcher)?;
         }
         if let Some(timeout) = self.timeout {
-            map.serialize_entry("timeout", &Seconds(timeout))?;
+            map.serialize_entry("timeout", &DurationIn(timeout, TimeUnit::Seconds))?;
         }
         if let Some(on_error) = self.on_error {
             map.serialize_entry("on_error", &on_error)?;
@@ -617,20 +617,6 @@ impl Serialize for HookEntry {
             map.serialize_entry("headers", &Headers(&self.headers))?;
         }
         map.end()
-    }
-}
-
-/// A duration in seconds: a whole number when it is one.
-struct Seconds(Duration);
-
-impl Serialize for Seconds {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let Seconds(duration) = self;
-        if duration.subsec_nanos() == 0 {
-            s.serialize_u64(duration.as_secs())
-        } else {
-            s.serialize_f64(duration.as_secs_f64())
-        }
     }
 }
 

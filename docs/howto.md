@@ -129,7 +129,7 @@ Three ways, by what decides:
 |---|---|
 | a size | the built-in threshold: 80% of the window, or `compact_at` tokens (default 400000) when that is lower |
 | your own rule, as a turn ends | a `turn.end` hook answering `{ compact: { instructions } }`: [auto-compact.ts](examples/mods/auto-compact.ts), or its Rust twin in [auto_compact.rs](../crates/haest/examples/auto_compact.rs) |
-| the cache's clock | `[cache] compact_before_expire = { min_context = "60%" }`: an idle conversation compacts while its cache is still warm, when that costs less than writing it again |
+| the cache's clock | `[cache] compact_before_expire = { min_context = 0.6 }` (a share of the window; or a number of tokens, `120000`): an idle conversation compacts while its cache is still warm, when that costs less than writing it again |
 
 `instructions` are added to haest's own summary prompt ("keep every file path"). Every
 compaction reaches the host's `AgentHooks::on_compaction`, so a saved session records it.
@@ -140,7 +140,7 @@ compaction reaches the host's `AgentHooks::on_compaction`, so a saved session re
 [cache]
 system = "1h"         # the system prompt's breakpoint: off, 5m (default) or 1h
 keep_warm = true      # ping a little before an idle conversation's cache expires
-keep_warm_for = 60    # minutes after the last turn
+keep_warm_minutes = 60  # for at most this long after the last turn
 compact_before_expire = { min_context = 120000, instructions = "Keep the open tasks." }
 
 [cache.models."openrouter:google/*"]

@@ -178,8 +178,9 @@ impl Raw for Vec<String> {
     }
 }
 
-/// A wall-clock cap, in minutes as every time setting spells it (a fraction
-/// too; 0 = no cap). One too long for a `Duration` is the longest there is.
+/// A wall-clock cap, in minutes as every time setting spells it but a
+/// hook's `timeout` (seconds, Claude Code's key as it is); a fraction too,
+/// 0 = no cap. One too long for a `Duration` is the longest there is.
 impl Raw for Duration {
     fn to_raw(&self) -> Option<String> {
         Some((self.as_secs_f64() / 60.0).to_string())

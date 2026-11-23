@@ -1,11 +1,11 @@
 //! How the `[cache]` setting reads and writes itself: as its TOML table, a
 //! key left out where it is at its default, so an untouched table writes
-//! nothing; `keep_warm_for` in minutes; `compact_before_expire` as `"off"`
-//! or a table; `min_context` as tokens or `"60%"`.
+//! nothing; `keep_warm_minutes` in minutes; `compact_before_expire` as
+//! `"off"` or a table; `min_context` as tokens or a share (`0.6`).
 
 use std::{collections::BTreeMap, fmt, time::Duration};
 
-use haest_core::__private::{BadPattern, check_pattern};
+use haest_core::__private::{BadPattern, DurationIn, TimeUnit, check_pattern, deserialize_in};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, MapAccess, Visitor, value::MapAccessDeserializer},
@@ -31,8 +31,9 @@ impl Serialize for CacheSettings {
         if self.keep_warm != default.keep_warm {
             map.serialize_entry("keep_warm", &self.keep_warm)?;
         }
-        if self.keep_warm_for != default.keep_warm_for {
-            map.serialize_entry("keep_warm_for", &as_minutes(self.keep_warm_for))?;
+        if self.keep_warm_time != default.keep_warm_time {
+            let minutes = DurationIn(self.keep_warm_time, TimeUnit::Minutes);
+            map.serialize_entry("keep_warm_minutes", &minutes)?;
         }
         if self.compact_before_expire != default.compact_before_expire {
             map.serialize_entry("compact_before_expire", &self.compact_before_expire)?;
@@ -44,39 +45,17 @@ impl Serialize for CacheSettings {
     }
 }
 
-/// `duration` in minutes, a whole number when it is one.
-fn as_minutes(duration: Duration) -> MinutesOut {
-    let minutes = duration.as_secs_f64() / 60.0;
-    if minutes.fract() == 0.0 && minutes <= i64::MAX as f64 {
-        MinutesOut::Whole(minutes as i64)
-    } else {
-        MinutesOut::Fraction(minutes)
-    }
-}
-
-#[derive(Serialize)]
-#[serde(untagged)]
-enum MinutesOut {
-    Whole(i64),
-    Fraction(f64),
-}
-
-/// A duration spelled in minutes (`120`, `1.5`), as every time setting is.
+/// A duration spelled in minutes (`120`, `1.5`), as every time setting is
+/// but a hook's `timeout` (seconds): haest-core's one reader and writer.
 pub(super) mod minutes {
     use super::*;
 
     pub(crate) fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
-        as_minutes(*d).serialize(s)
+        DurationIn(*d, TimeUnit::Minutes).serialize(s)
     }
 
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
-        let minutes = f64::deserialize(d)?;
-        if !minutes.is_finite() || minutes < 0.0 {
-            return Err(de::Error::custom(format!(
-                "{minutes} must be a number of minutes, 0 or more"
-            )));
-        }
-        Ok(Duration::try_from_secs_f64(minutes * 60.0).unwrap_or(Duration::MAX))
+        deserialize_in(d, TimeUnit::Minutes)
     }
 
     /// The same, for a key an override may leave out.
@@ -163,7 +142,9 @@ impl<'de> Deserialize<'de> for CompactBeforeExpire {
         impl<'de> Visitor<'de> for Expected {
             type Value = CompactBeforeExpire;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("\"off\", or a table: { min_context = 120000 or \"60%\", instructions = \"...\" }")
+                f.write_str(
+                    "\"off\", or a table: { min_context = 120000 or 0.6, instructions = \"...\" }",
+                )
             }
             fn visit_str<E: de::Error>(self, word: &str) -> Result<Self::Value, E> {
                 match word {
@@ -189,16 +170,19 @@ impl<'de> Deserialize<'de> for CompactBeforeExpire {
     }
 }
 
-/// Tokens as a whole number, a share as `"60%"`.
+/// Tokens as a whole number, a share as a fraction (`0.6`).
 impl Serialize for MinContext {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             MinContext::Tokens(n) => s.serialize_u64(*n),
-            MinContext::Percent(p) => s.serialize_str(&format!("{p}%")),
+            MinContext::Share(share) => s.serialize_f64(*share),
         }
     }
 }
 
+/// A whole number of tokens, 1 or more, or a share strictly between 0 and 1;
+/// anything else (`0`, `1.0`, a percentage as text) is refused, the value
+/// saying why.
 impl<'de> Deserialize<'de> for MinContext {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         struct Expected;
@@ -206,26 +190,28 @@ impl<'de> Deserialize<'de> for MinContext {
             type Value = MinContext;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(
-                    "a whole number of tokens (120000), or a share of the context window (\"60%\")",
+                    "a whole number of tokens, 1 or more (120000), or a share of the context window between 0 and 1 (0.6)",
                 )
             }
             fn visit_u64<E: de::Error>(self, n: u64) -> Result<Self::Value, E> {
-                Ok(MinContext::Tokens(n))
+                match n {
+                    0 => Err(E::invalid_value(de::Unexpected::Unsigned(n), &self)),
+                    tokens => Ok(MinContext::Tokens(tokens)),
+                }
             }
             fn visit_i64<E: de::Error>(self, n: i64) -> Result<Self::Value, E> {
                 match u64::try_from(n) {
-                    Ok(tokens) => Ok(MinContext::Tokens(tokens)),
+                    Ok(tokens) => self.visit_u64(tokens),
                     // Below zero: the value itself says what is wrong.
                     Err(_below_zero) => Err(E::invalid_value(de::Unexpected::Signed(n), &self)),
                 }
             }
-            fn visit_str<E: de::Error>(self, raw: &str) -> Result<Self::Value, E> {
-                let percent = (raw.trim().strip_suffix('%'))
-                    .and_then(|p| p.trim().parse::<f64>().ok())
-                    .filter(|p| *p > 0.0 && *p <= 100.0);
-                percent
-                    .map(MinContext::Percent)
-                    .ok_or_else(|| E::invalid_value(de::Unexpected::Str(raw), &self))
+            fn visit_f64<E: de::Error>(self, share: f64) -> Result<Self::Value, E> {
+                if share > 0.0 && share < 1.0 {
+                    Ok(MinContext::Share(share))
+                } else {
+                    Err(E::invalid_value(de::Unexpected::Float(share), &self))
+                }
             }
         }
         d.deserialize_any(Expected)

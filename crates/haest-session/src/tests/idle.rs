@@ -252,10 +252,10 @@ async fn closing_stops_a_running_tick() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn keep_warm_ends_past_keep_warm_for() {
+async fn keep_warm_ends_past_keep_warm_minutes() {
     let settings = CacheSettings {
         keep_warm: true,
-        keep_warm_for: Duration::from_secs(10 * 60),
+        keep_warm_time: Duration::from_secs(10 * 60),
         ..CacheSettings::default()
     };
     let replies = [text_answer("hi"), ping(90, 0), ping(90, 0), ping(90, 0)];
