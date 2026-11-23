@@ -65,6 +65,16 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   handler sees the input or output as haest read it (`isError` filled in),
   and the new loop events read `steer`, `stop` and `continue` as text
   only, `compact` as `true` or `{ instructions }` only (`"yes"` fails).
+- Mod files: every handler of `tool.before`, `tool.after`, `prompt.submit`
+  and `system.prompt` gets one more argument, last: the session
+  (`(call, ctx, session)`, `(call, output, ctx, session)`,
+  `(text, session)`, `(session)`), `undefined` when the host names none
+  but passed all the same. A handler that reads only the parameters it
+  names is unchanged; one that uses rest arguments (`...args`),
+  `arguments.length` or an optional trailing parameter now gets it:
+  `haest.on('system.prompt', String)` appended nothing in 0.4.1 and now
+  appends "undefined" (or "[object Object]" when the host names a
+  session).
 - Every `testing` module and feature is outside semver, as `__private` is:
   haest-core's, haest-providers', haest-mods', haest-http's and the
   facade's. They are for `dev-dependencies` only and change in any release.
@@ -171,10 +181,12 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   `ModEnv::set_session`. In the JSON it is
   `session: { id, transcriptPath }`, left out when the host names none, so
   a payload's JSON is otherwise as it was. A mod file's handler gets it as
-  its last argument (`(call, ctx, session)`, `(text, session)`,
-  `(session)` for `system.prompt`) or, on a loop event, as `turn.session`;
-  `undefined` when none is named. Every handler of one event gets the
-  session named as the event began. A path that is not UTF-8
+  its last argument (`(call, ctx, session)` for `tool.before`,
+  `(call, output, ctx, session)` for `tool.after`, `(text, session)` for
+  `prompt.submit`, `(session)` for `system.prompt`) or, on a loop event,
+  as `turn.session`; `undefined` when none is named. Every handler of one
+  event, in every mod (a nested `Mods`' too), gets the session named as
+  the event began: `Mods` reads it once per event. A path that is not UTF-8
   (`transcriptPath`, a tool event's `ctx.cwd`) goes out with U+FFFD for
   the bytes JSON cannot hold, instead of failing the payload.
   `ModEvent::claude_code` is each event's Claude Code event, if it has
