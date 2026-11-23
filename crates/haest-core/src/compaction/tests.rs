@@ -12,6 +12,7 @@ use crate::{
     tool::JsonMap,
 };
 
+mod asked;
 mod charge;
 mod summary;
 
@@ -64,15 +65,20 @@ fn empty_answer() -> AssistantMessage {
 
 /// Compact whenever asked.
 const CFG: CompactionOptions = CompactionOptions {
+    context_window: 1,
     threshold: 0.0,
+    ceiling: None,
     keep_recent: 3,
-    ..CompactionOptions::new(1)
+    instructions: None,
 };
 
 /// Compact at 800 tokens.
 const AT_800: CompactionOptions = CompactionOptions {
+    context_window: 1000,
+    threshold: COMPACT_SHARE,
+    ceiling: None,
     keep_recent: 3,
-    ..CompactionOptions::new(1000)
+    instructions: None,
 };
 
 #[test]

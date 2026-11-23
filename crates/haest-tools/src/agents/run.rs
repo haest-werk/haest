@@ -11,6 +11,7 @@ use haest_core::{
     Agent, AgentHooks, AgentHooksRef, AssistantMessage, BoxError, LoopEvent, StopReason,
     SystemPrompt, TurnOutcome,
     caps::{TurnCaps, TurnCapsSource, TurnCapsSourceRef},
+    compaction::CompactionResult,
     messages::{MediaPart, Message},
     provider::Effort,
     tool::{InnerCallEvent, ToolServices, ToolServicesRef, ToolSourceRef},
@@ -157,6 +158,8 @@ impl ToolServices for ChildServices {
 impl AgentHooks for ChildHooks {
     /// Not the conversation's message: nothing is persisted.
     fn on_message(&self, _msg: &Message) {}
+    /// Not the conversation's history: nothing is persisted.
+    fn on_compaction(&self, _result: &CompactionResult) {}
     /// Not the conversation's history: the conversation's hook (compaction)
     /// is not run on it.
     async fn before_model_call(

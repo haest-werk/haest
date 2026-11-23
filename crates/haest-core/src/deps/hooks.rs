@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     agent::Agent,
+    compaction::CompactionResult,
     error::BoxError,
     events::TurnOutcome,
     messages::{AssistantMessage, MediaPart, Message},
@@ -74,12 +75,21 @@ use crate::{
 pub trait AgentHooks: Send + Sync {
     /// Every message appended to history, in order: the persistence hook.
     ///
-    /// Not called for [`Agent::replace_history`], nor for the summary
-    /// [`compact`](crate::compaction::compact) puts in place: a host that
-    /// persists history records those itself. Nor for a call answered as
+    /// Not called for [`Agent::replace_history`] (a host that persists
+    /// history records that itself), nor for the summary
+    /// [`compact`](crate::compaction::compact) puts in place
+    /// ([`on_compaction`](Self::on_compaction) is). Nor for a call answered as
     /// interrupted in the middle of a history a host handed in: replaying
     /// the host's file answers it the same way.
     fn on_message(&self, _msg: &Message) {}
+
+    /// [`compact`](crate::compaction::compact) put a summary in place of the
+    /// head of history; `result` says what it wrote and how many messages it
+    /// kept after it. The persistence hook's other half: a host that saves
+    /// history records the compaction here, whoever ran it (its own
+    /// [`before_model_call`](Self::before_model_call), a mod, the human's
+    /// command), so a replay rebuilds the history the agent now has.
+    fn on_compaction(&self, _result: &CompactionResult) {}
 
     /// Runs before each model call; may replace history (compaction). `Err`
     /// ends the turn there, as an error with its text, without the call: the

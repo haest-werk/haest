@@ -14,9 +14,18 @@ const SUMMARY_PROMPT: &str = "Summarize the conversation so far so work can cont
 
 const COLD_SYSTEM: &str = "You write precise working summaries of coding sessions.";
 
-fn warm_instruction(kept: usize) -> String {
+/// haest's summary instruction, then the caller's own when it has some.
+fn summary_prompt(asked: Option<&str>) -> String {
+    match asked {
+        Some(asked) => format!("{SUMMARY_PROMPT}\n\nFor this summary, also: {asked}"),
+        None => SUMMARY_PROMPT.to_string(),
+    }
+}
+
+fn warm_instruction(kept: usize, asked: Option<&str>) -> String {
+    let prompt = summary_prompt(asked);
     format!(
-        "{SUMMARY_PROMPT}\n\nDo not call any tools: answer with text only. The last {kept} messages stay verbatim after your summary, so cover them briefly."
+        "{prompt}\n\nDo not call any tools: answer with text only. The last {kept} messages stay verbatim after your summary, so cover them briefly."
     )
 }
 
@@ -75,13 +84,14 @@ fn book(agent: &mut Agent, usage: &Usage) {
     }
 }
 
-/// The summary of the first `cut` messages, `kept` staying after it: warm,
-/// then cold when the warm reply is no summary. Each call is booked as it
-/// comes back.
+/// The summary of the first `cut` messages, `kept` staying after it, with
+/// the caller's `asked` instructions: warm, then cold when the warm reply is
+/// no summary. Each call is booked as it comes back.
 pub(super) async fn summarize(
     agent: &mut Agent,
     cut: usize,
     kept: usize,
+    asked: Option<&str>,
     cancel: &CancellationToken,
 ) -> Result<(Summary, SummaryPath), CompactionError> {
     let resolved = agent
@@ -93,7 +103,7 @@ pub(super) async fn summarize(
     let model = resolved.model().to_string();
     let prefix = agent.request_prefix(&model).await;
     let mut messages = agent.sendable(agent.history(), &model);
-    messages.push(Message::user(warm_instruction(kept)));
+    messages.push(Message::user(warm_instruction(kept, asked)));
     let warm = ask(
         &resolved,
         prefix.request(model.clone(), messages, cancel.clone()),
@@ -104,7 +114,7 @@ pub(super) async fn summarize(
         return Ok((warm, SummaryPath::Warm));
     }
     let mut messages = agent.sendable(&agent.history()[..cut], &model);
-    messages.push(Message::user(SUMMARY_PROMPT));
+    messages.push(Message::user(summary_prompt(asked)));
     let req = ProviderRequest::new(model, messages)
         .with_system(COLD_SYSTEM)
         .with_cancel(cancel.clone());

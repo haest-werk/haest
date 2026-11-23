@@ -60,11 +60,15 @@ pub struct CompactionOptions {
     pub ceiling: Option<u64>,
     /// Roughly how many recent messages to keep verbatim.
     pub keep_recent: usize,
+    /// What the summary should keep or leave out, asked of the model after
+    /// haest's own summary instruction; None asks for that alone.
+    pub instructions: Option<String>,
 }
 
 impl CompactionOptions {
     /// Compact at [`COMPACT_SHARE`] of `context_window` tokens, with no
-    /// ceiling, keeping about [`KEEP_RECENT`] messages.
+    /// ceiling, keeping about [`KEEP_RECENT`] messages, with no instructions
+    /// of the host's own.
     #[must_use]
     pub const fn new(context_window: u64) -> Self {
         Self {
@@ -72,6 +76,7 @@ impl CompactionOptions {
             threshold: COMPACT_SHARE,
             ceiling: None,
             keep_recent: KEEP_RECENT,
+            instructions: None,
         }
     }
 }
@@ -247,9 +252,12 @@ impl CompactionError {
 ///
 /// The summary is asked of the agent's own model ([`Agent::model_spec`]),
 /// warm first, then cold if the warm reply is not a whole summary (it failed,
-/// called a tool, was cut off, or said nothing). The head of history is replaced by
-/// one user message carrying the summary; `on_message` is not called for that,
-/// so a host that persists history records the change itself.
+/// called a tool, was cut off, or said nothing), with `cfg`'s
+/// [`instructions`](CompactionOptions::instructions) after haest's own. The
+/// head of history is replaced by one user message carrying the summary, and
+/// the agent's hooks hear it through
+/// [`on_compaction`](crate::AgentHooks::on_compaction) (not `on_message`):
+/// a host that persists history records it there, whoever compacted.
 ///
 /// Each call's cost is booked as it comes back, success or not: on the
 /// agent's ledger ([`SharedDeps::ledger`](crate::SharedDeps::ledger)) and
@@ -344,7 +352,8 @@ pub async fn compact(
         return Ok(None);
     }
     let kept = agent.history().len() - cut;
-    let (res, path) = summarize(agent, cut, kept, cancel).await?;
+    let asked = cfg.instructions.as_deref();
+    let (res, path) = summarize(agent, cut, kept, asked, cancel).await?;
     let summary = match res.text {
         Ok(summary) => summary,
         Err(reason) => {
@@ -357,12 +366,14 @@ pub async fn compact(
     agent
         .history_mut()
         .splice(..cut, [compaction_summary_message(&summary)]);
-    Ok(Some(CompactionResult {
+    let done = CompactionResult {
         summary,
         kept,
         path,
         usage: res.usage,
-    }))
+    };
+    agent.deps().shared().hooks().on_compaction(&done);
+    Ok(Some(done))
 }
 
 mod summary;
