@@ -23,7 +23,7 @@ use rquickjs::{
 };
 
 use super::{
-    parts::{Logs, as_function},
+    parts::{Logs, as_function, later},
     path::path_op,
     thread::VmPort,
     types::{VmBeat, VmJob, VmStop},
@@ -76,7 +76,7 @@ impl Clock {
         let started = Instant::now();
         Rc::new(Self {
             started,
-            deadline: started + job.caps.timeout,
+            deadline: later(started, job.caps.timeout),
             stop: job.stop.clone(),
             last_beat: Cell::new(started),
             shared,

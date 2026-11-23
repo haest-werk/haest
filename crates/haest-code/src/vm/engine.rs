@@ -16,7 +16,7 @@ use std::{rc::Rc, sync::Arc, time::Duration};
 use rquickjs::{Coerced, Ctx, Exception, Persistent, Promise, Value};
 
 use super::{
-    parts::{BASE_PRELUDE, error_text},
+    parts::{BASE_PRELUDE, error_text, later},
     setup::{BEAT, Clock, JobModules, Shared, eval_code, eval_prelude, install},
     thread::VmPort,
     types::{ToVm, VmJob, VmRun},
@@ -179,8 +179,8 @@ impl Run<'_> {
         let used = self.engine.runtime().memory_usage().memory_used_size;
         self.shared.memory.set(used.max(0) as u64);
         self.clock.beat_if_due();
-        let until =
-            (std::time::Instant::now() + BEAT).min(self.clock.deadline + Duration::from_millis(5));
+        let until = (std::time::Instant::now() + BEAT)
+            .min(later(self.clock.deadline, Duration::from_millis(5)));
         let Some(first) = self
             .port
             .wait(until.saturating_duration_since(std::time::Instant::now()))

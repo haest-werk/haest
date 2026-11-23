@@ -41,7 +41,7 @@ pub struct VmCaps {
     /// engine starts, even mid-loop ([`VmStop::Timeout`]). A mod file's
     /// default export must return within it when the mod loads; after that
     /// the mod's calls have no deadline, and [`slice`](Self::slice) bounds
-    /// its code.
+    /// its code. Thirty years or more (`Duration::MAX`) is no deadline.
     pub timeout: Duration,
     /// The longest a mod file's code may run without a pause (awaiting does
     /// not count). Past it the code is stopped: every call into the mod in

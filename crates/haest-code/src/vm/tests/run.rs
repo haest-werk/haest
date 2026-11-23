@@ -4,7 +4,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -126,4 +126,38 @@ async fn memory_is_capped() {
     let r = run(code, &s, tight, &CancellationToken::new()).await;
     assert!(r.error.is_some());
     assert_eq!(r.stopped, None);
+}
+
+/// The longest `by` that `at + by` can hold, to the millisecond.
+fn reach(at: Instant) -> Duration {
+    let (mut lo, mut hi) = (Duration::ZERO, Duration::MAX);
+    while hi - lo > Duration::from_millis(1) {
+        let mid = lo + (hi - lo) / 2;
+        if at.checked_add(mid).is_some() {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo
+}
+
+/// A timeout no `Instant` can reach is no deadline: the run still ends with
+/// its value. So does one a millisecond short of that point, where a
+/// deadline can be made but nothing can be added to it.
+#[tokio::test]
+async fn a_timeout_past_what_an_instant_holds_is_no_deadline() {
+    let just_under = reach(Instant::now()) - Duration::from_millis(1);
+    for timeout in [Duration::MAX, just_under] {
+        let caps = caps(5000).with_timeout(timeout);
+        let r = run(
+            "return 1 + 1",
+            &VmSpec::default(),
+            caps,
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(r.value.as_deref(), Some("2"), "{timeout:?}: {r:?}");
+        assert_eq!((r.error, r.stopped), (None, None));
+    }
 }

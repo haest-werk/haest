@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     STOP_GRACE, VmSpec,
+    parts::later,
     thread::Engine,
     types::{FromVm, ToVm, VmBeat, VmRun, VmStop},
 };
@@ -57,7 +58,7 @@ pub(super) async fn supervise(
     cancel: &CancellationToken,
     on_beat: &(dyn Fn(VmBeat) + Send + Sync),
 ) -> VmRun {
-    let deadline = Instant::now() + spec.caps.timeout;
+    let deadline = later(Instant::now(), spec.caps.timeout);
     let mut answering = Answering::new();
     let Engine { to_vm, mut from_vm } = engine;
     let mut stopper = Stopper {

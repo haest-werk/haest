@@ -1,7 +1,20 @@
 //! The small pieces of one engine run ([`super::engine`]): console buffer, base
 //! prelude, pure helpers.
 
+use std::{ops::Add, time::Duration};
+
 use rquickjs::{Coerced, Value};
+
+/// The furthest ahead a run's deadline lies: thirty years, as far as tokio's
+/// own timers reach. A longer timeout is no deadline at all.
+const FAR_FUTURE: Duration = Duration::from_secs(30 * 365 * 24 * 60 * 60);
+
+/// `at` plus `by`, `by` held to [`FAR_FUTURE`]: every deadline of a run, std's
+/// or tokio's `Instant`, so no timeout a host hands in can overflow one
+/// (`Duration::MAX` included), nor can a few milliseconds added to it.
+pub(crate) fn later<I: Add<Duration, Output = I>>(at: I, by: Duration) -> I {
+    at + by.min(FAR_FUTURE)
+}
 
 /// On the same line as the code's first line, so a stack's line numbers are the model's own.
 pub(crate) fn as_function(code: &str) -> String {
@@ -133,6 +146,18 @@ mod tests {
         // Nothing lands after the cap.
         logs.add("log", "more");
         assert_eq!(logs.stdout, "12345\n");
+    }
+
+    #[test]
+    fn a_deadline_is_its_timeout_away_up_to_thirty_years() {
+        let now = std::time::Instant::now();
+        assert_eq!(
+            later(now, Duration::from_secs(5)),
+            now + Duration::from_secs(5)
+        );
+        assert_eq!(later(now, Duration::MAX), now + FAR_FUTURE);
+        let tokio_now = tokio::time::Instant::now();
+        assert_eq!(later(tokio_now, Duration::MAX), tokio_now + FAR_FUTURE);
     }
 
     #[test]
