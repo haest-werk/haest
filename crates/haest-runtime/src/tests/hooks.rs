@@ -9,7 +9,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use haest_bridges::HookSettings;
 use haest_core::{
     ChildEnv, LoopEvent, WorkspaceMode,
     fs::MemFs,
@@ -17,7 +16,7 @@ use haest_core::{
     tool::ToolContext,
 };
 use haest_http::testing::{Respond, Server};
-use haest_mods::{Before, Mod, ModEnv, ModToolCall};
+use haest_mods::{Before, HookSettings, Mod, ModEnv, ModToolCall};
 use haest_providers::http::{HttpClient, HttpError, Request, Response};
 use haest_settings::{BuiltinTools, Settings};
 use serde_json::{Value, json};

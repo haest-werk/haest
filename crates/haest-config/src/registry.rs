@@ -4,8 +4,8 @@
 //! line. Its default is the bare value (`Config::bare`): every capability off
 //! until asked for, every brake on.
 
-use haest_bridges::HookSettings;
 use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
+use haest_mods::HookSettings;
 use haest_settings::{BuiltinTools, ContextSources, ModReload, SkillSources};
 
 use crate::fields::{

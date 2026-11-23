@@ -22,7 +22,7 @@ fn host(remote: &Remote) -> HookHost {
 
 /// `setting` bound for `host`, as the only mod.
 fn bound_mods(setting: Value, host: &HookHost, ui: Arc<TestUi>) -> Mods {
-    let (hooks, notes) = read(setting).unwrap().hooks(host);
+    let (hooks, notes) = host.bind(&read(setting).unwrap());
     assert_eq!(notes, Vec::<String>::new());
     Mods::new(env(ui, WorkspaceMode::Real), [hooks.expect("bound")])
 }
@@ -112,7 +112,7 @@ async fn an_entry_the_host_can_not_run_is_left_out_and_said() {
         "turn.end": [{ "command": "sh one.sh" }, { "command": "sh two.sh" }],
     }))
     .unwrap();
-    let (hooks, notes) = setting.hooks(&HookHost::new("/w"));
+    let (hooks, notes) = HookHost::new("/w").bind(&setting);
     if cfg!(feature = "shell") {
         assert!(hooks.is_none());
         assert_eq!(notes.len(), 3);

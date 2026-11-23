@@ -21,6 +21,10 @@ testing = ["haest-core/testing"]
 
 [dependencies]
 haest-core = { workspace = true }
+# Its types only (the workspace entry turns off `reqwest`, so no client, no
+# TLS): the `hooks` setting's Debug hides a URL's credentials with
+# `redacted_url`, as every haest Debug does.
+haest-http = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

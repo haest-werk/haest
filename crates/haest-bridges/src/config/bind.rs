@@ -9,13 +9,12 @@ use haest_core::{ChildEnv, error::BoxError};
 #[cfg(feature = "http")]
 use haest_http::HttpClientRef;
 use haest_mods::{
-    Binding, Event, Hook, Hooks, ModEvent, ModelAfterPayload, ModelBeforePayload,
-    PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload, ToolBeforePayload, ToolEvent,
-    TurnEndPayload,
+    Binding, Event, Hook, HookDialect, HookEntry, HookSettings, Hooks, ModEvent, ModelAfterPayload,
+    ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload, ToolAfterPayload,
+    ToolBeforePayload, ToolEvent, TurnEndPayload,
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{HookDialect, HookEntry, HookSettings, Target, entry_name};
 #[cfg(feature = "http")]
 use crate::HttpHook;
 #[cfg(feature = "shell")]
@@ -31,7 +30,7 @@ const NAME: &str = "[hooks]";
 type ClaudeNow = Arc<dyn Fn() -> Claude + Send + Sync>;
 
 /// What a host hands the hooks its `hooks` setting binds
-/// ([`HookSettings::hooks`]): the conversation's directory, the variables a
+/// ([`bind`](Self::bind)): the conversation's directory, the variables a
 /// command gets (or that no process may start), the HTTP client a POST goes
 /// through, and the session the `claude` dialect names.
 ///
@@ -106,33 +105,29 @@ impl fmt::Debug for HookHost {
     }
 }
 
-impl HookSettings {
-    /// Every entry bound in one [`Hooks`], named `[hooks]` in reports: a
-    /// `command` as a [`ShellHook`], a `url` as an [`HttpHook`], each in the
-    /// [`Binding`] of its event with its matcher, timeout and `on_error`,
-    /// in the dialect it names. An event's entries bind in the order
-    /// written, so a report's `hook 2 on tool.before` is the second
+impl HookHost {
+    /// Every entry of `settings` bound in one [`Hooks`], named `[hooks]` in
+    /// reports: a `command` as a [`ShellHook`], a `url` as an [`HttpHook`],
+    /// each in the [`Binding`] of its event with its matcher, timeout and
+    /// `on_error`, in the dialect it names. An event's entries bind in the
+    /// order written, so a report's `hook 2 on tool.before` is the second
     /// `[[hooks."tool.before"]]` across the config's layers. None when no
     /// entry binds.
     ///
     /// An entry that cannot bind here is left out with a note, the second
     /// value: a command where no process may start
-    /// ([`HookHost::with_env`]), a command without this crate's `shell`
-    /// feature, a URL without `http`.
-    pub fn hooks(&self, host: &HookHost) -> (Option<Hooks>, Vec<String>) {
+    /// ([`with_env`](Self::with_env)), a command without this crate's
+    /// `shell` feature, a URL without `http`.
+    pub fn bind(&self, settings: &HookSettings) -> (Option<Hooks>, Vec<String>) {
         let mut hooks = Hooks::new().with_name(NAME);
         let (mut bound, mut notes) = (0, Vec::new());
-        for (event, entries) in &self.events {
-            for (nth, entry) in (1..).zip(entries) {
-                match bind(hooks.clone(), *event, entry, host) {
-                    Ok(more) => {
-                        hooks = more;
-                        bound += 1;
-                    }
-                    Err(why) => {
-                        notes.push(format!("{} is not bound: {why}", entry_name(*event, nth)))
-                    }
+        for (event, name, entry) in settings.named_entries() {
+            match bind(hooks.clone(), event, entry, self) {
+                Ok(more) => {
+                    hooks = more;
+                    bound += 1;
                 }
+                Err(why) => notes.push(format!("{name} is not bound: {why}")),
             }
         }
         ((bound > 0).then_some(hooks), notes)
@@ -147,7 +142,7 @@ fn bind(
     host: &HookHost,
 ) -> Result<Hooks, String> {
     let carried = carried(entry, host)?;
-    match entry.dialect {
+    match entry.dialect() {
         HookDialect::Claude => on(
             hooks,
             event,
@@ -164,34 +159,46 @@ fn bind(
 
 /// The hook that carries `entry`'s event, in haest's dialect.
 fn carried(entry: &HookEntry, host: &HookHost) -> Result<Carried, String> {
-    match &entry.target {
-        #[cfg(feature = "shell")]
-        Target::Command(command) => {
-            let Some(env) = &host.env else {
-                return Err(
-                    "a command hook needs a host that starts processes, and this one starts none"
-                        .into(),
-                );
-            };
-            let hook = ShellHook::new(command.as_str())
-                .with_cwd(&host.cwd)
-                .with_env(env.clone());
-            Ok(Carried::Shell(hook))
-        }
-        #[cfg(not(feature = "shell"))]
-        Target::Command(_) => Err("a command hook needs haest-bridges' `shell` feature".into()),
-        #[cfg(feature = "http")]
-        Target::Url(url) => {
-            let hook = HttpHook::new(url.as_str())
-                .with_client(host.client.clone())
-                .with_cwd(&host.cwd);
-            let hook =
-                (entry.headers.iter()).fold(hook, |h, (name, value)| h.with_header(name, value));
-            Ok(Carried::Http(hook))
-        }
-        #[cfg(not(feature = "http"))]
-        Target::Url(_) => Err("an HTTP hook needs haest-bridges' `http` feature".into()),
+    match (entry.command(), entry.url()) {
+        (Some(command), _) => command_hook(command, host),
+        (None, Some(url)) => url_hook(url, entry, host),
+        // An entry is a command or a URL: haest-mods builds no other.
+        (None, None) => Err("it is neither a command nor a URL".into()),
     }
+}
+
+/// `command` as a [`ShellHook`] of `host`'s.
+#[cfg(feature = "shell")]
+fn command_hook(command: &str, host: &HookHost) -> Result<Carried, String> {
+    let Some(env) = &host.env else {
+        return Err(
+            "a command hook needs a host that starts processes, and this one starts none".into(),
+        );
+    };
+    let hook = ShellHook::new(command)
+        .with_cwd(&host.cwd)
+        .with_env(env.clone());
+    Ok(Carried::Shell(hook))
+}
+
+#[cfg(not(feature = "shell"))]
+fn command_hook(_: &str, _: &HookHost) -> Result<Carried, String> {
+    Err("a command hook needs haest-bridges' `shell` feature".into())
+}
+
+/// `url` as an [`HttpHook`] through `host`'s client, with `entry`'s headers.
+#[cfg(feature = "http")]
+fn url_hook(url: &str, entry: &HookEntry, host: &HookHost) -> Result<Carried, String> {
+    let hook = HttpHook::new(url)
+        .with_client(host.client.clone())
+        .with_cwd(&host.cwd);
+    let hook = (entry.headers()).fold(hook, |h, (name, value)| h.with_header(name, value));
+    Ok(Carried::Http(hook))
+}
+
+#[cfg(not(feature = "http"))]
+fn url_hook(_: &str, _: &HookEntry, _: &HookHost) -> Result<Carried, String> {
+    Err("an HTTP hook needs haest-bridges' `http` feature".into())
 }
 
 /// `hook` bound to `event` in `hooks` with `entry`'s options.
@@ -227,10 +234,10 @@ where
 /// `hook` with `entry`'s timeout and `on_error`, else its event's defaults.
 fn binding<E: Event>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
     let mut binding = Binding::new(hook);
-    if let Some(timeout) = entry.timeout {
+    if let Some(timeout) = entry.timeout() {
         binding = binding.with_timeout(timeout);
     }
-    if let Some(on_error) = entry.on_error {
+    if let Some(on_error) = entry.on_error() {
         binding = binding.with_on_error(on_error);
     }
     binding
@@ -239,7 +246,7 @@ fn binding<E: Event>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
 /// [`binding`], and the tools `entry`'s matcher picks.
 fn tool_binding<E: ToolEvent>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
     let binding = binding(hook, entry);
-    match &entry.matcher {
+    match entry.matcher() {
         Some(pattern) => binding.with_matcher(pattern),
         None => binding,
     }

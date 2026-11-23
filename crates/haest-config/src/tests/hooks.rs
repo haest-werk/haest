@@ -3,8 +3,7 @@
 //! project's file held to commands (and read only when trusted), and a
 //! header's value never shown.
 
-use haest_bridges::HookSettings;
-use haest_mods::ModEvent;
+use haest_mods::{HookDialect, HookEntry, HookSettings, ModEvent};
 
 use super::*;
 
@@ -18,7 +17,7 @@ fn hooks(raw: &str) -> HookSettings {
 
 /// Each entry's command, or its URL: what it runs, in the order it binds.
 fn targets(hooks: &HookSettings) -> Vec<(ModEvent, &str)> {
-    fn target(e: &haest_bridges::HookEntry) -> &str {
+    fn target(e: &HookEntry) -> &str {
         e.command().or(e.url()).unwrap_or_default()
     }
     hooks
@@ -55,7 +54,7 @@ on_error = "block"
         ]
     );
     let (_, guard) = got.entries().next().unwrap();
-    assert_eq!(guard.dialect(), haest_bridges::HookDialect::Claude);
+    assert_eq!(guard.dialect(), HookDialect::Claude);
     assert_eq!(guard.matcher(), Some("Bash"));
     assert_eq!(r.resolved.source("hooks").to_string(), USER_FILE);
     // The setting is as written; what the runtime binds has the token in.

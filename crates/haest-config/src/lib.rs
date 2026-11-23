@@ -180,10 +180,10 @@ mod table;
 mod tests;
 mod value;
 
-use haest_bridges::HookSettings;
 use haest_core::ChildEnv;
 #[cfg(feature = "mcp")]
 use haest_mcp::McpServerConfig;
+use haest_mods::HookSettings;
 use haest_providers::{CustomProviders, RoutingScopes};
 
 pub use error::{ConfigError, SetError};

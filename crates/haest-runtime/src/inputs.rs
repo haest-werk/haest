@@ -2,10 +2,9 @@
 //! inputs ([`RuntimeInputs`]) and what it decides per run ([`BuildOptions`],
 //! [`Resume`]).
 
-use haest_bridges::HookSettings;
 use haest_core::{ChildEnv, KeySourceRef, ModelResolverRef};
 use haest_mcp::McpServerConfig;
-use haest_mods::ModRef;
+use haest_mods::{HookSettings, ModRef};
 use haest_providers::{CustomProviders, RoutingScopes, http::HttpClientRef};
 use haest_settings::Settings;
 

@@ -53,8 +53,9 @@ bridge-http = ["dep:haest-bridges", "haest-bridges/http", "mods", "http"]
 settings = ["dep:haest-settings"]
 # The loader: settings from TOML files, HAEST_* variables and flags, plus what
 # the runtime is handed beside them (keys, providers.json, child env; with `mcp`
-# too, a trusted project's .mcp.json).
-config = ["dep:haest-config", "settings", "providers"]
+# too, a trusted project's .mcp.json). Turns on `mods`: the `hooks` setting's
+# type is `mods::HookSettings`.
+config = ["dep:haest-config", "settings", "providers", "mods"]
 # The whole conversation built from what a host hands in, behind its UI (the CLI's base).
 # The shell and HTTP bridges bind the `hooks` setting's commands and URLs.
 runtime = ["dep:haest-runtime", "settings", "providers", "workspace", "tools", "mcp", "code", "mods", "bridge-js", "bridge-shell", "bridge-http"]

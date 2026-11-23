@@ -46,6 +46,7 @@
 //! | [`Mod`] | a native mod: implement only the events it hooks |
 //! | [`Hooks`], [`Hook`], [`Binding`] | one handler per event as a mod: a closure, an `async fn` or any [`Hook`], each bound with a timeout, an [`OnError`] and (tool events) a tool-name matcher |
 //! | [`Event`], [`ModEvent`] and the payload and decision types | the events' protocol: what a handler gets and answers, typed once, the mod files' own JSON |
+//! | [`HookSettings`], [`HookEntry`], [`HookDialect`] | the `hooks` setting: commands and URLs bound per event, read from a config file or built in Rust, and checked; haest-bridges' `HookHost::bind` makes them a [`Hooks`] |
 //! | [`load_mods`] | the built-ins plus the host's own mods, as [`Mods`] |
 //! | [`Mods`] | every loaded mod, in order, as a cheap handle that never changes once built; a host's own native mods go in with [`ModOptions::with_mod`] or [`Mods::new`]. A `Mods` is a [`Mod`] itself, so a set can run inside another in its place |
 //! | [`ModTools`], [`ModSystemPrompt`], [`ModHooks`] | the wrappers a host puts around its tool source, its system prompt and its [`AgentHooks`](haest_core::AgentHooks) |
@@ -271,6 +272,7 @@ mod fold;
 mod gate;
 mod hook;
 mod hook_set;
+mod hook_settings;
 mod hooks;
 mod loader;
 mod payload;
@@ -305,6 +307,7 @@ pub use events::{Event, ModEvent, ToolEvent};
 pub use gate::{ASK_TIMEOUT, ApprovalAnswer, ApprovalGate, ModLine, Prompter, PrompterRef};
 pub use hook::{Binding, DEFAULT_HOOK_TIMEOUT, Hook, HookError, OnError};
 pub use hook_set::Hooks;
+pub use hook_settings::{HookDialect, HookEntry, HookEntryError, HookSettings};
 pub use hooks::ModHooks;
 pub use loader::{ModOptions, load_mods};
 pub use payload::{

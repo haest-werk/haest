@@ -200,7 +200,7 @@
 //! | `bridge-shell` | `bridges::ShellHook`: a hook that is a command run on the host per event, JSON on its stdin and stdout, in haest's dialect or Claude Code's (`bridges::Claude`, so its hook scripts run as they are); turns on `mods` | no |
 //! | `bridge-http` | `bridges::HttpHook`: a hook behind a URL, a POST per event through [`http`], in the same two dialects; turns on `mods` and `http` | no |
 //! | `settings` | [`settings`]: every setting as a plain value a host writes out in Rust | yes |
-//! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json` | no |
+//! | `config` | [`config`]: the loader for haest's TOML files, `HAEST_*` variables and flags; with `mcp` too, it reads a trusted project's `.mcp.json`; turns on `mods` (the `hooks` setting is a `mods::HookSettings`) | no |
 //! | `runtime` | [`runtime`]: a whole conversation built from settings, behind a host's UI; turns on the three bridges (the `hooks` setting's commands and URLs) | no |
 //! | `wire` | [`wire`]: the envelope around a conversation's events, the requests a peer sends, a replay ring with gaps, an NDJSON codec | no |
 //! | `session` | [`session`]: a conversation another program watches and drives while it runs (input mid-turn, catch-up, approvals over it); with `runtime`, the whole conversation is one | no |

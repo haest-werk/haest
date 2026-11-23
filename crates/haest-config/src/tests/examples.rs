@@ -99,7 +99,7 @@ async fn the_example_files_load_together_and_do_what_they_say() {
         (guard.command(), guard.dialect(), guard.matcher()),
         (
             Some("sh ~/.config/haest/hooks/no-rm-rf.sh"),
-            haest_bridges::HookDialect::Claude,
+            haest_mods::HookDialect::Claude,
             Some("Bash")
         )
     );

@@ -7,8 +7,8 @@ mod raw;
 
 use std::{collections::BTreeMap, fmt, path::PathBuf};
 
-use haest_bridges::HookSettings;
 use haest_core::provider::WebSearchEngine;
+use haest_mods::HookSettings;
 use haest_providers::http::__private::UrlDebug;
 use haest_settings::Settings;
 

@@ -177,9 +177,16 @@ first; [docs/extending.md](docs/extending.md) maps them all.
   (`[hooks]`) after the built-ins and the mod files. A wrong entry fails to
   load, naming its file and its number there, never a header's value. A
   trusted project's file may bind a command, never a URL; an untrusted
-  project's hooks never load. haest-bridges: `HookSettings` and
-  `HookHost`. haest-config: `Config::hooks`, `Loaded::hooks`.
-  haest-runtime: `RuntimeInputs::with_hook_settings`, which
+  project's hooks never load. haest-mods: the setting's type,
+  `HookSettings` with `HookEntry` and `HookDialect`, read and checked
+  there, beside `Binding` and `OnError`; a Rust host builds one with
+  `HookSettings::with_entry` (`HookEntry::shell`, `HookEntry::http`), held
+  to the rules a file is. haest-bridges: `HookHost`, whose `bind` makes
+  the entries one `Hooks` through its `shell` and `http` bridges.
+  haest-config: `Config::hooks`,
+  `Loaded::hooks`; it depends on haest-mods, not haest-bridges, and the
+  facade's `config` turns on `mods`, so `haest::mods::HookSettings` names
+  the type. haest-runtime: `RuntimeInputs::with_hook_settings`, which
   `haest::runtime_inputs` sets; the facade's `runtime` turns on
   `bridge-shell` and `bridge-http`.
   [docs/extending.md](docs/extending.md#hooks-from-a-config-file).

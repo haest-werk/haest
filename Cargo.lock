@@ -1009,7 +1009,6 @@ dependencies = [
 name = "haest-config"
 version = "0.4.1"
 dependencies = [
- "haest-bridges",
  "haest-core",
  "haest-mcp",
  "haest-mods",
@@ -1092,6 +1091,7 @@ version = "0.4.1"
 dependencies = [
  "async-trait",
  "haest-core",
+ "haest-http",
  "regex",
  "serde",
  "serde_json",

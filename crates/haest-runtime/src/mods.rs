@@ -1,10 +1,11 @@
 //! [`mods_for`]: the conversation's mods, and [`config_hooks`]: the
 //! `hooks` setting bound for it.
 
-use haest_bridges::{Claude, HookHost, HookSettings, ModFileOptions, ModFiles};
+use haest_bridges::{Claude, HookHost, ModFileOptions, ModFiles};
 use haest_core::{ChildEnv, fs::FsRef, tool::ToolServices};
 use haest_mods::{
-    ApprovalGate, Hooks, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods, load_mods,
+    ApprovalGate, HookSettings, Hooks, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods,
+    load_mods,
 };
 use haest_providers::http::HttpClientRef;
 
@@ -84,7 +85,7 @@ pub(crate) fn config_hooks(
     if let Some(env) = world.child_env_with(passed_env) {
         host = host.with_env(env);
     }
-    let (bound, notes) = settings.hooks(&host);
+    let (bound, notes) = host.bind(settings);
     for note in notes {
         hooks.warn(&format!("{note}."));
     }

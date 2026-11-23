@@ -3,11 +3,11 @@
 
 use std::{path::PathBuf, time::Duration};
 
-use haest_bridges::HookSettings;
 use haest_core::{
     Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
 };
+use haest_mods::HookSettings;
 use haest_settings::{BuiltinTools, CacheSettings, ContextSources, ModReload, SkillSources};
 
 use super::{BrokerAccess, ControlSocket, EnvPassthrough};

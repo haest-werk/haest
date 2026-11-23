@@ -292,6 +292,12 @@ the file and the entry as that file numbers it
 (``~/.config/haest/config.toml: hooks: [[hooks."turn.end"]] #2: unknown key `comand` ``),
 and never a header's value.
 
+The setting's type is haest-mods' [`HookSettings`](../crates/haest-mods/src/hook_settings.rs),
+beside `Binding` and `OnError`. A Rust host builds the same entries without a file
+(`HookSettings::with_entry` with a `HookEntry::shell` or `HookEntry::http`, refused what a
+file is refused) and binds them with haest-bridges' `HookHost::bind`, which is what
+haest-runtime does with the loaded setting.
+
 Where they come from:
 
 - Every layer's entries bind after the ones before it, in the order written: your file, a
