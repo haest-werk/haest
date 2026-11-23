@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// The four token counts do not overlap: `input` excludes what was read from
 /// or written to the prompt cache. [`Usage::context_tokens`] is their sum.
+/// `cache_write_1h` is the part of `cache_write` written to live an hour,
+/// and `reasoning` the part of `output` spent reasoning.
 ///
 /// Usages add up with `+=` and [`Sum`]; a count stops at `u64::MAX`. A cost
 /// is added when the usage added has one, so a sum's `cost_usd` stays `None`
@@ -42,9 +44,20 @@ pub struct Usage {
     pub cache_write: u64,
     /// Of `output`, the tokens spent reasoning, when the provider reports them.
     pub reasoning: u64,
+    /// Of `cache_write`, the tokens written to live an hour (Anthropic's
+    /// `ttl: "1h"`, [`CacheTtl::OneHour`](crate::cache::CacheTtl::OneHour));
+    /// the rest live the provider's default time. 0 where the provider does
+    /// not tell them apart (OpenRouter, OpenAI). Left out of the JSON at 0,
+    /// so a usage without it reads and writes as it always did.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cache_write_1h: u64,
     /// When the provider reports it (OpenRouter does), or from a configured price.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl AddAssign<&Usage> for Usage {
@@ -54,6 +67,7 @@ impl AddAssign<&Usage> for Usage {
         self.cache_read = self.cache_read.saturating_add(u.cache_read);
         self.cache_write = self.cache_write.saturating_add(u.cache_write);
         self.reasoning = self.reasoning.saturating_add(u.reasoning);
+        self.cache_write_1h = self.cache_write_1h.saturating_add(u.cache_write_1h);
         if real_cost(u.cost_usd).is_some() {
             self.cost_usd = Some(add_cost(self.cost_usd.unwrap_or(0.0), u.cost_usd));
         }

@@ -30,6 +30,7 @@ use std::{fmt, time::Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    cache::CachePrefs,
     caps::TurnCaps,
     compaction::last_context_tokens,
     deps::AgentDeps,
@@ -47,7 +48,9 @@ use control::Running;
 pub(crate) use delivery::Delivery;
 use turn::Turn;
 
-/// How a new [`Agent`] starts: its model, its effort, and any history to resume.
+/// How a new [`Agent`] starts: its model, its effort, any history to resume,
+/// and how the provider caches its prompt
+/// ([`with_cache_ttl`](Self::with_cache_ttl), [`with_cache_key`](Self::with_cache_key)).
 ///
 /// ```
 /// use haest_core::{AgentOptions, Message, provider::Effort};
@@ -63,15 +66,18 @@ pub struct AgentOptions {
     model_spec: String,
     effort: Option<Effort>,
     history: Vec<Message>,
+    pub(crate) cache: CachePrefs,
 }
 
 impl AgentOptions {
-    /// Options for `model_spec` with no effort and no history.
+    /// Options for `model_spec` with no effort, no history, the default
+    /// cache TTL and no cache key.
     pub fn new(model_spec: impl Into<String>) -> Self {
         Self {
             model_spec: model_spec.into(),
             effort: None,
             history: Vec::new(),
+            cache: CachePrefs::default(),
         }
     }
 
@@ -176,6 +182,8 @@ pub struct Agent {
     /// The turn's thresholds and which have fired, across turns: this agent's
     /// own, following [`SharedDeps::thresholds`](crate::SharedDeps::thresholds).
     thresholds: SharedWatch,
+    /// The cache TTL and key every model call sends.
+    pub(crate) cache: CachePrefs,
 }
 
 /// The model, the effort, how long the history is and whether a turn runs;
@@ -204,6 +212,7 @@ impl Agent {
             control: AgentControl::new(),
             side_spend: Usage::default(),
             thresholds: SharedWatch::new(thresholds),
+            cache: opts.cache,
         }
     }
 
@@ -237,9 +246,14 @@ impl Agent {
     }
 
     /// A model call made for this conversation outside the loop (compaction's
-    /// summary): it counts toward the running turn's caps before its next model call.
+    /// summary, a cache pre-warm) came back: what it cost goes on the
+    /// conversation's ledger now, and toward the running turn's caps before
+    /// its next model call.
     pub(crate) fn spent_outside_the_loop(&mut self, usage: &Usage) {
         self.side_spend += usage;
+        if let Some(ledger) = self.deps.shared().ledger() {
+            ledger.charge(usage);
+        }
     }
 
     /// What was spent outside the loop since the last look.
@@ -358,7 +372,11 @@ impl Agent {
     /// ([`ResolvedModel::model`](crate::ResolvedModel::model)). Builds the
     /// system prompt and the tool list afresh.
     pub(crate) async fn request_prefix(&self, model: &str) -> RequestPrefix {
-        build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
+        RequestPrefix {
+            cache_ttl: self.cache.ttl,
+            cache_key: self.cache.key.clone(),
+            ..build_request_prefix(&self.deps, &self.model_spec, model, self.effort).await
+        }
     }
 
     /// History as the current model may receive it (media it cannot take is withheld, with a note).

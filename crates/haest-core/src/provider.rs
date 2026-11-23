@@ -24,6 +24,8 @@
 //!   accepts, for an API that refuses any level it does not list.
 //! - [`book_priced_cost`]: a cost from the configured price, for an API that
 //!   returns none.
+//! - [`Provider::check_prewarm`]: whether a request can go out as a cache
+//!   pre-warm ([`ProviderRequest::prewarm`]); the default says it cannot.
 //! - [`data_url`](crate::media::data_url) and
 //!   [`dropped_note`](crate::media::dropped_note): media the wire format
 //!   carries as a `data:` URL, or cannot carry at all.
@@ -31,15 +33,15 @@
 use futures::{StreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio_util::sync::CancellationToken;
 
 pub use adapter::mark_stream_failed;
 pub use answer::{Deltas, answer_stream};
+pub use request::ProviderRequest;
 pub use resolve::{ModelError, ModelResolver, ModelResolverRef, ResolvedModel, parse_model_spec};
 
 pub use crate::{effort::nearest_accepted_effort, pricing::book_priced_cost};
 
-use crate::messages::{AssistantMessage, Message};
+use crate::{cache::PrewarmRefused, messages::AssistantMessage};
 
 crate::word_enum! {
     /// haest's reasoning levels, cheapest first. `Off` turns reasoning off
@@ -141,94 +143,6 @@ pub struct WebSearchOptions {
     pub max_results: u32,
     /// Results across every search of one model call: the cost and context bound.
     pub max_total_results: u32,
-}
-
-/// One model call, provider-neutral: everything an adapter turns into its wire
-/// request.
-///
-/// Built with [`ProviderRequest::new`] and a `with_*` per optional part, so a
-/// part added later breaks no caller; an adapter reads the fields.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct ProviderRequest {
-    /// The provider's own model id (the spec without `provider:`).
-    pub model: String,
-    /// The system prompt.
-    pub system: String,
-    /// The history. The loop sends it fitted to what the model accepts
-    /// (media it cannot take is withheld, with a note).
-    pub messages: Vec<Message>,
-    /// The tools the model may call; empty = none.
-    pub tools: Vec<ToolSpec>,
-    /// The turn's interrupt. When it fires, end the stream soon, with a
-    /// [`ProviderEvent::Done`] whose stop reason is [`StopReason::Aborted`](crate::StopReason::Aborted).
-    pub cancel: CancellationToken,
-    /// None = send nothing and let the model use its own default.
-    pub effort: Option<Effort>,
-    /// The output cap; None = the adapter's or the model's default.
-    pub max_tokens: Option<u32>,
-    /// Only providers that run one (OpenRouter) send it.
-    pub web_search: Option<WebSearchOptions>,
-}
-
-impl ProviderRequest {
-    /// A call to `model` with `messages`: no system prompt, no tools, a fresh
-    /// cancel token, and the model's own effort, output cap and search.
-    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
-        Self {
-            model: model.into(),
-            system: String::new(),
-            messages,
-            tools: Vec::new(),
-            cancel: CancellationToken::new(),
-            effort: None,
-            max_tokens: None,
-            web_search: None,
-        }
-    }
-
-    /// With `system` as the system prompt.
-    #[must_use]
-    pub fn with_system(mut self, system: impl Into<String>) -> Self {
-        self.system = system.into();
-        self
-    }
-
-    /// With `tools` offered to the model.
-    #[must_use]
-    pub fn with_tools(mut self, tools: Vec<ToolSpec>) -> Self {
-        self.tools = tools;
-        self
-    }
-
-    /// Interrupted by `cancel`.
-    #[must_use]
-    pub fn with_cancel(mut self, cancel: CancellationToken) -> Self {
-        self.cancel = cancel;
-        self
-    }
-
-    /// At reasoning `effort`. Without it nothing is sent: the model's default.
-    #[must_use]
-    pub fn with_effort(mut self, effort: Effort) -> Self {
-        self.effort = Some(effort);
-        self
-    }
-
-    /// With at most `max_tokens` of output. Without it, the adapter's or the
-    /// model's default cap.
-    #[must_use]
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
-        self
-    }
-
-    /// With a provider-side web search. Without it, none is sent.
-    #[must_use]
-    pub fn with_web_search(mut self, web_search: WebSearchOptions) -> Self {
-        self.web_search = Some(web_search);
-        self
-    }
 }
 
 /// One event of a model call's stream. The deltas are for showing progress;
@@ -345,6 +259,23 @@ pub trait Provider: Send + Sync {
     fn id(&self) -> &str;
     /// Start the call. Must end with exactly one [`ProviderEvent::Done`], also on failure.
     fn stream(&self, req: ProviderRequest) -> ProviderStream;
+
+    /// Whether [`stream`](Self::stream) would send `req` as the cache
+    /// pre-warm it asks for ([`ProviderRequest::prewarm`]): `Ok` when it
+    /// would, why not when it would refuse (and send nothing).
+    ///
+    /// The default refuses every request ([`PrewarmRefused::Unsupported`]):
+    /// a provider that sends pre-warms says so here, and its `stream` ends a
+    /// pre-warm it refuses with that refusal as its error.
+    ///
+    /// # Errors
+    ///
+    /// The [`PrewarmRefused`] that says why `req` cannot be a pre-warm here.
+    fn check_prewarm(&self, _req: &ProviderRequest) -> Result<(), PrewarmRefused> {
+        Err(PrewarmRefused::Unsupported {
+            provider: self.id().to_string(),
+        })
+    }
 }
 
 crate::plug_ref! {
@@ -356,6 +287,7 @@ crate::plug_ref! {
 
 mod adapter;
 mod answer;
+mod request;
 mod resolve;
 #[cfg(test)]
 mod tests;

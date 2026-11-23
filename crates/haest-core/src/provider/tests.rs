@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    messages::StopReason,
+    messages::{Message, StopReason},
     testing::{ScriptedProvider, text_answer},
 };
 

@@ -6,6 +6,7 @@
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    cache::CacheTtl,
     deps::AgentDeps,
     effort::fit_effort,
     messages::Message,
@@ -24,6 +25,10 @@ pub(crate) struct RequestPrefix {
     pub(crate) effort: Option<Effort>,
     /// Provider-side web search; None = off.
     pub(crate) web_search: Option<WebSearchOptions>,
+    /// How long the provider keeps what this request caches.
+    pub(crate) cache_ttl: CacheTtl,
+    /// The provider's prompt-cache routing key; None sends none.
+    pub(crate) cache_key: Option<String>,
 }
 
 impl RequestPrefix {
@@ -43,6 +48,9 @@ impl RequestPrefix {
             effort: self.effort,
             max_tokens: None,
             web_search: self.web_search,
+            cache_ttl: self.cache_ttl,
+            cache_key: self.cache_key,
+            prewarm: false,
         }
     }
 }
@@ -50,7 +58,7 @@ impl RequestPrefix {
 /// The prefix for one call of `model` (the provider's id) under `spec`: the
 /// system prompt built now, the tools [`ToolSource::tools`](crate::ToolSource::tools)
 /// advertises now, `effort` fitted to what the model takes, and the deps'
-/// web search.
+/// web search; the default cache TTL and no cache key, which the agent sets.
 pub(crate) async fn build_request_prefix(
     deps: &AgentDeps,
     spec: &str,
@@ -78,5 +86,7 @@ pub(crate) async fn build_request_prefix(
             deps.shared().hooks().as_ref(),
         ),
         web_search: deps.shared().web_search().cloned(),
+        cache_ttl: CacheTtl::default(),
+        cache_key: None,
     }
 }

@@ -98,10 +98,26 @@ fn usage_sums_and_totals_saturate_at_u64_max() {
         cache_read: u64::MAX,
         cache_write: u64::MAX,
         reasoning: u64::MAX,
+        cache_write_1h: u64::MAX,
         cost_usd: None,
     };
     let mut sum = max.clone();
     sum += &max;
     assert_eq!(sum, max);
     assert_eq!(max.context_tokens(), u64::MAX);
+}
+
+/// A session written before haest split hour-long cache writes out reads and
+/// writes back byte for byte; a usage that has some carries them.
+#[test]
+fn a_usage_without_hour_long_writes_replays_byte_for_byte() {
+    let old = r#"{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"reasoning":0,"costUsd":0.5}"#;
+    let usage: Usage = serde_json::from_str(old).unwrap();
+    assert_eq!(usage.cache_write_1h, 0);
+    assert_eq!(serde_json::to_string(&usage).unwrap(), old);
+    let new =
+        r#"{"input":1,"output":2,"cacheRead":3,"cacheWrite":4,"reasoning":0,"cacheWrite1h":4}"#;
+    let usage: Usage = serde_json::from_str(new).unwrap();
+    assert_eq!(usage.cache_write_1h, 4);
+    assert_eq!(serde_json::to_string(&usage).unwrap(), new);
 }

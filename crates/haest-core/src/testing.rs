@@ -71,6 +71,7 @@ use futures::stream;
 use serde_json::{Map, Value};
 
 use crate::{
+    cache::PrewarmRefused,
     messages::{AssistantMessage, AssistantPart, StopReason, ToolCall, Usage},
     provider::{
         ModelError, Provider, ProviderEvent, ProviderRequest, ProviderStream, ResolvedModel,
@@ -82,7 +83,8 @@ use crate::{
 ///
 /// Each answer streams like a real one: a delta or a tool-call start per
 /// part, then [`ProviderEvent::Done`] with the message as scripted. Its id is
-/// `scripted`. It ignores the request's `cancel`.
+/// `scripted`. It ignores the request's `cancel`, and takes every cache
+/// pre-warm ([`Agent::warm_cache`](crate::Agent::warm_cache)).
 ///
 /// A cheap `Clone`: every clone answers from the same script and records
 /// into the same list, so a test keeps one to read [`requests`](Self::requests)
@@ -177,6 +179,12 @@ impl Provider for ScriptedProvider {
             .collect();
         events.push(ProviderEvent::Done(msg));
         Box::pin(stream::iter(events))
+    }
+
+    /// Every request goes out as a pre-warm when asked: the next answer in
+    /// the script is its reply.
+    fn check_prewarm(&self, _req: &ProviderRequest) -> Result<(), PrewarmRefused> {
+        Ok(())
     }
 }
 

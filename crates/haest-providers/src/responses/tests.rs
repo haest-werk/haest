@@ -117,7 +117,8 @@ async fn reasoning_summary_text_a_streamed_function_call_and_usage_fold_into_one
             cache_read: 60,
             cache_write: 0,
             reasoning: 12,
-            cost_usd: None
+            cost_usd: None,
+            ..Usage::default()
         }
     );
 }

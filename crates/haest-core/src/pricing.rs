@@ -20,7 +20,10 @@ const PER: f64 = 1_000_000.0;
 /// not a finite number, which is no price; no `pricing` changes nothing.
 ///
 /// Prices are USD per 1M tokens ([`ModelPricing`]); a cache write with no
-/// price of its own is billed as input.
+/// price of its own is billed as input. The part of the write that lives an
+/// hour ([`Usage::cache_write_1h`]) is billed at
+/// [`cache_write_1h`](ModelPricing::cache_write_1h), or as any other write
+/// when the model has no such price.
 ///
 /// # Examples
 ///
@@ -37,9 +40,12 @@ pub fn book_priced_cost(usage: &mut Usage, pricing: Option<&ModelPricing>) {
     if real_cost(usage.cost_usd).is_some() || usage.context_tokens() == 0 {
         return;
     }
+    let write = p.cache_write.unwrap_or(p.input);
+    let write_1h = usage.cache_write_1h.min(usage.cache_write);
     let cost = usage.input as f64 * p.input
         + usage.cache_read as f64 * p.cached_input
-        + usage.cache_write as f64 * p.cache_write.unwrap_or(p.input)
+        + (usage.cache_write - write_1h) as f64 * write
+        + write_1h as f64 * p.cache_write_1h.unwrap_or(write)
         + usage.output as f64 * p.output;
     usage.cost_usd = Some(cost / PER);
 }
@@ -72,6 +78,32 @@ mod tests {
         };
         book_priced_cost(&mut unpriced, None);
         assert_eq!(unpriced.cost_usd, None);
+    }
+
+    /// The hour-long part of a cache write is billed at the 1h price, the
+    /// rest at the default write price; a model without a 1h price bills
+    /// both alike.
+    #[test]
+    fn hour_long_cache_writes_are_billed_at_their_own_price() {
+        let mut u = Usage {
+            cache_write: 3_000_000,
+            cache_write_1h: 1_000_000,
+            ..Default::default()
+        };
+        let both = ModelPricing::new(4.0, 0.2, 20.0)
+            .with_cache_write(5.0)
+            .with_cache_write_1h(8.0);
+        book_priced_cost(&mut u, Some(&both));
+        assert_eq!(u.cost_usd, Some(18.0)); // 2 * $5 + 1 * $8
+        u.cost_usd = None;
+        book_priced_cost(
+            &mut u,
+            Some(&ModelPricing::new(4.0, 0.2, 20.0).with_cache_write(5.0)),
+        );
+        assert_eq!(u.cost_usd, Some(15.0));
+        u.cost_usd = None;
+        book_priced_cost(&mut u, Some(&ModelPricing::new(4.0, 0.2, 20.0)));
+        assert_eq!(u.cost_usd, Some(12.0));
     }
 
     /// A server's `usage.cost` below 0 is no price: it kept the configured

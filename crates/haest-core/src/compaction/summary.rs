@@ -74,19 +74,11 @@ async fn ask(model: &ResolvedModel, req: ProviderRequest) -> Summary {
     }
 }
 
-/// A summary call came back: what it cost goes on the conversation's ledger
-/// and toward the running turn's caps now, so a compaction dropped before it
-/// ends has booked every call that came back.
-fn book(agent: &mut Agent, usage: &Usage) {
-    agent.spent_outside_the_loop(usage);
-    if let Some(ledger) = agent.deps().shared().ledger() {
-        ledger.charge(usage);
-    }
-}
-
 /// The summary of the first `cut` messages, `kept` staying after it, with
 /// the caller's `asked` instructions: warm, then cold when the warm reply is
-/// no summary. Each call is booked as it comes back.
+/// no summary. Each call is booked ([`Agent::spent_outside_the_loop`]) as it
+/// comes back, so a compaction dropped before it ends has booked every call
+/// that came back.
 pub(super) async fn summarize(
     agent: &mut Agent,
     cut: usize,
@@ -109,7 +101,7 @@ pub(super) async fn summarize(
         prefix.request(model.clone(), messages, cancel.clone()),
     )
     .await;
-    book(agent, &warm.usage);
+    agent.spent_outside_the_loop(&warm.usage);
     if warm.text.is_ok() || cancel.is_cancelled() {
         return Ok((warm, SummaryPath::Warm));
     }
@@ -119,7 +111,7 @@ pub(super) async fn summarize(
         .with_system(COLD_SYSTEM)
         .with_cancel(cancel.clone());
     let mut cold = ask(&resolved, req).await;
-    book(agent, &cold.usage);
+    agent.spent_outside_the_loop(&cold.usage);
     if let (Err(cold_why), Err(warm_why)) = (&mut cold.text, &warm.text) {
         *cold_why = format!("{cold_why} (the warm request: {warm_why})");
     }
