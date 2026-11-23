@@ -14,7 +14,7 @@ use haest_core::{
     ChildEnv,
     workspace::{EXIT_NOT_FOUND, ExecOptions, ExecResult, OutputChunks},
 };
-use tokio::process::Command;
+use tokio::{io::AsyncWriteExt, process::Command};
 
 use super::pipe::{Listener, Sink, drain, take};
 
@@ -114,7 +114,8 @@ impl Drop for KillGroupOnDrop {
 
 /// Spawn `program args...` in its own process group, with `env` and nothing
 /// else, and collect its output (or hand it to `stream` as it arrives: then the
-/// result carries none). The deadline and the cancel token both kill the group.
+/// result carries none). Its stdin is `stdin`, written whole and then closed,
+/// or empty. The deadline and the cancel token both kill the group.
 /// A panic in `stream` goes on once the call has cleaned up, as the trait's
 /// default raises it once the command has ended.
 pub(super) async fn spawn_collect(
@@ -123,12 +124,18 @@ pub(super) async fn spawn_collect(
     opts: ExecOptions,
     stream: Option<OutputChunks>,
     env: &ChildEnv,
+    stdin: Option<Vec<u8>>,
 ) -> ExecResult {
     let shown = program.display().to_string();
     let mut cmd = Command::new(program);
+    let input = if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    };
     cmd.args(args)
         .current_dir(&opts.cwd)
-        .stdin(Stdio::null())
+        .stdin(input)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_clear()
@@ -158,11 +165,21 @@ pub(super) async fn spawn_collect(
         err.clone(),
         listener.clone(),
     ));
+    if let (Some(bytes), Some(mut pipe)) = (stdin, child.stdin.take()) {
+        // Closed once written, so the child reads its end. A child that
+        // exits without reading it refuses the rest: that is its business,
+        // not a failure of the call.
+        readers.spawn(async move {
+            if pipe.write_all(&bytes).await.is_ok() {
+                pipe.shutdown().await.ok();
+            }
+        });
+    }
 
     let mut timed_out = false;
     let status = {
-        // Done = both pipes closed (a background job may hold them) AND the
-        // child exited. Waited on LAST: an exited child stays a zombie until
+        // Done = both pipes closed (a background job may hold them), the
+        // input written or refused, AND the child exited. Waited on LAST: an exited child stays a zombie until
         // then, so its pid and its group id stay ours for the kills below (a
         // reaped pid may already be another process's).
         let finished = async {

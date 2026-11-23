@@ -54,7 +54,8 @@ pub use fs::RealFs;
 ///   name with a `/` is taken from the call's `cwd`. Not found: exit 127 and
 ///   `<program>: command not found` on stderr. An empty argv: exit 127.
 /// - A child gets the [`ChildEnv`] and nothing else of the host's environment,
-///   plus `TERM=dumb` and `NO_COLOR=1`. Its stdin is empty.
+///   plus `TERM=dumb` and `NO_COLOR=1`. Its stdin is empty, unless the host
+///   hands one in ([`RealWorkspace::shell_with_stdin`]).
 /// - A child leads its own process group. The call's timeout and its cancel
 ///   token both kill the whole group (`npm run dev` spawning node spawning
 ///   esbuild), as does dropping the call's future before it ends. A timeout
@@ -122,6 +123,37 @@ impl RealWorkspace {
         }
     }
 
+    /// [`Workspace::shell`] with `stdin` as the command's standard input:
+    /// written whole, then closed. A command that exits without reading it
+    /// all ends as it would without it.
+    ///
+    /// For a host's own commands that read what it hands them, a hook given
+    /// its event as JSON (haest-bridges' `ShellHook`). The workspace trait
+    /// has no input: a tool's command reads none.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_core::{ChildEnv, workspace::ExecOptions};
+    /// use haest_workspace::RealWorkspace;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let ws = RealWorkspace::new(ChildEnv::default());
+    /// let opts = ExecOptions::new(std::env::temp_dir(), Duration::from_secs(10));
+    /// let r = ws.shell_with_stdin("read -r line; echo \"got $line\"", "hello\n", opts).await;
+    /// assert_eq!(r.stdout, "got hello\n");
+    /// # }
+    /// ```
+    pub async fn shell_with_stdin(
+        &self,
+        command: &str,
+        stdin: impl Into<Vec<u8>>,
+        opts: ExecOptions,
+    ) -> ExecResult {
+        self.bash(command, opts, None, Some(stdin.into())).await
+    }
+
     /// `program args...`, found on the handed env's `PATH`.
     async fn spawn(
         &self,
@@ -129,9 +161,10 @@ impl RealWorkspace {
         args: &[String],
         opts: ExecOptions,
         stream: Option<OutputChunks>,
+        stdin: Option<Vec<u8>>,
     ) -> ExecResult {
         match exec::which(program, &opts.cwd, &self.env) {
-            Some(bin) => exec::spawn_collect(&bin, args, opts, stream, &self.env).await,
+            Some(bin) => exec::spawn_collect(&bin, args, opts, stream, &self.env, stdin).await,
             None => ExecResult {
                 stderr: format!("{program}: command not found"),
                 exit_code: EXIT_NOT_FOUND,
@@ -145,9 +178,10 @@ impl RealWorkspace {
         command: &str,
         opts: ExecOptions,
         stream: Option<OutputChunks>,
+        stdin: Option<Vec<u8>>,
     ) -> ExecResult {
         let args = ["-c".to_string(), command.to_string()];
-        self.spawn("bash", &args, opts, stream).await
+        self.spawn("bash", &args, opts, stream, stdin).await
     }
 }
 
@@ -162,7 +196,7 @@ impl Workspace for RealWorkspace {
     }
 
     async fn shell(&self, command: &str, opts: ExecOptions) -> ExecResult {
-        self.bash(command, opts, None).await
+        self.bash(command, opts, None, None).await
     }
 
     /// The output streams straight from the pipes, nothing is kept: a
@@ -174,12 +208,12 @@ impl Workspace for RealWorkspace {
         opts: ExecOptions,
         on_output: OutputChunks,
     ) -> ExecResult {
-        self.bash(command, opts, Some(on_output)).await
+        self.bash(command, opts, Some(on_output), None).await
     }
 
     async fn run(&self, argv: &[String], opts: ExecOptions) -> ExecResult {
         match argv.split_first() {
-            Some((program, args)) => self.spawn(program, args, opts, None).await,
+            Some((program, args)) => self.spawn(program, args, opts, None, None).await,
             None => crate::no_command(),
         }
     }

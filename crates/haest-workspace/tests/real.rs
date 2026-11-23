@@ -211,6 +211,55 @@ async fn cancel_kills_a_long_sleep_quickly() {
     assert_ne!(r.exit_code, 0);
 }
 
+/// A hook's payload goes on its stdin: written whole, then closed, so a
+/// command that reads to the end (`cat`, `read`, `json.load(sys.stdin)`)
+/// sees the end of it.
+#[tokio::test]
+async fn shell_with_stdin_feeds_the_command_and_closes_its_input() {
+    let (_t, dir) = tempdir();
+    let r = real()
+        .shell_with_stdin("wc -c; echo done", "{\"event\":\"x\"}", opts(&dir))
+        .await;
+    assert_eq!(r.exit_code, 0, "{}", r.stderr);
+    assert_eq!(
+        r.stdout.split_whitespace().collect::<Vec<_>>(),
+        ["13", "done"]
+    );
+}
+
+/// A command that never reads its input, given more than a pipe holds,
+/// still ends when it does: the write is refused, not waited on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_that_ignores_a_large_stdin_still_ends() {
+    let (_t, dir) = tempdir();
+    let big = vec![b'x'; 4 * 1024 * 1024];
+    let started = Instant::now();
+    let r = real()
+        .shell_with_stdin("echo ignored", big, opts(&dir))
+        .await;
+    assert_eq!((r.stdout.as_str(), r.exit_code), ("ignored\n", 0));
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+/// The timeout and the cancel token kill a command that holds its input
+/// open, as they kill any other.
+#[tokio::test(flavor = "multi_thread")]
+async fn cancel_kills_a_command_reading_its_stdin() {
+    let (_t, dir) = tempdir();
+    let o = opts(&dir);
+    let cancel = o.cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        cancel.cancel();
+    });
+    let started = Instant::now();
+    let r = real()
+        .shell_with_stdin("cat >/dev/null; sleep 30", "in", o)
+        .await;
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert_ne!(r.exit_code, 0);
+}
+
 #[tokio::test]
 async fn real_fs_reads_writes_and_lists_the_disk() {
     let (_t, dir) = tempdir();
