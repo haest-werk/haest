@@ -2,9 +2,9 @@
 //! `on_error` (on_error.rs); order, first wins, matchers and interrupts
 //! (order.rs); the parity guard (parity.rs); the session every hook is
 //! handed (session.rs); what `turn.end` hands a hook (turn_end.rs). That
-//! every decision takes the
-//! same effect from a `.ts` mod and from a `HookSet` closure is haest-bridges'
-//! test, over the testing module's decision cases.
+//! every decision takes the same effect from a `.ts` mod and from a closure
+//! bound in a `HookSet` is haest-bridges' test, over the testing module's
+//! decision cases.
 
 use std::sync::Arc;
 

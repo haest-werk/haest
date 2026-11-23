@@ -153,8 +153,8 @@ conversation's ledger. `turn.end` is the place to compact so the next turn start
 compact in `model.after` (the answer's tool results land after it).
 
 Compacting past a share of the window, in both forms:
-[auto-compact.ts](examples/mods/auto-compact.ts) as a mod file, and its Rust twin as a `HookSet`
-closure in [auto_compact.rs](../crates/haest/examples/auto_compact.rs), which runs both against a
+[auto-compact.ts](examples/mods/auto-compact.ts) as a mod file, and its Rust twin as a closure
+bound in a `HookSet` in [auto_compact.rs](../crates/haest/examples/auto_compact.rs), which runs both against a
 scripted model (`cargo run -p haest --example auto_compact`). Compacting on the cache's clock
 instead (before an idle conversation's cache expires) is `compact_before_expire`, below.
 

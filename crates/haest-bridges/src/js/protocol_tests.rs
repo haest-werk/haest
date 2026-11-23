@@ -4,7 +4,8 @@
 //! types), reads them back, and a `.ts` handler receives exactly them, plus
 //! `session` when the env names one (session_tests.rs has the rest). And
 //! every decision a `.ts` handler returns takes the effect the same
-//! decision takes from a `HookSet` closure (haest-mods' decision cases).
+//! decision takes from a closure bound in a `HookSet` (haest-mods' decision
+//! cases).
 
 use haest_core::{
     Agent, AgentDeps, AgentOptions, Effort, Message, NoHooks, SharedDeps, StopReason, ToolOutput,
@@ -302,7 +303,7 @@ async fn a_tool_event_on_a_mod_file_that_hides_echo_has_the_effect_of_a_hidden_t
 
 /// Every case that differs is listed, not only the first.
 #[tokio::test]
-async fn a_decision_takes_the_same_effect_from_a_ts_mod_and_a_hooks_closure() {
+async fn a_decision_takes_the_same_effect_from_a_ts_mod_and_a_hook_set_closure() {
     let mut differ = Vec::new();
     for DecisionCase {
         event,

@@ -101,7 +101,7 @@ impl<E: Event> Hook<E> for Noting {
 /// same session: `undefined` (never `null`) when the host names none, then
 /// s-1, then the host's new one after a /clear.
 #[tokio::test]
-async fn a_ts_handler_gets_the_session_a_hooks_binding_gets_and_undefined_when_none() {
+async fn a_ts_handler_gets_the_session_a_hook_set_binding_gets_and_undefined_when_none() {
     let ui = TestUi::new();
     let haest = env(ui.clone(), WorkspaceMode::Sandbox);
     let events = ModEvent::ALL;

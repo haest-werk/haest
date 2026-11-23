@@ -1,7 +1,8 @@
 //! The kit for the hooks in another process, and the tests every event
 //! passes through each of them: a [`Remote`] is a hook script or a test
 //! server that writes down every input it gets and answers once, and the
-//! tests drive haest-mods' events through it as through a `HookSet` closure.
+//! tests drive haest-mods' events through it as through a closure bound in a
+//! `HookSet`.
 
 use std::{
     path::Path,

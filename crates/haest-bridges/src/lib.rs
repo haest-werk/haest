@@ -36,8 +36,8 @@
 //! [`HookSet`](haest_mods::HookSet) a conversation adds as a mod.
 //! haest-config reads it, haest-runtime binds it.
 //!
-//! A bridge proves it takes every decision as a Rust
-//! [`HookSet`](haest_mods::HookSet) closure does with haest-mods' `testing`
+//! A bridge proves it takes every decision as a Rust closure bound in a
+//! [`HookSet`](haest_mods::HookSet) does with haest-mods' `testing`
 //! feature: `decision_cases` lists one answer per decision and what it must
 //! change, and `effect` drives an event through any [`Mods`](haest_mods::Mods).
 //! A test of an HTTP hook posts to haest-http's `testing::Server` (its
