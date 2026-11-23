@@ -1,5 +1,7 @@
-//! An HTTP/1.1 server on 127.0.0.1 for one test, written by hand over a
-//! socket: it writes down each request and answers it as scripted.
+//! For tests of HTTP hooks, in this crate and in a host's (the `testing`
+//! feature; turn it on in `dev-dependencies` only): [`Server`], an
+//! HTTP/1.1 server on 127.0.0.1 for one test, written by hand over a socket.
+//! It writes down each request and answers it as scripted.
 
 use std::{
     collections::VecDeque,
@@ -14,7 +16,7 @@ use tokio::{
 
 /// What a [`Server`] answers a request.
 #[derive(Debug, Clone)]
-pub(crate) enum Respond {
+pub enum Respond {
     /// This status and body.
     With(u16, String),
     /// Nothing, ever: the request hangs until its client gives up.
@@ -23,18 +25,22 @@ pub(crate) enum Respond {
 
 /// One request a [`Server`] got.
 #[derive(Debug, Clone)]
-pub(crate) struct Seen {
+pub struct Seen {
     /// The request line: `POST /hook HTTP/1.1`.
-    pub(crate) line: String,
+    pub line: String,
     /// Its headers, names in lower case, in order.
-    pub(crate) headers: Vec<(String, String)>,
+    pub headers: Vec<(String, String)>,
     /// Its body.
-    pub(crate) body: Vec<u8>,
+    pub body: Vec<u8>,
 }
 
 impl Seen {
     /// The value of the header `name` (lower case), when it was sent once.
-    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+    ///
+    /// # Panics
+    ///
+    /// When it was sent more than once.
+    pub fn header(&self, name: &str) -> Option<&str> {
         let mut values = self.headers.iter().filter(|(n, _)| n == name);
         let value = values.next().map(|(_, v)| v.as_str());
         assert!(values.next().is_none(), "{name} was sent twice");
@@ -43,8 +49,9 @@ impl Seen {
 }
 
 /// A server that answers each request with the next of its responses, then
-/// `200` with an empty body. One request per connection.
-pub(crate) struct Server {
+/// `200` with an empty body. One request per connection. Dropped, it stops.
+#[derive(Debug)]
+pub struct Server {
     url: String,
     seen: Arc<Mutex<Vec<Seen>>>,
     task: JoinHandle<()>,
@@ -52,9 +59,17 @@ pub(crate) struct Server {
 
 impl Server {
     /// A server on a free port of 127.0.0.1, answering `responses` in order.
-    pub(crate) async fn start(responses: impl IntoIterator<Item = Respond>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/hook", listener.local_addr().unwrap());
+    /// Needs a tokio runtime.
+    ///
+    /// # Panics
+    ///
+    /// When no port of 127.0.0.1 can be bound.
+    pub async fn start(responses: impl IntoIterator<Item = Respond>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a free port on 127.0.0.1");
+        let addr = listener.local_addr().expect("the bound port");
+        let url = format!("http://{addr}/hook");
         let seen = Arc::new(Mutex::new(Vec::new()));
         let responses = Arc::new(Mutex::new(responses.into_iter().collect::<VecDeque<_>>()));
         let log = seen.clone();
@@ -67,14 +82,18 @@ impl Server {
         Self { url, seen, task }
     }
 
-    /// Its URL.
-    pub(crate) fn url(&self) -> &str {
+    /// Its URL: `http://127.0.0.1:<port>/hook`.
+    pub fn url(&self) -> &str {
         &self.url
     }
 
     /// Every request it got, in order.
-    pub(crate) fn seen(&self) -> Vec<Seen> {
-        self.seen.lock().unwrap().clone()
+    ///
+    /// # Panics
+    ///
+    /// When a task serving a request panicked while it wrote one down.
+    pub fn seen(&self) -> Vec<Seen> {
+        self.seen.lock().expect("the server's log").clone()
     }
 }
 
@@ -120,12 +139,14 @@ async fn serve(
             Ok(n) => body.extend_from_slice(&chunk[..n]),
         }
     }
-    log.lock().unwrap().push(Seen {
-        line,
-        headers,
-        body,
-    });
-    let respond = responses.lock().unwrap().pop_front();
+    if let Ok(mut log) = log.lock() {
+        log.push(Seen {
+            line,
+            headers,
+            body,
+        });
+    }
+    let respond = responses.lock().ok().and_then(|mut r| r.pop_front());
     let (status, text) = match respond {
         Some(Respond::With(status, text)) => (status, text),
         Some(Respond::Never) => return std::future::pending().await,

@@ -33,6 +33,8 @@
 //! [`Hooks`](haest_mods::Hooks) closure does with haest-mods' `testing`
 //! feature: `decision_cases` lists one answer per decision and what it must
 //! change, and `effect` drives an event through any [`Mods`](haest_mods::Mods).
+//! This crate's own `testing` feature adds a [`testing::Server`] for a
+//! test of HTTP hooks.
 //!
 //! # When to use this crate directly
 //!
@@ -192,6 +194,9 @@ mod http;
 mod js;
 #[cfg(feature = "shell")]
 mod shell;
+#[cfg(any(test, feature = "testing"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "testing")))]
+pub mod testing;
 #[cfg(all(test, feature = "js"))]
 mod testkit;
 

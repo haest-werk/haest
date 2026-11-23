@@ -19,11 +19,9 @@ use crate::Claude;
 
 mod claude;
 mod every;
-#[cfg(feature = "http")]
-mod server;
 
 #[cfg(feature = "http")]
-pub(crate) use server::{Respond, Server};
+pub(crate) use crate::testing::{Respond, Server};
 
 /// A hook bound to `event`, in [`Hooks`] of its own. Every event of
 /// haest-mods is here: a new one panics, so the tests that drive every
@@ -106,7 +104,7 @@ pub(crate) const VIAS: &[Via] = &[
 
 /// A hook in another process that writes down every input it gets and
 /// answers one text the first time, nothing after: a script run by a
-/// [`ShellHook`](crate::ShellHook), or a [`Server`] behind an
+/// [`ShellHook`](crate::ShellHook), or a `Server` behind an
 /// [`HttpHook`](crate::HttpHook). Either way it runs in (and names as `cwd`)
 /// a directory of its own.
 pub(crate) struct Remote {

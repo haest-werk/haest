@@ -25,6 +25,9 @@ shell = ["dep:haest-workspace"]
 # A POST per event (`HttpHook`) through haest-http's `HttpClient`, the host's
 # own or the default.
 http = ["dep:haest-http"]
+# The `testing` module: an HTTP server on 127.0.0.1 for a test of HTTP hooks.
+# Turn it on in `dev-dependencies` only.
+testing = ["tokio/net", "tokio/io-util"]
 
 [dependencies]
 haest-core = { workspace = true }
