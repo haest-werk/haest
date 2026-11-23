@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use haest_core::{
     Effort, WorkspaceMode,
+    cache::CacheTtl,
     caps::SubagentCaps,
     deferred_tools::DeferMode,
     provider::{WebSearchEngine, WebSearchOptions},
@@ -66,6 +67,13 @@ pub struct Settings {
     pub model_spec: String,
     /// Reasoning effort; None sends none, and the model uses its own default.
     pub effort: Option<Effort>,
+    /// How long the provider keeps the prompt cache each model call writes:
+    /// five minutes, or an hour, which costs more to write and pays when the
+    /// human pauses for longer than five minutes (haest-core's
+    /// [`cache`](haest_core::cache) says when). Anthropic's API and
+    /// OpenRouter's `anthropic/` models take it; other providers ignore it.
+    /// Bare: [`CacheTtl::FiveMinutes`].
+    pub cache_ttl: CacheTtl,
     /// Replaces haest's own identity text at the top of the system prompt; None keeps it.
     pub system_prompt: Option<String>,
     /// Text added at the end of the system prompt.
@@ -157,6 +165,7 @@ impl Settings {
             cwd: cwd.into(),
             model_spec: DEFAULT_MODEL.into(),
             effort: None,
+            cache_ttl: CacheTtl::FiveMinutes,
             system_prompt: None,
             append_system_prompt: None,
             context: ContextSources::NONE,

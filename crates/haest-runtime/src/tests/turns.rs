@@ -239,3 +239,30 @@ async fn shut_down_leaves_no_job_running_and_the_session_on_disk() {
     assert_eq!(saved.len(), 1, "the session is on disk");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// The `cache_ttl` setting and the session id reach the wire: an hour on
+/// every breakpoint of an Anthropic model on OpenRouter, the session id as
+/// its sticky-routing `session_id`.
+#[tokio::test]
+async fn the_cache_ttl_setting_and_the_session_id_reach_the_model_call() {
+    let api = Arc::new(Refusing::default());
+    let settings = Settings {
+        cache_ttl: haest_core::cache::CacheTtl::OneHour,
+        ..hardcoded()
+    };
+    let inputs = RuntimeInputs::new(settings, World::files(Arc::new(MemFs::new())))
+        .with_keys(openrouter_key())
+        .with_http(api.clone());
+    let mut rt = build(inputs, Recorded::default(), Deny, BuildOptions::default())
+        .await
+        .unwrap();
+    let _ = rt.human_turn("hi", &mut |_: LoopEvent| {}).await;
+    let sent = api.0.lock().unwrap().clone();
+    let body: serde_json::Value = serde_json::from_str(&sent[0]).unwrap();
+    assert_eq!(body["session_id"], json!(rt.session_id()));
+    let system = &body["messages"][0]["content"][0];
+    assert_eq!(
+        system["cache_control"],
+        json!({"type": "ephemeral", "ttl": "1h"})
+    );
+}

@@ -4,7 +4,7 @@
 //! line. Its default is the bare value (`Config::bare`): every capability off
 //! until asked for, every brake on.
 
-use haest_core::{Effort, deferred_tools::DeferMode, provider::WebSearchEngine};
+use haest_core::{Effort, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine};
 use haest_settings::{BuiltinTools, ContextSources, SkillSources};
 
 use crate::fields::{
@@ -253,6 +253,7 @@ settings! {
     "profile" => profile: def(PROFILE, Text, "claude", "A named set of settings: claude (built in: everything Claude Code has that haest reads), or a [profiles.<name>] table in a config file"),
     "model" => settings.model_spec: def(MODEL, Text, "anthropic:claude-opus-5-5", "provider:model").short('m'),
     "effort" => settings.effort: def(MODEL, Choice(Effort::WORDS), "high", "Reasoning effort (unset: the model's own default)").short('e'),
+    "cache_ttl" => settings.cache_ttl: def(MODEL, Choice(CacheTtl::WORDS), "1h", "How long the provider keeps the prompt cache each model call writes: 5m, or 1h, which costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes. Anthropic models only; other providers ignore it"),
     "system_prompt" => settings.system_prompt: def(MODEL, Text, "You are a terse code reviewer.", "Replaces haest's own identity text at the top of the system prompt"),
     "append_system_prompt" => settings.append_system_prompt: def(MODEL, Text, "Answer in British English.", "Text appended to the system prompt"),
     "provider_routing" => provider_routing: def(MODEL, Text, r#"{"global": {"banned": ["novita"]}}"#, "OpenRouter's provider routing, as JSON: {\"global\": {\"banned\": [...], \"favorites\": [...]}, \"overrides\": ..., \"project\": ...}").scope(Scope::User),

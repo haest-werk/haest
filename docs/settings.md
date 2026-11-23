@@ -26,7 +26,7 @@ whole config files.
 | Group | Settings |
 |---|---|
 | Profile | [`profile`](#profile) |
-| Model and prompt | [`model`](#model), [`effort`](#effort), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
+| Model and prompt | [`model`](#model), [`effort`](#effort), [`cache_ttl`](#cache_ttl), [`system_prompt`](#system_prompt), [`append_system_prompt`](#append_system_prompt), [`provider_routing`](#provider_routing) |
 | Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
 | Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
@@ -80,6 +80,20 @@ Reasoning effort (unset: the model's own default).
 config.toml   effort = "high"
 variable      HAEST_EFFORT=high
 flag          --effort high   or   -e high
+```
+
+### `cache_ttl`
+
+How long the provider keeps the prompt cache each model call writes: 5m, or 1h, which costs more to write (2x the input price against 1.25x on Anthropic) and pays when you often pause for longer than five minutes. Anthropic models only; other providers ignore it.
+
+- Takes: one of `5m`, `1h`
+- Default: `5m`
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   cache_ttl = "1h"
+variable      HAEST_CACHE_TTL=1h
+flag          --cache-ttl 1h
 ```
 
 ### `system_prompt`

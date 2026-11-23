@@ -4,7 +4,7 @@
 use std::{path::PathBuf, time::Duration};
 
 use haest_core::{
-    Effort, WorkspaceMode, deferred_tools::DeferMode, provider::WebSearchEngine,
+    Effort, WorkspaceMode, cache::CacheTtl, deferred_tools::DeferMode, provider::WebSearchEngine,
     wind_down::WindDown, words::UnknownWord,
 };
 use haest_settings::{BuiltinTools, ContextSources, SkillSources};
@@ -38,6 +38,7 @@ macro_rules! word {
 }
 word!(
     Effort,
+    CacheTtl,
     WorkspaceMode,
     DeferMode,
     EnvPassthrough,
