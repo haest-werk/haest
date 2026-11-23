@@ -169,6 +169,9 @@ first; [docs/extending.md](docs/extending.md) maps them all.
 - haest-workspace: a command run in a directory that does not exist
   reported `/bin/bash: No such file or directory`. It now names the
   missing directory.
+- haest-cli: when a hook kept a turn going, the second answer was printed
+  glued to the end of the first (`removed.No tests here.`). Each answer
+  now ends its line.
 
 ## 0.4.1 (2026-11-20)
 

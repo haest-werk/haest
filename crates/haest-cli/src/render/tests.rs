@@ -236,3 +236,32 @@ fn a_watcher_sees_the_input_a_terminal_does_not_echo() {
         .event(&user);
     assert_eq!(String::from_utf8(err).unwrap(), "> fix the test\n");
 }
+
+/// A turn a hook kept going answers twice with no tool between: each answer
+/// starts its own line, never glued to the end of the one before.
+#[test]
+fn two_answers_in_one_turn_are_two_lines() {
+    let answer = |text: &str| {
+        let mut m = AssistantMessage::start("p", "m");
+        m.content
+            .push(haest::AssistantPart::Text { text: text.into() });
+        m
+    };
+    let evs = [
+        LoopEvent::TextDelta {
+            text: "Done.".into(),
+        },
+        LoopEvent::Assistant {
+            message: answer("Done."),
+        },
+        LoopEvent::TextDelta {
+            text: "No tests here.".into(),
+        },
+        LoopEvent::Assistant {
+            message: answer("No tests here."),
+        },
+        turn_end(StopReason::EndTurn, None),
+    ];
+    let (out, _) = render(false, &evs);
+    assert_eq!(out, "Done.\nNo tests here.\n");
+}

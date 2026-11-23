@@ -192,6 +192,9 @@ impl<O: Write, E: Write> Renderer<O, E> {
                 if !std::mem::take(&mut self.streamed) {
                     self.answer(&message.text());
                 }
+                // An answer is whole: the next one (a turn a hook kept going)
+                // starts on its own line.
+                self.end_line();
                 if let Some(err) = &message.error_message {
                     self.note(RED, &format!("model call failed: {err}"));
                 }
