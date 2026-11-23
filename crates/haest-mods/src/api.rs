@@ -33,6 +33,7 @@ pub struct ModToolCall {
 /// As JSON it is what a mod file's handler returns: `{ deny: reason }`,
 /// `{ input: {..} }`, or anything else (`null`) to pass.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[non_exhaustive]
 pub enum Before {
     /// Let the call through as it is.
     #[default]
@@ -48,6 +49,7 @@ pub enum Before {
 /// What a [`Mod::model_before`] or [`Mod::model_after`] hook decided about
 /// the turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Step {
     /// Go on.
     Pass,
@@ -59,6 +61,7 @@ pub enum Step {
 
 /// What a [`Mod::turn_end`] hook decided about a turn that would end on its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TurnEnd {
     /// Let it end.
     Pass,

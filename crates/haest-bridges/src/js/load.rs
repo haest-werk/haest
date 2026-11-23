@@ -26,10 +26,11 @@ use super::{
 ///
 /// use haest_bridges::ModCaps;
 ///
-/// let strict = ModCaps { load_timeout: Duration::from_secs(5), ..ModCaps::default() };
+/// let strict = ModCaps::default().with_load_timeout(Duration::from_secs(5));
 /// assert_eq!(strict.memory_bytes, 128 << 20);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ModCaps {
     /// The longest the mod's code may run without pausing (awaiting does not
     /// count). Past it the code is stopped: every call into the mod in flight
@@ -48,6 +49,29 @@ impl Default for ModCaps {
             memory_bytes: 128 << 20,
             load_timeout: Duration::from_secs(30),
         }
+    }
+}
+
+impl ModCaps {
+    /// The longest the mod's code may run without pausing.
+    #[must_use]
+    pub fn with_slice(mut self, slice: Duration) -> Self {
+        self.slice = slice;
+        self
+    }
+
+    /// The mod's QuickJS memory, in bytes.
+    #[must_use]
+    pub fn with_memory_bytes(mut self, bytes: usize) -> Self {
+        self.memory_bytes = bytes;
+        self
+    }
+
+    /// How long the default export has to return when the mod loads.
+    #[must_use]
+    pub fn with_load_timeout(mut self, timeout: Duration) -> Self {
+        self.load_timeout = timeout;
+        self
     }
 }
 

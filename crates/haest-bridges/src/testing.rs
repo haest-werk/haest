@@ -16,6 +16,7 @@ use tokio::{
 
 /// What a [`Server`] answers a request.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Respond {
     /// This status and body.
     With(u16, String),
@@ -25,6 +26,7 @@ pub enum Respond {
 
 /// One request a [`Server`] got.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Seen {
     /// The request line: `POST /hook HTTP/1.1`.
     pub line: String,

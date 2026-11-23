@@ -16,6 +16,7 @@ haest_core::word_enum! {
     /// assert_eq!(ModReload::WORDS, ["off", "ask", "auto"]);
     /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+    #[non_exhaustive]
     pub enum ModReload ("mod reload") {
         /// The files load once, when the conversation starts.
         #[default]
