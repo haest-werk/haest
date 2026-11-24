@@ -1,7 +1,8 @@
 # Changelog
 
 Every crate in the workspace shares one version, except haest-issues, which
-is experimental and versioned on its own. Wire formats change only where an
+is experimental and versioned on its own. haest-gui, also experimental and
+versioned on its own, is not in the workspace. Wire formats change only where an
 entry says so: the session file, `--json` NDJSON, `providers.json`,
 `.mcp.json`, the settings keys and the `HAEST_*` variables.
 
@@ -50,6 +51,19 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
 - haest-session: `SessionPrompter::open` and `OpenAsk`, for a host that also
   asks the human itself: it puts the ask to the peers, and takes the first
   answer, a peer's (`peer_answer`) or its own (`answered_at_terminal`).
+- haest-gui 0.1.0, new and experimental: the `haest-gui` app, a native
+  window (GPUI) onto the haests running on this machine, over their control
+  sockets. For the one picked: its stream (answers, thinking, tool cards),
+  a timeline of its turns (model calls split by what the prompt cache
+  served, wrote and missed; the tool calls of a batch stacked), the
+  subagent tree, and, on a `command` socket, input, interrupt, the model
+  and effort pickers. One approval panel holds every attached haest's asks.
+  Tested on macOS only. It is not a member of the workspace (the root
+  `Cargo.toml` excludes it), so GPUI never builds with haest; it has its
+  own `Cargo.lock` and target dir. `cargo install haest-gui`, or
+  `cargo run --release --manifest-path crates/haest-gui/Cargo.toml` from a
+  checkout. docs/howto.md, "Watch and drive haest from a window
+  (experimental)".
 
 ### Breaking changes
 

@@ -1,4 +1,5 @@
 /target
+/crates/haest-gui/target
 /target-*/
 /.claude/
 *.log

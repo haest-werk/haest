@@ -43,6 +43,7 @@ On crates.io as [`haest`](https://crates.io/crates/haest) (docs on
 | `haest` | the facade a host depends on: `use haest::...` |
 | `haest-cli` | the `haest` binary |
 | [`haest-issues`](https://github.com/haest-werk/haest/tree/main/crates/haest-issues/) | experimental, and an example of how to write tools: issue-tracker tools over one trait, for GitHub Issues and markdown board cards. Not in the `haest` facade: depend on it directly |
+| [`haest-gui`](https://github.com/haest-werk/haest/tree/main/crates/haest-gui/) | experimental: the `haest-gui` app, a native window (GPUI, macOS) onto the haests running on this machine over their control sockets: the stream, a turn timeline, the subagent tree, one approval queue. Not in the `haest` facade and not in the workspace: `cargo install haest-gui` |
 
 ## haest features
 

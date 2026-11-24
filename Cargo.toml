@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# haest-gui builds GPUI: it stays out of every haest build, with its own
+# Cargo.lock and target dir (PLAN.md D45).
+exclude = ["crates/haest-gui"]
 
 [workspace.package]
 version = "0.6.0"

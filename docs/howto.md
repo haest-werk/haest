@@ -19,6 +19,7 @@ New to haest? Start with [quickstart.md](quickstart.md).
 | Pay less for the prompt cache | [Tune the prompt cache](#tune-the-prompt-cache) |
 | Run a hook as a service | [Hook a URL](#hook-a-url) |
 | Use haest in an editor's agent panel | [Use haest from Zed (ACP)](#use-haest-from-zed-acp) |
+| Watch, drive and approve haest from a window | [Watch and drive haest from a window (experimental)](#watch-and-drive-haest-from-a-window-experimental) |
 
 ## Guard a tool
 
@@ -243,3 +244,25 @@ not through the editor, so an unsaved buffer is not what haest reads. Images in 
 refused. `dev: open acp logs` in Zed's command palette shows every message; what haest notes
 while it loads its files (a setting skipped, a project not trusted) goes to its stderr. A Rust host serves its own conversations with `haest::acp::AcpAgent` (feature
 `acp`).
+
+## Watch and drive haest from a window (experimental)
+
+`haest-gui` is a desktop window onto the haests running on this machine: each one's stream as it
+happens, a timeline of its turns (model calls split by what the prompt cache served), its
+subagent tree, and one approval panel for every haest attached. It reads each haest's control
+socket, the one `haest ctl` reads. Experimental, and tested on macOS only (Linux and Windows are
+not supported yet).
+
+```sh
+cargo install haest-cli haest-gui                      # `haest` and `haest-gui`
+haest --control-socket command --approvals -w real     # one terminal
+haest-gui                                              # another
+```
+
+`command` lets the window send input, interrupt, switch the model and effort, and answer
+approvals; `watch` only shows. An approval ask goes to the terminal and to the window at once:
+the first answer counts, and the other side stops asking. From a checkout of haest, the window
+builds through its own manifest (it is not in the workspace, so GPUI never builds with haest):
+`cargo run --release --manifest-path crates/haest-gui/Cargo.toml`. Its
+[README](https://github.com/haest-werk/haest/blob/main/crates/haest-gui/README.md) has the rest:
+the flags, replaying a recording, screenshots without a display.

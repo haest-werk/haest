@@ -1,0 +1,111 @@
+[package]
+name = "haest-gui"
+description = "Experimental: a native window onto the haest sessions running on this machine, over their control sockets: the stream, a turn timeline, the subagent tree and one approval queue"
+# Its own version: experimental, 0.1.0 beside haest 0.7.0 (PLAN.md D45).
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+repository = "https://github.com/haest-werk/haest"
+readme = "README.md"
+keywords = ["agent", "llm", "gui", "gpui", "haest"]
+categories = ["development-tools", "gui"]
+publish = true
+# The screenshots stay in the repo: the README links them by URL.
+exclude = ["docs/shots"]
+
+# Not a member of haest's workspace (the root Cargo.toml excludes it), so GPUI
+# never builds with haest: its own workspace, Cargo.lock and target dir. The
+# empty table makes it its own root, so cargo stops here instead of looking
+# for a workspace further up.
+[workspace]
+
+# An excluded crate cannot inherit the workspace's lints: this is a copy.
+# Keep the two tables in step with the root's `[workspace.lints]`.
+[lints.rust]
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unnameable_types = "warn"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"
+multiple_unsafe_ops_per_block = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+borrow_as_ptr = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exit = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+map_err_ignore = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+fn_params_excessive_bools = "warn"
+struct_excessive_bools = "warn"
+implicit_hasher = "warn"
+option_option = "warn"
+unused_async = "warn"
+iter_without_into_iter = "warn"
+into_iter_without_iter = "warn"
+return_self_not_must_use = "warn"
+missing_fields_in_debug = "warn"
+cast_lossless = "warn"
+manual_midpoint = "warn"
+case_sensitive_file_extension_comparisons = "warn"
+match_bool = "warn"
+large_enum_variant = "allow"
+result_large_err = "allow"
+
+[lib]
+name = "haest_gui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "haest-gui"
+path = "src/main.rs"
+
+# Every view in every state, rendered offscreen (Metal, no display needed) to PNGs.
+[[example]]
+name = "snapshot"
+path = "examples/snapshot.rs"
+
+[dependencies]
+# The UI: gpui-component and the GPUI snapshot it pins (gpui-pre), its platform
+# and its icons. Never crates.io `gpui`: it is a year older than this snapshot.
+gpui-component = "=0.11.0"
+gpui = { package = "gpui-pre", version = "=0.3.14" }
+# runtime_shaders: Metal shaders compile when the app starts, so the build needs
+# no Metal toolchain (Xcode ships without it; gpui-kit's own default).
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit", "runtime_shaders"] }
+gpui-kit-assets = "=0.11.0"
+
+# haest through its facade, pinned like haest's own crates: the wire's types,
+# the session's frames, the Unix socket, the control dir resolved as
+# `haest ctl` resolves it, and the model catalog for the picker.
+haest = { version = "=0.6.0", path = "../haest", default-features = false, features = [
+    "transport-unix", "config", "providers", "settings", "workspace",
+] }
+
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-channel = "2"
+thiserror = "2"
+# The binary's and the snapshot example's errors; the library's are types.
+anyhow = "1"
+
+[dev-dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.14", features = ["test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit", "runtime_shaders", "test-support"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.dev.package."*"]
+opt-level = 2
