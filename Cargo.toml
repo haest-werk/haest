@@ -38,6 +38,7 @@ haest-wire = { version = "=0.5.0", path ="crates/haest-wire" }
 haest-session = { version = "=0.5.0", path ="crates/haest-session" }
 haest-transport = { version = "=0.5.0", path ="crates/haest-transport" }
 haest-prompt = { version = "=0.5.0", path ="crates/haest-prompt" }
+haest-acp = { version = "=0.5.0", path ="crates/haest-acp" }
 
 # No features here: each crate names the ones it uses (haest-core: a task and
 # channels, not the runtime).
@@ -46,6 +47,9 @@ tokio = { version = "1.54", default-features = false }
 # turn by its token).
 tokio-util = "0.7.19"
 futures = "0.3"
+# The Agent Client Protocol: haest-acp's agent side, and the client side
+# haest-cli's tests drive `haest acp` with.
+agent-client-protocol = "5.5.1"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -110,3 +114,10 @@ cast_lossless = "warn"
 manual_midpoint = "warn"
 case_sensitive_file_extension_comparisons = "warn"
 match_bool = "warn"
+# Off: the two size lints. haest-acp's protocol crate turns on serde_json's
+# `preserve_order`, so in a build with it (the workspace's, the `haest`
+# binary's) every `serde_json::Value` is 48 bytes larger than in a build
+# without it. A type holding one then crosses the lints' thresholds in one
+# build and not the other, and an `expect` on it is unfulfilled in one of them.
+large_enum_variant = "allow"
+result_large_err = "allow"

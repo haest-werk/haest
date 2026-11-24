@@ -209,6 +209,7 @@
 //! | `transport-broker` | `transport::Broker`: the conversation dials out to a broker over a WebSocket (pulls a WebSocket client on rustls) | no |
 //! | `transport-unix` | `transport::UnixSocket`: programs on this machine watch (or drive) the conversation over a Unix socket; `transport::running_sessions` and `transport::connect_session` find and reach one | no |
 //! | `prompt` | [`prompt`]: the system prompt as the host's Jinja template, set up like Hugging Face chat templates; with `runtime`, `runtime::RuntimeInputs::with_prompt_template` renders it before every model call | no |
+//! | `acp` | [`acp`]: haest as an Agent Client Protocol agent, so an editor (Zed's agent panel, JetBrains, any ACP client) drives whole conversations over stdin and stdout; turns on `runtime` and `session`. The protocol's crate turns on serde_json's `preserve_order` for the whole build: every `serde_json::Map`, the host's too, keeps keys in insertion order, not sorted | no |
 //! | `testing` | [`core::testing`]: a scripted model and other fakes for tests; with `providers` `providers::testing`, with `http` `http::testing::Server`. `dev-dependencies` only, outside semver | no |
 //!
 //! ```toml
@@ -282,6 +283,9 @@ pub mod prelude {
     pub use serde_json::{Value, json};
 }
 
+#[cfg(feature = "acp")]
+#[doc(inline)]
+pub use haest_acp as acp;
 #[cfg(any(
     feature = "bridge-js",
     feature = "bridge-shell",

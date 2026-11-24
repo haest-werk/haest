@@ -835,6 +835,22 @@ fn code(text: &str) -> String {
     }
 }
 
+/// `v` with every object's keys in order, so the page reads the same
+/// whatever order serde_json keeps keys in: a build where a dependency turns
+/// on its `preserve_order` (haest-acp's protocol crate does) keeps them in
+/// the order they were inserted.
+fn sorted(v: Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut fields: Vec<(String, Value)> = map.into_iter().collect();
+            fields.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(fields.into_iter().map(|(k, v)| (k, sorted(v))).collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        other => other,
+    }
+}
+
 /// What haest made of an answer, as a cell.
 fn reads<E: Event>(got: Result<E::Decision, HookFailure>) -> String {
     match got {
@@ -844,7 +860,7 @@ fn reads<E: Event>(got: Result<E::Decision, HookFailure>) -> String {
             if decision == passes {
                 "pass".into()
             } else {
-                code(&decision.to_string())
+                code(&sorted(decision).to_string())
             }
         }
         Err(failure) => format!("a failure: {failure}"),
@@ -883,7 +899,7 @@ fn dialect_part<E: Event>(out: &mut String, event: ModEvent, payload: &E, d: &Sp
         "{event} in {}: the field table must name exactly the input's fields",
         d.name
     );
-    let pretty = serde_json::to_string_pretty(&input).unwrap();
+    let pretty = serde_json::to_string_pretty(&sorted(input)).unwrap();
     let _ = write!(
         out,
         "\n### `{event}` in `{}`\n\n```json\n{pretty}\n```\n",
@@ -942,8 +958,7 @@ fn row<E: Event>(out: &mut String, s: &Section<E>) {
     );
     let exit2 = match super::blocked::<E>(STDERR) {
         Ok(decision) => code(
-            &serde_json::to_value(decision)
-                .unwrap()
+            &sorted(serde_json::to_value(decision).unwrap())
                 .to_string()
                 .replace(&format!("\"{STDERR}\""), "<stderr>"),
         ),

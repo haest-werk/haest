@@ -26,10 +26,6 @@ pub type Frame = Envelope<Body>;
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "a body is built once and moved into its frame's Arc; a box would only add an allocation and a deref to every match"
-)]
 pub enum Body {
     /// One of the conversation's events (a subagent's carry its path).
     Loop(LoopEvent),

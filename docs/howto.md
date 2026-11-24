@@ -18,6 +18,7 @@ New to haest? Start with [quickstart.md](quickstart.md).
 | Keep long conversations small | [Compact on your own terms](#compact-on-your-own-terms) |
 | Pay less for the prompt cache | [Tune the prompt cache](#tune-the-prompt-cache) |
 | Run a hook as a service | [Hook a URL](#hook-a-url) |
+| Use haest in an editor's agent panel | [Use haest from Zed (ACP)](#use-haest-from-zed-acp) |
 
 ## Guard a tool
 
@@ -201,3 +202,44 @@ Each event is a POST of its JSON; the response body is the decision (empty passe
 is filled in from haest's environment. A `url` entry is read only from your own config, a
 variable or a flag, never from a project's file. In Rust it is `HttpHook::new(url)`, bound like
 any hook.
+
+## Use haest from Zed (ACP)
+
+`haest acp` serves an editor over the [Agent Client Protocol](https://agentclientprotocol.com/):
+Zed's agent panel (or JetBrains', or any ACP client) starts haest and drives whole conversations
+through it. In Zed's `settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "haest": {
+      "type": "custom",
+      "command": "haest",
+      "args": ["acp", "--profile", "claude"],
+      "env": { "OPENROUTER_API_KEY": "sk-or-..." }
+    }
+  }
+}
+```
+
+Each session the panel opens is a conversation in the directory it names, over haest's files
+there as `haest` would load them, with the flags after `acp` on top. An editor started from the
+Dock may not have your shell's variables: give haest its key in `env`. What you get in the
+panel:
+
+| In the panel | In haest |
+|---|---|
+| the answer and its reasoning, streamed | the turn's text and thinking |
+| tool calls, each with its kind, files and an edit's diff | the conversation's tool calls and results |
+| Allow / Allow always / Reject | the approval mod's ask (Allow always: the same tool and key, as `always` is in the terminal) |
+| the plan | the task list |
+| `/compact`, `/plan`, your skills | the conversation's commands |
+| the Default and Plan modes | plan mode |
+| the model and effort pickers | `/model` and `/effort` |
+| past sessions, loaded with their history | `haest sessions`, `haest -r <id>` |
+
+haest's tools work in its own workspace (`--workspace real` for the disk, else its sandbox),
+not through the editor, so an unsaved buffer is not what haest reads. Images in a prompt are
+refused. `dev: open acp logs` in Zed's command palette shows every message; what haest notes
+while it loads its files (a setting skipped, a project not trusted) goes to its stderr. A Rust host serves its own conversations with `haest::acp::AcpAgent` (feature
+`acp`).

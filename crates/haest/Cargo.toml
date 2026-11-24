@@ -82,6 +82,10 @@ transport-broker = ["transport", "haest-transport/broker"]
 # templates. With `runtime`, `RuntimeInputs::with_prompt_template` renders it
 # before every model call.
 prompt = ["dep:haest-prompt", "haest-runtime?/prompt"]
+# haest as an Agent Client Protocol agent: an editor (Zed, JetBrains, any ACP
+# client) drives whole conversations over this process's stdin and stdout.
+# Pulls the protocol's own crate; the conversations are the runtime's.
+acp = ["dep:haest-acp", "runtime", "session"]
 # Fakes for a host's tests: a scripted model that records every request,
 # (with the providers) a fake HTTP client and the providers' SSE bodies, and
 # (with `http`) an HTTP server on 127.0.0.1. For `dev-dependencies` only:
@@ -109,6 +113,7 @@ haest-wire = { workspace = true, optional = true }
 haest-session = { workspace = true, optional = true }
 haest-transport = { workspace = true, optional = true }
 haest-prompt = { workspace = true, optional = true }
+haest-acp = { workspace = true, optional = true }
 
 # The notebook example runs under `cargo test` too, so a change that breaks a
 # plug point it uses fails the suite, not only a `cargo run` nobody did.

@@ -60,6 +60,8 @@ pub(crate) enum Command {
     /// Watch or drive a haest running here with its control socket on (the control_socket setting).
     #[command(subcommand)]
     Ctl(Ctl),
+    /// Serve an editor over the Agent Client Protocol on stdin and stdout (Zed's agent panel, JetBrains, any ACP client).
+    Acp,
 }
 
 /// `haest ctl`: another haest on this machine, by its control socket. An id

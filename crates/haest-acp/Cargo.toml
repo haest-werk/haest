@@ -1,0 +1,40 @@
+[package]
+name = "haest-acp"
+description = "haest as an Agent Client Protocol agent: an editor that speaks ACP (Zed, JetBrains, any ACP client) starts haest and drives whole conversations over its stdin and stdout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+haest-core = { workspace = true }
+haest-runtime = { workspace = true, features = ["session"] }
+haest-session = { workspace = true, features = ["approvals"] }
+haest-mods = { workspace = true }
+haest-mcp = { workspace = true }
+haest-wire = { workspace = true }
+# The built-in model catalog: the model picker's choices.
+haest-providers = { workspace = true }
+agent-client-protocol = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "io-std", "macros"] }
+# `compat`: the client's bytes as the futures-io streams the protocol crate reads.
+tokio-util = { workspace = true, features = ["compat"] }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+haest-core = { workspace = true, features = ["testing"] }
+haest-settings = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "io-util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

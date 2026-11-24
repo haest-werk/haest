@@ -56,6 +56,30 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   `haest_workspace::MAX_SHELL_TIMEOUT`, `haest_providers::HEADERS_TIMEOUT`,
   `haest_mcp::{CONNECT_TIMEOUT, CALL_TIMEOUT}`.
 
+### Added
+
+- haest-acp, new: haest as an [Agent Client Protocol](https://agentclientprotocol.com/)
+  agent. An editor that speaks ACP (Zed's agent panel, JetBrains, any ACP
+  client) drives whole conversations over stdin and stdout: its prompts are
+  turns, cancel interrupts, tool calls come with a kind per tool, the files
+  they touch and an edit's diff, approval asks are permission requests
+  (allow, allow always, deny), the task list is the plan, plan mode is a
+  mode, the model and effort are config options, and saved sessions list,
+  load (their history told again) and resume. A host says how a
+  conversation is built for the client's directory (`Conversations`);
+  `AcpAgent` serves it. Off by default: the facade's `acp` feature
+  (`haest::acp`). Behind it is the protocol's own crate,
+  `agent-client-protocol` 5.5. The crate docs list what maps and what does not
+  (the client's file system and terminals, images, what the protocol marks
+  unstable).
+- `haest acp`: the command serves an editor so. Each session loads haest's
+  files for the directory it names, with the flags after `acp` on top.
+  docs/howto.md, "Use haest from Zed (ACP)".
+- `RuntimeInputs::with_plan`: a host's own plan mode (a `PlanMod` with its
+  listener) in place of the default one.
+- `Runtime::command`: a `/name args` line as the conversation runs it, a
+  mod's command, else a skill's; the REPL and print mode go through it.
+
 ### Changes
 
 - The Code tool's deadline is ten minutes, up from one
@@ -77,6 +101,15 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   loop hook waited for its turn's cancel, and a command, which has none,
   for good. `system.prompt` and `prompt.submit` handlers could not hang:
   they refuse a promise.
+- The approval mod's ask names the call it holds up:
+  `ApprovalRequest::tool_use_id` is the call's id. It was always None, so a
+  host could not show an ask on its call.
+- A host can run a build, a session listing or a config load on a task of
+  its own (`tokio::spawn`): the futures of `haest_runtime::build` (a resume
+  of the latest session), `haest_runtime::list_sessions` and
+  `haest_config::Loader::load` are `Send`. Each held a borrow across an
+  await that the compiler could not prove `Send` (rust-lang/rust#100013, and
+  a `&dyn Fn` with no `Sync`).
 
 ### Docs
 

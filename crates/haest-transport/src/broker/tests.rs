@@ -50,10 +50,6 @@ struct Link(WebSocketStream<tokio::net::TcpStream>);
 
 impl TestBroker {
     /// Accepting links; with `refuse`, each handshake is refused with it.
-    #[expect(
-        clippy::result_large_err,
-        reason = "tungstenite's handshake callback returns its own ErrorResponse"
-    )]
     async fn start(refuse: Option<u16>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("ws://{}/agents", listener.local_addr().unwrap());

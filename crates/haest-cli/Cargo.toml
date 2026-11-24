@@ -21,7 +21,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix", "transport-broker"] }
+haest = { workspace = true, features = ["runtime", "config", "wire", "session", "transport-stdio", "transport-unix", "transport-broker", "acp"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
 tokio-util = { workspace = true }
 async-trait = { workspace = true }
@@ -43,3 +43,7 @@ libc = "0.2"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 # testing: the tests' model is `testing::Server` on 127.0.0.1, streaming its script.
 haest-http = { workspace = true, features = ["testing"] }
+# tests/acp.rs: the protocol's own client drives `haest acp`, a child on pipes.
+agent-client-protocol = { workspace = true }
+tokio = { workspace = true, features = ["process"] }
+tokio-util = { workspace = true, features = ["compat"] }

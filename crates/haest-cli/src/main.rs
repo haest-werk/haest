@@ -9,6 +9,7 @@
 //!   haest models | sessions   what haest knows / what it has saved
 //!   haest settings            every setting, its value and where it came from
 //!   haest ctl list | events <id> --follow | send <id> "..."   another haest here, by its control socket
+//!   haest acp                 an editor's agent (Zed, JetBrains, any ACP client) over stdin and stdout
 //!
 //! Unix only (macOS, Linux): the terminal, the workspace's process groups
 //! and the control socket are Unix's.
@@ -18,6 +19,7 @@ compile_error!(
     "haest-cli runs on Unix only (macOS, Linux): its terminal, process groups and control socket"
 );
 
+mod acp;
 mod agents;
 mod args;
 mod ask;
@@ -96,6 +98,8 @@ async fn subcommand(cmd: Command, loaded: &Loaded) -> ExitCode {
             .iter()
             .for_each(|l| println!("{}", render::inert(l))),
         Command::Ctl(cmd) => return ctl::run(cmd, &loaded.config.control_dir()).await,
+        // Served before the load (main): each session loads its own directory's.
+        Command::Acp => unreachable!("haest acp is served before the load"),
     }
     ExitCode::SUCCESS
 }
@@ -371,7 +375,10 @@ async fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => return fail(2, e),
     };
-    let home = env_var(&env, "HOME").unwrap_or("/");
+    let home = env_var(&env, "HOME").unwrap_or("/").to_string();
+    if let Some(Command::Acp) = command {
+        return acp::serve(env, cli.settings, cwd, home).await;
+    }
     let defaults = Settings::bare(cwd, home);
     let loaded = match Loader::standard(defaults, env, cli.settings.clone())
         .load(&RealFs)
