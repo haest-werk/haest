@@ -63,6 +63,8 @@ haest-mods = { workspace = true, features = ["testing"] }
 # The HTTP hook's tests post through the default client to `testing::Server`.
 haest-http = { workspace = true, features = ["reqwest", "testing"] }
 tempfile = "3"
+# docs/hooks.md's test loads its config example as a file would be.
+toml = "1.1"
 
 [package.metadata.docs.rs]
 all-features = true

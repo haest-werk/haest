@@ -41,6 +41,8 @@ const MAX_ERROR_BODY: usize = 64 * 1024;
 /// [`ModEnv`](haest_mods::ModEnv), and a host that calls
 /// [`Hook::run`](haest_mods::Hook::run) itself sets the payload's `session`
 /// first (from `haest.session()`).
+/// [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+/// shows every event's body and what each answer becomes, in both dialects.
 ///
 /// | Response | What it is |
 /// |---|---|

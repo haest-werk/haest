@@ -36,7 +36,9 @@ const NO_DEADLINE: Duration = Duration::MAX;
 /// [`ModEvent::claude_code`](haest_mods::ModEvent::claude_code) lists them:
 /// bound to `model.before` or `model.after` it does not compile. Neither
 /// dialect holds anything of the conversation: each event's payload brings
-/// it.
+/// it. [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+/// shows every event's input and what each answer becomes, in both
+/// dialects, as JSON.
 ///
 /// # How a command answers
 ///

@@ -4,6 +4,8 @@
 //! what a TypeScript handler has always received, plus `session`
 //! ([`SessionView`]) when a [`HookSet`](crate::HookSet) binding or a mod
 //! file's handler gets it in a conversation whose host named one.
+//! [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+//! shows each one as a hook in another process gets it.
 
 use std::path::PathBuf;
 

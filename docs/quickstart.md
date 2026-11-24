@@ -56,7 +56,7 @@ haest --tools bash -p "Run exactly this with the Bash tool: rm -rf build"
 
 The script runs as it is under Claude Code and under haest. A hook can also be a URL
 (`url = "https://..."`, a POST per event) or speak haest's own JSON on every event
-([extending.md](extending.md#hooks-from-a-config-file)).
+([hooks.md](hooks.md) has every event's input and answers, in both dialects).
 
 ### 5. Change the agent with a mod file
 

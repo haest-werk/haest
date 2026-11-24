@@ -61,7 +61,9 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 /// `prefix*`), never Claude Code's regular expressions.
 ///
 /// Like [`Haest`](crate::Haest) it holds nothing: every fact a hook's input
-/// has comes with the event.
+/// has comes with the event. Every event's input, and what each answer
+/// becomes, is in
+/// [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Claude;
 

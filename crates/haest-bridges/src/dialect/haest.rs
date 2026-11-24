@@ -19,7 +19,9 @@ use super::{Dialect, HookFailure, Reply, Vars, blocked};
 /// | events | every one, `model.before` and `model.after` included |
 ///
 /// An answer that is not JSON, or JSON the event does not take (`input`
-/// that is not an object), is a failure.
+/// that is not an object), is a failure. Every event's input, and what each
+/// answer becomes, is in
+/// [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Haest;
 

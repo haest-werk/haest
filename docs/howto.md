@@ -103,7 +103,7 @@ export default function (haest: any): void {
 Every handler of one event, in every mod, gets the session the event began on, even when the
 host names a new one while the event runs. A command or URL hook gets it as `session` in its
 JSON (`session_id` and `transcript_path` in the `claude` dialect), and a Rust hook as
-`payload.session`. [extending.md](extending.md#what-each-event-may-decide) has every payload.
+`payload.session`. [hooks.md](hooks.md) has every payload, as JSON.
 
 ## Add a tool from a mod file
 

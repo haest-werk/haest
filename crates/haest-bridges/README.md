@@ -146,8 +146,9 @@ binds them, with `shell` or `http` on, in one `HookSet` named `[hooks]`: the
 host is the conversation's directory, the environment a command gets (none:
 no command binds) and the HTTP client. haest-runtime does this in every
 conversation, and names its session on the mods' `ModEnv`;
-[docs/extending.md](https://github.com/haest-werk/haest/blob/main/docs/extending.md#hooks-from-a-config-file)
-has the keys and the trust rules.
+[docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+has the keys and the trust rules, and every event's input and the answers it
+takes, in both dialects.
 
 ```toml
 [[hooks."tool.before"]]
@@ -157,6 +158,10 @@ matcher = "Bash"
 ```
 
 ### Dialects
+
+[docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+shows each event's input in both dialects, and what each answer becomes, as
+JSON a test writes from this crate's code.
 
 `Haest`, the default, speaks the protocol a mod file's handler does, on every
 event: the input is `{ "event": "tool.before", ...payload }` (the payload's own

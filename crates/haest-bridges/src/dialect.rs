@@ -120,7 +120,7 @@ pub(crate) fn outgoing<E: Event, D: Dialect<E>>(
 /// protocol's own words (`{ deny }`, `{ stop }`, `{ continue }`), so it is
 /// what a mod file answering them does. Any other event has no blocking
 /// answer: a failure. The model reads `text` as it reads a tool's output:
-/// its first and last [`TRUNCATE_CHARS`] at most.
+/// [`TRUNCATE_CHARS`] of it at most, cut in the middle past that.
 pub(crate) fn blocked<E: Event>(text: &str) -> Result<E::Decision, HookFailure> {
     let event = E::NAME;
     let word = match event {
@@ -204,5 +204,7 @@ fn said(text: &str) -> String {
     }
 }
 
+#[cfg(test)]
+mod reference;
 #[cfg(test)]
 mod tests;

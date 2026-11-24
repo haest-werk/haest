@@ -69,7 +69,8 @@ file's handler): the session the conversation's `ModEnv` names as the event begi
 when the host names none (`transcriptPath` too). A mod file's handler gets a loop event's
 payload as one object (`turn.session`) and the other events' as arguments, `session` last:
 `(call, ctx, session)`, `(call, output, ctx, session)`, `(text, session)`, `(session)`;
-`undefined` when none is named.
+`undefined` when none is named. [hooks.md](hooks.md) shows each event's payload, and what each
+answer becomes, as JSON.
 
 These are the mod files' own words, typed once in haest-mods (`Event` and its payload and
 decision types). A bridge only encodes the payload, carries it to the hook, and decodes the
@@ -230,35 +231,16 @@ Every mod, native or file, runs with the host's full trust, sandbox or not.
 [`ShellHook`](../crates/haest-bridges/src/shell.rs) (haest-bridges feature `shell`, the
 facade's `bridge-shell`) and [`HttpHook`](../crates/haest-bridges/src/http.rs) (`http`,
 `bridge-http`) are hooks: bound per event in a `HookSet` as a closure is, with the binding's
-timeout, `on_error` and matcher. Both are off by default.
+timeout, `on_error` and matcher. Both are off by default. A command gets the event as JSON on
+its stdin and answers on its stdout, exit 2 a blocking answer; a URL gets it as a POST and
+answers in the response's body. Each speaks a dialect: `Haest` (the default, every event: the
+payload above with the event's name, the decision's JSON back) or `Claude` (Claude Code's hook
+JSON, so a Claude Code hook script runs as it is, on the five events Claude Code has).
 
-| | `ShellHook` | `HttpHook` |
-|---|---|---|
-| per event | a command, `bash -c`, on the host (never in the sandbox) | a POST, through haest-http's `HttpClient` |
-| the input | on stdin | the body, `content-type: application/json` |
-| the decision | stdout on exit 0; empty passes | a 2xx response's body; empty passes |
-| a blocking answer | exit 2, stderr its text | the decision itself |
-| a failure (`on_error`) | any other exit, or stdout that is no decision | another status, no answer, or a body that is no decision |
-| at the timeout or an interrupt | its whole process group is killed | the request is dropped |
-| it gets | the variables the host hands in, nothing else of its environment | the headers the host sets |
-
-Exit 2 refuses a `tool.before` call, stops the turn on `model.before` and `model.after`, and
-keeps a `turn.end` going; on the other events it is a failure. haest fails closed: a broken
-`tool.before` hook refuses the call.
-
-Each speaks a dialect:
-
-| Dialect | The input | The answer | Events |
-|---|---|---|---|
-| `Haest`, the default | `{ "event": "<name>", ...payload }`: the payload above (its `session` too), with the event's name | the decision's JSON above | every one |
-| `Claude` | Claude Code's hook JSON (`hook_event_name`, `session_id`, `transcript_path`, `tool_name`, `tool_input`, `stop_hook_active`, ..), plus `CLAUDE_PROJECT_DIR` for a command | Claude Code's (`permissionDecision`, `updatedInput`, `updatedToolOutput`, `additionalContext`, `decision: "block"`) | `tool.before` (PreToolUse), `tool.after` (PostToolUse), `prompt.submit` (UserPromptSubmit), `system.prompt` (SessionStart), `turn.end` (Stop) |
-
-So a Claude Code hook script runs as it is. Where Claude Code can do more than haest's event
-(an `ask`, refusing a prompt, `continue: false`), haest refuses or ignores, and a `Claude` hook
-on `model.before` or `model.after` does not compile; the mapping and that list are on
-[`Claude`](../crates/haest-bridges/src/dialect/claude.rs) and in
-[haest-bridges' README](../crates/haest-bridges/README.md#dialects).
-[`examples/hooks/no-rm-rf.sh`](examples/hooks/no-rm-rf.sh) is such a script, and
+[hooks.md](hooks.md) is the reference: every event's input and every answer it takes, in both
+dialects, written from the code by a test that fails when they disagree; what a command and a
+URL get, answer and fail on; every option of a config entry.
+[`examples/hooks/no-rm-rf.sh`](examples/hooks/no-rm-rf.sh) is a Claude Code script, and
 [`external_hooks.rs`](../crates/haest/examples/external_hooks.rs) runs it beside an HTTP hook
 on `turn.end`.
 
@@ -296,75 +278,18 @@ its dot (`[[hooks.tool.before]]` is a table `tool` to TOML, which haest refuses 
 command = "sh ~/.config/haest/hooks/no-rm-rf.sh"
 dialect = "claude"
 matcher = "Bash"
-
-# A reviewer that may keep a turn going, in haest's own JSON.
-[[hooks."turn.end"]]
-url = "https://review.example/haest/turn-end"
-headers = { authorization = "Bearer ${REVIEW_TOKEN}" }
-timeout = 10
 ```
 
-| Key | Takes | Default |
-|---|---|---|
-| `command` | a command, `bash -c` on the host per event, in the working dir: a `ShellHook` | |
-| `url` | an `http://` or `https://` URL, POSTed per event: an `HttpHook` | |
-| `dialect` | `haest` (every event) or `claude` (Claude Code's JSON, on the events Claude Code has: never `model.before` or `model.after`) | `haest` |
-| `matcher` | on `tool.before` and `tool.after` only: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`). Claude Code's `Edit\|Write` and `Bash.*` are regular expressions, which haest does not read, and `Edit,Write` is a list: write one entry per tool | every tool |
-| `timeout` | seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes, and the cache's TTLs are the words `5m` and `1h` | 60 |
-| `on_error` | what a failure does: `block` or `continue` | `block` on `tool.before`, else `continue` |
-| `headers` | a `url`'s headers, `{ name = "value" }`; `${NAME}` and `${NAME:-default}` in a value are filled in from haest's environment | none |
-
-An entry takes `command` or `url`, never both. Loading refuses an unknown event or key, an
-entry with neither or both, `dialect = "claude"` on `model.before` or `model.after`, a
-`matcher` on an event that is not about a tool, and `headers` on a command. The error names
-the file and the entry as that file numbers it
-(``~/.config/haest/config.toml: hooks: [[hooks."turn.end"]] #2: unknown key `comand` ``),
-and never a header's value.
+[hooks.md](hooks.md#options) has every key (`command`, `url`, `dialect`, `matcher`,
+`timeout`, `on_error`, `headers`), where entries come from (your file, a trusted project's,
+the profile, `HAEST_HOOKS`, `--hooks`; a project never binds a `url`), how they run, and how a
+hook moves over from Claude Code's `.claude/settings.json`.
 
 The setting's type is haest-mods' [`HookSettings`](../crates/haest-mods/src/hook_settings.rs),
 beside `Binding` and `OnError`. A Rust host builds the same entries without a file
 (`HookSettings::with_entry` with a `HookEntry::shell` or `HookEntry::http`, refused what a
 file is refused) and binds them with haest-bridges' `HookHost::bind`, which is what
 haest-runtime does with the loaded setting.
-
-Where they come from:
-
-- Every layer's entries bind after the ones before it, in the order written: your file, a
-  trusted project's file, the profile, `HAEST_HOOKS`, then each `--hooks`. A variable or a
-  flag holds the same as TOML: `--hooks '{ "turn.end" = [{ command = "sh check.sh" }] }'`.
-- A project's `.haest/config.toml` is read only inside your
-  [`trusted_dirs`](settings.md#trusted_dirs), so an untrusted repo's hooks never load. A
-  trusted one may bind a `command` (it already runs its own code through its mods and its
-  `.mcp.json`), never a `url`: a POST sends the conversation's events where the repo says. A
-  `url` comes from your own file, a variable or a flag; a project's file, or a profile it
-  defines, that holds one fails to load.
-- Off by default: no entry, no hook.
-
-How they run:
-
-- The entries are one mod, `[hooks]` in reports (`Mod [hooks] failed in tool.before: hook 2
-  on tool.before failed: ..`, where `hook 2` is the event's second bound entry across the
-  layers), after the built-in mods and your mod files, before a host's own mods.
-- A command runs on the host in the working dir, with the environment every process haest
-  starts gets ([`env_passthrough`](settings.md#env_passthrough), [`env`](settings.md#env)):
-  `~` in a command needs `HOME`, which `core` passes. Give a command in your own file as an
-  absolute path or under `~/`: a relative one runs whatever the working dir has at that path.
-  A host whose world starts no process (haest-runtime's `World::files`) binds no command: it
-  warns, and binds the rest.
-- A URL goes through the runtime's `HttpClient`, the one the model calls use.
-- haest-runtime names the conversation's session on its mods' env, and the new one at each
-  /clear: a hook gets the session's id and its file as of that event, in the `claude` dialect
-  as Claude Code's `session_id` and `transcript_path`, in `haest` as `session`.
-- A subagent's tool calls pass through the hooks, and its system prompt takes what
-  `system.prompt` adds, as with every mod. `prompt.submit`, `model.before`, `model.after` and
-  `turn.end` are the main conversation's: a subagent's turn is not the human's, and a check
-  that keeps the main turn going would hold every subagent's to it too.
-- `haest settings` shows a header by its name only.
-
-A hook from Claude Code's `.claude/settings.json` moves over one entry at a time: the event by
-its haest name (`PreToolUse` is `tool.before`, `PostToolUse` `tool.after`, `UserPromptSubmit`
-`prompt.submit`, `SessionStart` `system.prompt`, `Stop` `turn.end`), its `command` and
-`timeout`, its `matcher` (one entry per tool), and `dialect = "claude"`.
 
 ## Which form to use
 

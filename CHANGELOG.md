@@ -18,6 +18,16 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   for good. `system.prompt` and `prompt.submit` handlers could not hang:
   they refuse a promise.
 
+### Docs
+
+- [docs/hooks.md](docs/hooks.md): every event's input and every answer it
+  takes, in both dialects, for a command or URL hook, with every key of a
+  `hooks` entry. A test in haest-bridges writes it from the encoder and the
+  decoder and fails when the page and the code disagree
+  (`HAEST_BLESS=1 cargo test -p haest-bridges --features shell hooks_reference`
+  rewrites it). docs/extending.md points there instead of holding its own
+  copies of the transport, dialect and key tables.
+
 ## 0.5.0 (2026-11-23)
 
 haest-issues 0.4.0 goes with it: its code is unchanged, its haest-core and

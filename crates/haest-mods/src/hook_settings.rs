@@ -105,6 +105,8 @@ const KEYS: &[&str] = &[
 /// Claude Code's matchers are and haest's are not), `headers` on a command.
 /// Its Debug output shows each header by its name only and a URL without
 /// its credentials.
+/// [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
+/// has every key, and every event's input and answers as JSON.
 ///
 /// A Rust host builds the same without a file, each entry checked as a
 /// file's is ([`with_entry`](Self::with_entry)):
