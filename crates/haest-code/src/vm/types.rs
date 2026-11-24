@@ -42,8 +42,9 @@ pub struct VmCaps {
     /// [`run_in_vm`](super::run_in_vm) is stopped past it, from when its
     /// engine starts, even mid-loop ([`VmStop::Timeout`]). A mod file's
     /// default export must return within it when the mod loads; after that
-    /// the mod's calls have no deadline, and [`slice`](Self::slice) bounds
-    /// its code. Thirty years or more (`Duration::MAX`) is no deadline.
+    /// each call has [`call_timeout`](Self::call_timeout), and
+    /// [`slice`](Self::slice) bounds its code. Thirty years or more
+    /// (`Duration::MAX`) is no deadline.
     pub timeout: Duration,
     /// The longest a mod file's code may run without a pause (awaiting does
     /// not count). Past it the code is stopped: every call into the mod in
@@ -51,6 +52,13 @@ pub struct VmCaps {
     /// [`run_in_vm`](super::run_in_vm) does not read it: its
     /// [`timeout`](Self::timeout) stops a CPU loop.
     pub slice: Duration,
+    /// How long one call into a loaded mod file (a handler, a tool, a
+    /// command) has to settle, wall clock, awaiting included; the time a
+    /// `haest.ask` waits on the human does not count. Past it that call
+    /// fails and the mod runs on: a promise nothing will resolve ends here.
+    /// A run of [`run_in_vm`](super::run_in_vm) does not read it. Thirty
+    /// years or more (`Duration::MAX`) is no deadline.
+    pub call_timeout: Duration,
     /// Console output kept, in characters; the rest is dropped and
     /// [`VmRun::logs_truncated`] set. A mod file has no console and does not
     /// read it.
@@ -63,6 +71,7 @@ impl Default for VmCaps {
             memory_bytes: super::VM_MEMORY_BYTES,
             timeout: Duration::from_secs(60),
             slice: Duration::from_secs(10),
+            call_timeout: Duration::from_secs(60),
             max_log_chars: 100_000,
         }
     }
@@ -70,7 +79,8 @@ impl Default for VmCaps {
 
 impl VmCaps {
     /// A mod file's caps: 128 MiB of memory, 30 s for its default export to
-    /// return, 10 s of code without a pause.
+    /// return, 10 s of code without a pause, 60 s for each call to settle
+    /// (a hook binding's default timeout too).
     pub fn mod_file() -> Self {
         Self {
             memory_bytes: 128 << 20,
@@ -98,6 +108,14 @@ impl VmCaps {
     #[must_use]
     pub fn with_slice(mut self, slice: Duration) -> Self {
         self.slice = slice;
+        self
+    }
+
+    /// How long one call into a loaded mod file has to settle, not counting
+    /// the human's time on a `haest.ask`.
+    #[must_use]
+    pub fn with_call_timeout(mut self, timeout: Duration) -> Self {
+        self.call_timeout = timeout;
         self
     }
 

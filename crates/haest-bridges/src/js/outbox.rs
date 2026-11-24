@@ -88,7 +88,9 @@ impl Js {
 
     /// Put the mod's ask to the host on the async runtime; the answer comes back
     /// as a request. Under `ctx.signal` it ends when that call is interrupted.
-    fn ask(&self, id: u64, req: serde_json::Value, signal: Option<u64>) {
+    fn ask(&mut self, id: u64, req: serde_json::Value, signal: Option<u64>) {
+        // Every ask is answered (ToJs::Answer), a refused one at once.
+        self.ask_started();
         let req: ApprovalRequest = match serde_json::from_value(req) {
             Ok(r) => r,
             Err(e) => {
@@ -114,6 +116,7 @@ impl Js {
 
     pub(super) fn finish(&mut self, id: u64, result: Result<String, String>) {
         self.signals.remove(&id);
+        self.deadlines.remove(&id);
         if let Some(reply) = self.pending.remove(&id) {
             let _ = reply.send(result);
         }

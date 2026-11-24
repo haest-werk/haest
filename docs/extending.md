@@ -186,7 +186,10 @@ QuickJS (TypeScript types are stripped in Rust; no node, no bun). Mod files are 
 bridge: they live in haest-bridges behind its `js` feature (the facade's `bridge-js`, on by
 default), so haest-mods and a Rust-only host link no QuickJS. Each file runs on an engine of
 its own, haest-code's, the one the Code tool runs on, held to the same caps type, `VmCaps`
-(`VmCaps::mod_file()`: 128 MiB, 30 s to load, 10 s of code without a pause).
+(`VmCaps::mod_file()`: 128 MiB, 30 s to load, 10 s of code without a pause, and 60 s for each
+call, a handler, a tool or a command, to settle; the human's time on a `haest.ask` does not
+count). Past a cap only that call fails, or every call in flight for a loop that ran over its
+slice, and the mod runs on.
 
 [`ModFiles`](../crates/haest-bridges/src/js/files.rs) is a conversation's mod files as ONE
 mod, added after the built-ins and before the host's own mods. haest-runtime loads:

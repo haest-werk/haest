@@ -6,6 +6,19 @@ with the TypeScript haest unless an entry says otherwise: the session file,
 `--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
 `HAEST_*` variables.
 
+## Unreleased
+
+### Fixes
+
+- A mod file's call whose promise nothing resolves no longer waits
+  forever. A handler, a tool or a command has
+  `VmCaps::call_timeout` (60 s, `with_call_timeout`) to settle, the human's
+  time on a `haest.ask` not counted; past it that call fails (a
+  `tool.before` refuses its call) and the mod runs on. Before, a tool or
+  loop hook waited for its turn's cancel, and a command, which has none,
+  for good. `system.prompt` and `prompt.submit` handlers could not hang:
+  they refuse a promise.
+
 ## 0.5.0 (2026-11-23)
 
 haest-issues 0.4.0 goes with it: its code is unchanged, its haest-core and

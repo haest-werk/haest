@@ -9,7 +9,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, atomic::AtomicBool, mpsc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use haest_code::{
@@ -76,7 +76,22 @@ fn serve(
         }
     };
     let _ = ready.send(Ok(()));
-    while let Ok(msg) = rx.recv() {
+    loop {
+        // A call's deadline is the one thing that wakes the thread with no request.
+        let next = match js.next_due() {
+            None => rx
+                .recv()
+                .map_err(|mpsc::RecvError| mpsc::RecvTimeoutError::Disconnected),
+            Some(due) => rx.recv_timeout(due.saturating_duration_since(Instant::now())),
+        };
+        let msg = match next {
+            Ok(msg) => msg,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                js.expire();
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         match msg {
             ToJs::Stop => break,
             ToJs::Call {
@@ -136,6 +151,14 @@ pub(super) struct Js {
     pub(super) pending: HashMap<u64, Reply>,
     /// The cancel token of each tool call in flight, by the id its handlers see as `ctx.signal`.
     pub(super) signals: HashMap<u64, CancellationToken>,
+    /// How long each call has to settle ([`VmCaps::call_timeout`]).
+    call_timeout: Duration,
+    /// Each call in flight's op and when it is due (`None`: no deadline).
+    pub(super) deadlines: HashMap<u64, (&'static str, Option<Instant>)>,
+    /// `haest.ask`s waiting on the human, and since when one has: while
+    /// any is, no call's clock runs.
+    asks_out: usize,
+    paused_since: Option<Instant>,
     next_id: u64,
 }
 
@@ -167,6 +190,10 @@ impl Js {
             own,
             pending: HashMap::new(),
             signals: HashMap::new(),
+            call_timeout: setup.caps.call_timeout,
+            deadlines: HashMap::new(),
+            asks_out: 0,
+            paused_since: None,
             next_id: 0,
         };
         let name = setup.path.display().to_string();
@@ -211,6 +238,13 @@ impl Js {
         if let Some(cancel) = cancel {
             self.signals.insert(id, cancel);
         }
+        // `load` has its own deadline, the caps' `timeout` (load.rs). A call
+        // made while the human holds an ask starts its clock when they answer.
+        if op != "load" {
+            let from = self.paused_since.unwrap_or_else(Instant::now);
+            self.deadlines
+                .insert(id, (op, from.checked_add(self.call_timeout)));
+        }
         let sent = self.enter(|ctx| {
             let f: Function<'_> = haest(ctx)?.get("dispatch")?;
             f.call::<_, ()>((id as f64, op, payload))
@@ -221,6 +255,7 @@ impl Js {
     }
 
     fn answer(&mut self, id: u64, result: Result<&'static str, String>) {
+        self.ask_ended();
         let (ok, value) = match result {
             Ok(decision) => (true, decision.to_string()),
             Err(e) => (false, e),
@@ -230,6 +265,56 @@ impl Js {
             f.call::<_, ()>((id as f64, ok, value))
         }) {
             self.fail_all(&e);
+        }
+    }
+
+    /// An ask went to the human: every call's clock stops until none waits.
+    pub(super) fn ask_started(&mut self) {
+        self.asks_out += 1;
+        if self.paused_since.is_none() {
+            self.paused_since = Some(Instant::now());
+        }
+    }
+
+    /// An ask came back: with none left waiting, every call's clock runs on
+    /// from where it stopped.
+    fn ask_ended(&mut self) {
+        self.asks_out = self.asks_out.saturating_sub(1);
+        if self.asks_out > 0 {
+            return;
+        }
+        if let Some(since) = self.paused_since.take() {
+            let held = since.elapsed();
+            for (_, due) in self.deadlines.values_mut() {
+                *due = due.and_then(|d| d.checked_add(held));
+            }
+        }
+    }
+
+    /// When the thread must next wake for a deadline: none while an ask waits.
+    fn next_due(&self) -> Option<Instant> {
+        if self.paused_since.is_some() {
+            return None;
+        }
+        self.deadlines.values().filter_map(|(_, due)| *due).min()
+    }
+
+    /// Fail every call past its deadline: its promise never settled. The
+    /// mod runs on, and a late settle of it is dropped.
+    fn expire(&mut self) {
+        let now = Instant::now();
+        let late: Vec<(u64, &'static str)> = self
+            .deadlines
+            .iter()
+            .filter(|(_, (_, due))| due.is_some_and(|d| d <= now))
+            .map(|(id, (op, _))| (*id, *op))
+            .collect();
+        for (id, op) in late {
+            let why = format!(
+                "its {op} call did not settle within {:.1}s: it waits on a promise nothing resolved",
+                self.call_timeout.as_secs_f64()
+            );
+            self.finish(id, Err(why));
         }
     }
 

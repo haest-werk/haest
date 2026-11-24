@@ -28,6 +28,8 @@
 
 mod channel;
 #[cfg(test)]
+mod deadline_tests;
+#[cfg(test)]
 mod engine_tests;
 mod files;
 mod handlers;
