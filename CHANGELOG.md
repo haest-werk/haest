@@ -6,7 +6,16 @@ versioned on its own, is not in the workspace. Wire formats change only where an
 entry says so: the session file, `--json` NDJSON, `providers.json`,
 `.mcp.json`, the settings keys and the `HAEST_*` variables.
 
-## Unreleased
+## 0.7.0 (2026-11-24)
+
+haest-issues 0.6.0 goes with it: nothing in it changed, and its haest-core
+and haest-http are 0.7.0's. haest-gui 0.1.0 is new, experimental and outside
+the workspace; it depends on haest 0.7.0.
+
+haest speaks the Agent Client Protocol (`haest acp`, haest-acp). A haest at
+its terminal puts its approval asks to its command-socket peers too, and
+the wire says who answered each. haest-gui is a window onto the running
+haests.
 
 ### Added
 

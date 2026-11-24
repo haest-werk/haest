@@ -94,7 +94,7 @@ conversation as a turn ends, once the context is past 60% of the window.
 
 ```toml
 [dependencies]
-haest = "0.6"
+haest = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
