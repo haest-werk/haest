@@ -17,7 +17,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! haest = "0.5"
+//! haest = "0.6"
 //! tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 //! ```
 //!
@@ -173,7 +173,7 @@
 //!
 //! ```toml
 //! [dev-dependencies]
-//! haest = { version = "0.5", features = ["testing"] }
+//! haest = { version = "0.6", features = ["testing"] }
 //! ```
 //!
 //! # Features
@@ -213,11 +213,11 @@
 //!
 //! ```toml
 //! # a host with its own HTTP client, files and tools:
-//! haest = { version = "0.5", default-features = false, features = [
+//! haest = { version = "0.6", default-features = false, features = [
 //!     "providers", "workspace", "tools", "settings",
 //! ] }
 //! # the whole conversation from haest's own files, variables and flags (the CLI):
-//! haest = { version = "0.5", features = ["runtime", "config"] }
+//! haest = { version = "0.6", features = ["runtime", "config"] }
 //! ```
 //!
 //! # Going further

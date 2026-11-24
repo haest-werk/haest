@@ -5,7 +5,15 @@ is experimental and versioned on its own. Wire formats change only where an
 entry says so: the session file, `--json` NDJSON, `providers.json`,
 `.mcp.json`, the settings keys and the `HAEST_*` variables.
 
-## Unreleased
+## 0.6.0 (2026-11-24)
+
+haest-issues 0.5.0 goes with it: a comment changed, and its haest-core and
+haest-http are 0.6.0's.
+
+The timeouts of hooks, asks, Bash, model calls, MCP servers, WebFetch and
+haest's JavaScript are settings in `[timeouts]`, and that JavaScript's memory
+in `[limits]`. The Code tool runs for ten minutes, and a model stream that
+goes silent can be cut (`model_stall`, off unless set).
 
 ### Settings
 
