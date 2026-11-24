@@ -76,7 +76,7 @@ fn amount(text: &str, units: &[(&str, u128)], any_case: bool) -> Option<u128> {
 /// `n` in the largest of `units` that holds it whole, or in the smallest
 /// with a fraction when none does.
 fn written(n: u128, units: &[(&str, u128)]) -> String {
-    if let Some((name, scale)) = units.iter().find(|(_, scale)| n % scale == 0) {
+    if let Some((name, scale)) = units.iter().find(|(_, scale)| n.is_multiple_of(*scale)) {
         return format!("{}{name}", n / scale);
     }
     let (name, scale) = units[units.len() - 1];

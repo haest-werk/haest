@@ -23,8 +23,10 @@ writes its mods in Rust never links an engine.
     event, add a tool or a slash command, hide any tool, ask the human). It
     runs on its own thread, on haest-code's engine (the one the Code tool
     runs on), bounded by the same caps type, `VmCaps` (memory, a time slice,
-    a load timeout; `VmCaps::mod_file()` by default); `ModLoadError` says
-    why one did not load.
+    a load timeout, a deadline per call; `VmCaps::mod_file()` by default,
+    `ModFileOptions::with_caps` for others, haest's `[timeouts]` and
+    `[limits]` settings through haest-runtime); `ModLoadError` says why one
+    did not load.
   - Its handlers are asked one at a time and each answer is decoded on the
     Rust side by haest-mods, as a shell or HTTP hook's is: `{ deny: null }`
     passes, and `{ stop: false }` or a number where text goes is the
@@ -144,7 +146,9 @@ A CLI binds the same hooks with no Rust. haest-mods' `HookSettings` is the
 value), or built in Rust with `HookSettings::with_entry`. `HookHost::bind`
 binds them, with `shell` or `http` on, in one `HookSet` named `[hooks]`: the
 host is the conversation's directory, the environment a command gets (none:
-no command binds) and the HTTP client. haest-runtime does this in every
+no command binds), the HTTP client and the timeout of an entry that sets
+none (`HookHost::with_default_timeout`: haest's `[timeouts] hook`, 60 s
+unless set). haest-runtime does this in every
 conversation, and names its session on the mods' `ModEnv`;
 [docs/hooks.md](https://github.com/haest-werk/haest/blob/main/docs/hooks.md)
 has the keys and the trust rules, and every event's input and the answers it

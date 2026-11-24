@@ -16,12 +16,19 @@
 //! haest-bridges' mod files run on this engine too, each on its own, held to
 //! the same caps type, [`VmCaps`] ([`VmCaps::mod_file`]).
 //!
-//! | Piece | What | Ported from |
-//! |---|---|---|
-//! | [`run_in_vm`] | one engine run on a thread of its own: caps, stop, heartbeat | `core/code-vm*.ts` |
-//! | the Code tool's call gate | writes alone, reads together, for one run's tool calls | `core/call-gate.ts` |
-//! | [`CodeTool`] | the Code tool: a short program that calls haest's tools | `tools/code*.ts` |
-//! | [`js_command`], [`sandbox_commands`] | the sandbox shell's `js <file>` command over a haest [`Fs`](haest_core::Fs) | `core/sandbox-js*.ts` |
+//! Each kind of run starts from its own caps: [`VmCaps::default`] for the
+//! Code tool (ten minutes, 64 MiB), [`VmCaps::sandbox`] for `js` (five
+//! minutes, 64 MiB), [`VmCaps::mod_file`] for a mod file. This crate reads
+//! no settings: [`CodeTool::with_caps`], [`sandbox_commands_with`] and
+//! [`JsEnv::with_caps`] take others, and haest-runtime fills them from
+//! haest's `[timeouts]` and `[limits]` settings.
+//!
+//! | Piece | What |
+//! |---|---|
+//! | [`run_in_vm`] | one engine run on a thread of its own: caps, stop, heartbeat |
+//! | the Code tool's call gate | writes alone, reads together, for one run's tool calls |
+//! | [`CodeTool`] | the Code tool: a short program that calls haest's tools |
+//! | [`js_command`], [`sandbox_commands`] | the sandbox shell's `js <file>` command over a haest [`Fs`](haest_core::Fs) |
 //!
 //! Feature `typescript` (default): `js file.ts` strips the types first
 //! (`haest-ts`). Without it, a TypeScript file is refused with a message

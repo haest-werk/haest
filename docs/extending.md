@@ -190,7 +190,10 @@ its own, haest-code's, the one the Code tool runs on, held to the same caps type
 (`VmCaps::mod_file()`: 128 MiB, 30 s to load, 10 s of code without a pause, and 60 s for each
 call, a handler, a tool or a command, to settle; the human's time on a `haest.ask` does not
 count). Past a cap only that call fails, or every call in flight for a loop that ran over its
-slice, and the mod runs on.
+slice, and the mod runs on. Each cap is a setting: `[timeouts.javascript]` `mod_load`,
+`mod_call` and `mod_slice`, and `[limits.javascript]` `mod_memory`
+([settings.md](settings.md#timeouts)); a Rust host passes its own `VmCaps` to
+`ModFileOptions::with_caps`.
 
 [`ModFiles`](../crates/haest-bridges/src/js/files.rs) is a conversation's mod files as ONE
 mod, added after the built-ins and before the host's own mods. haest-runtime loads:

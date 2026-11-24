@@ -73,9 +73,9 @@ pub fn code_tool_names(tools: &[ToolRef], allowed: &[impl AsRef<str>]) -> Vec<St
 /// `d` as the model reads it: `10 min`, `45s`, `500ms`.
 fn spoken(d: Duration) -> String {
     let ms = d.as_millis();
-    if ms >= 60_000 && ms % 60_000 == 0 {
+    if ms >= 60_000 && ms.is_multiple_of(60_000) {
         format!("{} min", ms / 60_000)
-    } else if ms % 1_000 == 0 {
+    } else if ms.is_multiple_of(1_000) {
         format!("{}s", ms / 1_000)
     } else {
         format!("{ms}ms")

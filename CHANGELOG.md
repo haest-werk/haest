@@ -7,6 +7,48 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
 
 ## Unreleased
 
+### Settings
+
+- `[timeouts]` and `[limits]`: every wait haest has, and its JavaScript's
+  memory, in one place, each value text with its unit (`"30s"`, `"10m"`,
+  `"64MiB"`). A number alone is refused, since `30` could be seconds or
+  minutes. New settings keys and `HAEST_TIMEOUTS` / `HAEST_LIMITS`.
+
+  ```toml
+  [timeouts]
+  hook = "60s"   # a [[hooks.<event>]] entry with no timeout of its own
+  ask  = "10m"   # a human's Allow/Deny; unanswered, it is a Deny
+
+  [timeouts.javascript]
+  code      = "10m"   # a Code tool run (was a minute)
+  sandbox   = "5m"    # the sandbox `js` command
+  mod_load  = "30s"   # a mod file's default export
+  mod_call  = "60s"   # one call into a mod file
+  mod_slice = "10s"   # a mod file's code without a pause
+
+  [limits.javascript]
+  code_memory    = "64MiB"
+  sandbox_memory = "64MiB"
+  mod_memory     = "128MiB"
+  ```
+
+  Every default is what haest did before, but `javascript.code`. A Rust
+  host sets the same caps in code: `CodeTool::with_caps`,
+  `sandbox_commands_with` and `JsEnv::with_caps` with the new
+  `VmCaps::sandbox()`, `ModFileOptions::with_caps`,
+  `HookHost::with_default_timeout`, `ApprovalGate::with_timeout`.
+
+### Changes
+
+- The Code tool's deadline is ten minutes, up from one
+  (`VmCaps::default().timeout`), and it is both the default and the most
+  the model may ask for: its `timeout` parameter only shortens it. Before,
+  the model could ask for up to five minutes.
+- The model catalog is haest's own: `crates/haest-providers/catalog/models.json`
+  is edited by hand, and `scripts/gen-catalog.ts`, which copied it from a
+  TypeScript module, is gone. haest-providers' tests do the checks the
+  script did, and fail on a key in the file that haest does not read.
+
 ### Fixes
 
 - A mod file's call whose promise nothing resolves no longer waits
