@@ -11,8 +11,7 @@
 //! tools before every model call, so a server connected later is offered from
 //! the next call on.
 //!
-//! Built on the official Rust SDK, [rmcp](https://docs.rs/rmcp). Ported from
-//! the TypeScript haest's `core/mcp.ts`.
+//! Built on the official Rust SDK, [rmcp](https://docs.rs/rmcp).
 //!
 //! # Features
 //!

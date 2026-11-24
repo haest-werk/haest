@@ -1,14 +1,11 @@
 # haest in Rust: haest + the haest CLI
 
 **Goal.** One Rust agent loop and tool harness that every haest host embeds:
-the `haest` CLI, brain, and later remote-claude's agent host. The loop began
-as TypeScript (`remote-claude/src/haest-agent-host`, about 7.3k lines of core,
-providers and tools, plus 3.7k of tests), and brain ran a vendored copy of it
-that drifted. brain now links this library (D6), so the copy is gone.
+the `haest` CLI and brain, which links this library (D6).
 
-**The port's source of truth** was the TypeScript haest in remote-claude's
-`src/haest-agent-host/` (`core/`, `providers/`, `tools/`). Behaviour came from
-there, file by file, tests included. Since 0.2.0 the Rust haest leads.
+haest stands on its own (the maintainer, 2026-11-24: "HAEST is independent and
+used"). It began as a port of a TypeScript loop; the rows below that name that
+origin are the record of how a decision was reached, not a tie to keep.
 
 ## Decisions
 
@@ -16,7 +13,7 @@ there, file by file, tests included. Since 0.2.0 the Rust haest leads.
 |---|---|---|
 | D1 | Standalone repo `haest`, a Cargo workspace | Sharable by remote-claude AND brain; remote-claude's repo is too heavy to be a git dependency |
 | D2 | Crates: `haest-core`, `haest-providers`, `haest-workspace`, `haest-tools`, `haest-cli`, and `haest` (the facade: `use haest::...`, features pick the parts) | Codex's split (`codex-rs`) is the precedent; a host links only what it uses |
-| D3 | The session JSONL is the TS haest's format, byte compatible (camelCase keys, same record kinds) | Either haest resumes the other's session; brain's conversation files keep working |
+| D3 | The session JSONL keeps one format across haest versions (camelCase keys, same record kinds); a change to it is a breaking change in the CHANGELOG. It began as the TS haest's format | A session from an older haest resumes in a newer one; brain's conversation files keep working |
 | D4 | haest-core has its OWN `Fs` trait; `haest-workspace` adapts any `Fs` into bashkit's `FileSystem` | haest-core stays free of a pre-1.0 dependency, and a host's own files (BrainFs) still get a sandboxed bash |
 | D5 | P1 default: haest mods run in embedded QuickJS (`rquickjs`), no `node:` APIs | The Code tool needs QuickJS anyway (wave 2) |
 | D6 | P2: brain links `haest` IN-PROCESS (`default-features = false`, features `providers`, `workspace`, `tools`, `settings`) and drops the vendored TS haest from its Bun rooms child. Ruled 2026-11-11; it replaces the first default, haest as brain's own child process holding no keys | One process, no wire between brain and its loop. The cost: the loop runs in the process that holds the keys, so the boundary is D15/D16 alone (a run touches only the `World`, `KeySource` and settings brain hands it) |
@@ -163,7 +160,7 @@ after a closing newline.
 
 | Code | Gap |
 |---|---|
-| G1 | The auto-mode judge is not ported |
+| G1 | The auto-mode judge is not built |
 | G2 | The sandbox overlay lives in one process: a resumed sandbox session starts from a clean overlay |
 | G3 | MCP and compaction pass their tests but have not run against a live server / a real long session |
 | G4 | `mv` of a directory across bashkit mounts fails |
@@ -174,17 +171,11 @@ after a closing newline.
 | G10 | Remote subagents, the controller side (haest driving another agent through a child or WebSocket backend) and a broker server are not built |
 | G11 | The cases haest leaves alone on purpose are the README's "Limitations" (D24) |
 
-Not in this plan (the consumers, each its own job once the library holds):
-remote-claude's broker-facing host in Rust (TS `host/`, 3.3k lines, 18 wire
-types). brain has switched from its vendored TS copy to the crate (D6).
-
 ## Done means
 
 - `cargo test --workspace` green, `cargo clippy --workspace --all-targets` clean.
-- Every ported TS test has a Rust counterpart (behaviour, not wording).
 - `haest -p "..."` runs a real multi-step task with tools against a real model,
   and `haest --resume <id>` continues it from the session file.
-- A TS haest session file replays in the Rust haest.
 - The notebook example compiles and runs against fakes using only plug points.
 
 ## Risks
@@ -192,5 +183,5 @@ types). brain has switched from its vendored TS copy to the crate (D6).
 | Code | Risk | Handling |
 |---|---|---|
 | R1 | bashkit is pre-1.0 | Resolved for the fs seam: `bashkit::FileSystem` is a public trait and `Bash::builder().fs(..)` takes a custom one. Pin the version; it sits behind haest's own `Fs` (D4) |
-| R2 | the model catalog exists twice (TS + Rust) | Generated JSON from `shared/haest-models.ts` for now; later remote-claude reads haest's |
-| R3 | parity drift while the TS haest keeps changing | Port from a named commit, record it per crate, diff upstream before each wave |
+| R2 | the model catalog exists twice (TS + Rust) | Generated JSON from `shared/haest-models.ts` (`scripts/gen-catalog.ts`); open: the one tie haest still has to the TS world |
+| R3 | parity drift while the TS haest keeps changing | Closed 2026-11-24: haest no longer tracks the TS haest |

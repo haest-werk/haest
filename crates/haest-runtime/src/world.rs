@@ -110,8 +110,7 @@ const KILL_WAIT: Duration = Duration::from_secs(3);
 
 /// The background-job hub, when the settings let Bash leave jobs running: the
 /// `bash` tool on, in the real workspace (the sandbox has no real processes to
-/// leave running). As the TS haest's `host/jobs.ts`. A job that exits on its
-/// own tells main through `inbox`.
+/// leave running). A job that exits on its own tells main through `inbox`.
 pub(crate) fn jobs_for(s: &Settings, inbox: impl Into<InboxRef>) -> Option<JobHub> {
     let real_bash = s.workspace == WorkspaceMode::Real && s.tools.bash;
     real_bash.then(|| JobHub::new(inbox))

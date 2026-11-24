@@ -1,6 +1,6 @@
 //! A log that ends mid-tool (the process was killed): every replay answers
 //! the calls left without a result, so a resumed conversation is one a
-//! provider accepts. Ported from the TS haest's session-store tests.
+//! provider accepts.
 
 use super::*;
 use crate::messages::{AssistantMessage, AssistantPart, StopReason, ToolCall, ToolResultMessage};

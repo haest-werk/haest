@@ -210,8 +210,7 @@ impl SystemPrompt for AgentPrompt {
 }
 
 /// The platform the system prompt names: Rust's `std::env::consts::OS`, with
-/// `macos` as `darwin`, the name the TS haest (and most models' training data)
-/// uses.
+/// `macos` as `darwin`, the name most models' training data uses.
 fn platform() -> String {
     match std::env::consts::OS {
         "macos" => "darwin".into(),

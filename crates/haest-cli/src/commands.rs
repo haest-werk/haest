@@ -1,4 +1,4 @@
-//! Slash commands typed at the prompt -- the TS haest host's set, plus /exit.
+//! Slash commands typed at the prompt: haest's own.
 //! Then the mods' commands (/plan is one), then skills: a line naming a skill
 //! (`/review src/a.rs`) expands to that skill's body and goes to the model;
 //! anything else starting with `/` is sent as typed.

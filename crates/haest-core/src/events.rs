@@ -32,7 +32,7 @@
 //! let mut events = Vec::new();
 //! let mut sink = |ev: LoopEvent| events.push(ev);
 //! sink.emit(LoopEvent::TextDelta { text: "hi".into() });
-//! // Each event is one JSON line in `--json` output and the TypeScript haest's shape.
+//! // Each event is one JSON line in `--json` output.
 //! assert_eq!(serde_json::to_string(&events[0])?, r#"{"type":"text_delta","text":"hi"}"#);
 //! # Ok::<(), serde_json::Error>(())
 //! ```

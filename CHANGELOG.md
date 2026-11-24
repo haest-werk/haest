@@ -1,10 +1,9 @@
 # Changelog
 
 Every crate in the workspace shares one version, except haest-issues, which
-is experimental and versioned on its own. Wire formats are kept compatible
-with the TypeScript haest unless an entry says otherwise: the session file,
-`--json` NDJSON, `providers.json`, `.mcp.json`, the settings keys and the
-`HAEST_*` variables.
+is experimental and versioned on its own. Wire formats change only where an
+entry says so: the session file, `--json` NDJSON, `providers.json`,
+`.mcp.json`, the settings keys and the `HAEST_*` variables.
 
 ## Unreleased
 

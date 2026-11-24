@@ -1,5 +1,4 @@
-//! PUTTING ONE SANDBOX CHANGE ON THE REAL DISK, for `OverlayChanges::apply`
-//! (the TS haest's `overlay-apply.ts`).
+//! PUTTING ONE SANDBOX CHANGE ON THE REAL DISK, for `OverlayChanges::apply`.
 //!
 //! Refused, each with its code, before anything is written:
 //! - a symlink the sandbox made, or a change behind one (`symlink`): applying

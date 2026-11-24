@@ -15,7 +15,8 @@
 //! | `tasks` | the whole task list (absolute; the last one wins -- [`crate::task_board`]) |
 //! | `run`, `turn`, `run_end` | a durable run's start, turn state and result ([`crate::run`]); [`replay`] skips them |
 //!
-//! The JSON shape is the TypeScript haest's, so either haest resumes the other's file.
+//! The JSON shape stays the same across haest versions, so a newer haest resumes an
+//! older one's file; a change to it is a breaking change.
 //!
 //! PLUG POINT: [`replay`] is separate from writing. A host that writes the file
 //! itself (with record kinds of its own) replays it with [`replay`] alone:
@@ -75,7 +76,7 @@ use crate::{
 };
 
 /// One line of a session file. Serialized with a `type` tag (`header`,
-/// `message`, ...) and camelCase fields, the TypeScript haest's shape.
+/// `message`, ...) and camelCase fields.
 ///
 /// Every record but the header carries `t`: milliseconds since the epoch when
 /// it was written (any JSON number reads, kept as whole milliseconds).

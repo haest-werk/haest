@@ -42,8 +42,8 @@
 //!   [`AgentControl`] steers or aborts a running turn from another task.
 //! - [`LoopEvent`]: what a turn emits, in order.
 //! - [`Tool`] to add a tool, [`AgentHooks`] to change how the loop behaves.
-//! - [`messages`]: the history as data. Session files and events keep the
-//!   TypeScript haest's JSON shape: either haest resumes the other's sessions.
+//! - [`messages`]: the history as data. Session files and events keep one
+//!   JSON shape across haest versions: a newer haest resumes an older one's sessions.
 //! - Spend: [`caps`] caps one turn, [`ledger`] one conversation, and the
 //!   loop checks both before every model call. [`remedy`] adds the host's way
 //!   past a cap to haest's message about it. [`threshold`]: a meter crossing

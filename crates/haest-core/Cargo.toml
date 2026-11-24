@@ -26,8 +26,8 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
-# float_roundtrip: a session's numbers replay to the exact f64 the TypeScript haest
-# wrote (the default parser can land one bit off).
+# float_roundtrip: a session's numbers replay to the exact f64 that was written
+# (the default parser can land one bit off).
 serde_json = { workspace = true, features = ["float_roundtrip"] }
 thiserror = { workspace = true }
 base64 = "0.22"

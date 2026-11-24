@@ -129,9 +129,6 @@
 //! that has it open). The list is in the
 //! [repository README](https://github.com/haest-werk/haest#limitations).
 //!
-//! Ported from the TS haest's `core/workspace-real.ts`, `workspace-sandbox.ts`
-//! and `overlay-changes.ts`.
-//!
 //! [`Workspace`]: haest_core::workspace::Workspace
 //! [`Workspace::prompt_note`]: haest_core::workspace::Workspace::prompt_note
 //! [`Workspace::changes`]: haest_core::workspace::Workspace::changes

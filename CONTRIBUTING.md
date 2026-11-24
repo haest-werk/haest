@@ -2,11 +2,9 @@
 
 - **Keep the behaviour, don't reinvent it.** What haest does is defined by
   its tests and doc comments: read the code's tests and docs first, and keep
-  their intent. haest was ported from a TypeScript original; where a
-  maintainer has it, it is the reference for intent, never a requirement
-  for a contributor.
+  their intent.
 - **The contract is in `haest-core`** (`messages`, `provider`, `tool`, `fs`,
-  `workspace`, `events`, `deps`, `agent`). Change it only when a port truly
+  `workspace`, `events`, `deps`, `agent`). Change it only when a change truly
   needs it, and say so in the commit message.
 - **Agnostic.** haest ships to anyone: no person's name, no host-specific path or
   product name in code, prompts, defaults or fixtures. A host injects what it needs.
@@ -84,9 +82,11 @@
   re-exported crate (`reqwest` in haest-http, `rmcp` in haest-mcp) is part of
   the API: its breaking release is a breaking release of haest.
 - **Wire-compatible serde.** Anything that lands in a session file or an NDJSON
-  event keeps the TS haest's JSON shape (camelCase keys, same tags).
+  event keeps its JSON shape (camelCase keys, same tags): a session written by
+  an older haest resumes in a newer one. A change to it is a breaking change,
+  named in the CHANGELOG.
 - **Tests defend behaviour.** A test fails only when behaviour changed: never
-  assert wording, formatting or source text. Port every TS test as a behaviour test.
+  assert wording, formatting or source text.
 - **Files stay small.** About 300 lines per `.rs` file, tests included in a
   `#[cfg(test)] mod tests` or a sibling `tests.rs`. Over that, split by concern.
 - **Dependencies** a single crate uses go in THAT crate's `Cargo.toml`, not the

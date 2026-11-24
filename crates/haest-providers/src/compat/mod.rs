@@ -271,7 +271,7 @@ impl StreamFold for CompatFold {
             return Ok(Step::End);
         }
         // A payload that is not JSON (a proxy's keep-alive, a stray line) is
-        // skipped, as the TS haest did; an `{error}` ends the stream.
+        // skipped; an `{error}` ends the stream.
         let Ok(chunk) = serde_json::from_str::<serde_json::Value>(&ev.data) else {
             return Ok(Step::Continue);
         };

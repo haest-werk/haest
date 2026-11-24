@@ -150,9 +150,8 @@ pub struct InstructionOptions {
 /// Every path to try, in reading order: the user's file of each convention
 /// (`~/.claude/CLAUDE.md`, `~/.agents/AGENTS.md`), then the project chain.
 ///
-/// The TS haest crosses the user dirs with both names (it also tries
-/// `~/.claude/AGENTS.md` and `~/.agents/CLAUDE.md`); neither convention puts
-/// a file there, so haest reads each convention's own.
+/// Not crossed (`~/.claude/AGENTS.md`, `~/.agents/CLAUDE.md`): neither
+/// convention puts a file there, so haest reads each convention's own.
 fn candidates(opts: &InstructionOptions) -> Vec<PathBuf> {
     let ContextSources { agents, claude } = opts.sources;
     let wanted = |f: &str| if f == AGENTS_FILE { agents } else { claude };

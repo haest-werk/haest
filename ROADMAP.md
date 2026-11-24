@@ -9,7 +9,7 @@ Scheduled work: each is a gap in what haest does today.
 
 | Gap | Today |
 |---|---|
-| The auto-mode judge | not ported from the TypeScript haest |
+| The auto-mode judge | the built-in approvals ask the human before a shell command that cannot be undone and let the rest run; no model judges a call on its own |
 | A resumed sandbox session | the overlay lives in the process: a resumed session starts from a clean one, and edits not applied before exit are gone |
 | MCP and compaction, live | both pass their tests; neither has run against a live server or a real long session in this repo's checks |
 | `mv` of a directory across sandbox mounts | fails |
@@ -37,6 +37,3 @@ points that exist: the loop events, `turn.end`'s `continue`, the cache's idle ti
 | A monitor tool | the model watches a process or a file and is woken by what it sees |
 | Compaction as a tool | the model compacts its own conversation, so the next turn starts small |
 | A changed system prompt that keeps the cache | when a mod changes its `system.prompt` text, send the change as a mid-conversation system message instead of a new system prompt, so the prompt cache survives |
-
-Not in this repo: remote-claude's broker-facing host in Rust, which would build on haest once
-the library holds.

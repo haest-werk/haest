@@ -76,7 +76,7 @@ fn reasoning_content_is_thinking_and_also_kept_apart_for_replay() {
 }
 
 // A `data:` payload that is not JSON (a proxy's keep-alive, a stray line) is
-// skipped, as the TS haest did; the stream goes on. An `{error}` still ends it.
+// skipped; the stream goes on. An `{error}` still ends it.
 #[test]
 fn a_data_frame_that_is_not_json_is_skipped_and_the_stream_goes_on() {
     let mut fold = CompatFold {

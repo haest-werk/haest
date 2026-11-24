@@ -133,7 +133,7 @@ pub enum BashVerdict {
 /// irreversible list ([`irreversible_reason`]) alone: it may ask about more,
 /// or let a delete through that git can bring back.
 ///
-/// haest ships no judge (the TypeScript haest's is not ported); a host that
+/// haest ships no judge; a host that
 /// has one hands it in through [`ApprovalMod::with_auto`], and haest holds
 /// it in an [`AutoJudgeRef`].
 #[async_trait]

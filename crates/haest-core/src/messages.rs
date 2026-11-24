@@ -11,9 +11,8 @@
 //! results. A [`Message::ToolChange`] sits right after a user or tool
 //! message and right before an answer.
 //!
-//! The serde shape is the TypeScript haest's, field for field (camelCase keys,
-//! `role` / `type` tags), so a session file written by either haest replays in
-//! the other.
+//! The serde shape (camelCase keys, `role` / `type` tags) stays the same across
+//! haest versions, so a session file an older haest wrote replays in a newer one.
 //!
 //! ```
 //! use haest_core::{AssistantMessage, AssistantPart, Message};

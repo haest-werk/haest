@@ -1,6 +1,6 @@
 //! FILE MODS: a `.js` or `.ts` file whose default export receives the `haest`
 //! API, run in embedded QuickJS on haest-code's engine (the Code tool's) --
-//! one engine and one thread per file. The API mirrors the TypeScript haest's:
+//! one engine and one thread per file:
 //!
 //! ```js
 //! export default function (haest) {
