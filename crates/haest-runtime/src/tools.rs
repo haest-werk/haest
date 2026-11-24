@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use haest_code::{CodeTool, code_tool_names};
+use haest_code::{CodeTool, VmCaps, code_tool_names};
 use haest_core::{
     __private::openrouter_base_url, KeySource, Tools, skills::Skills, task_board::TaskBoard,
     tool::ToolSource,
@@ -123,22 +123,27 @@ impl ToolSource for BaseTools {
 pub(crate) struct WrappedTools {
     base: Arc<BaseTools>,
     mods: Mods,
-    /// The names Code may call: the file tools and `code_tools`; None = no
-    /// Code tool.
-    code: Option<Vec<String>>,
+    /// The names Code may call (the file tools and `code_tools`) and the
+    /// caps every run is held to; None = no Code tool.
+    code: Option<(Vec<String>, VmCaps)>,
 }
 
 impl WrappedTools {
     /// `own` and `mcp`'s tools inside `mods`' hooks. `code`: None = no Code
-    /// tool; Some(extra) = a Code tool that may call the file tools, the
-    /// read-only MCP tools, and the tools `extra` names (the `code_tools`
-    /// setting: exact names, or `prefix*`).
-    pub(crate) fn new(own: Tools, mcp: McpHub, mods: Mods, code: Option<Vec<String>>) -> Self {
+    /// tool; Some((extra, caps)) = a Code tool held to `caps` that may call
+    /// the file tools, the read-only MCP tools, and the tools `extra` names
+    /// (the `code_tools` setting: exact names, or `prefix*`).
+    pub(crate) fn new(
+        own: Tools,
+        mcp: McpHub,
+        mods: Mods,
+        code: Option<(Vec<String>, VmCaps)>,
+    ) -> Self {
         let files = FILE_TOOLS.map(String::from);
         Self {
             base: Arc::new(BaseTools { own, mcp }),
             mods,
-            code: code.map(|extra| files.into_iter().chain(extra).collect()),
+            code: code.map(|(extra, caps)| (files.into_iter().chain(extra).collect(), caps)),
         }
     }
 
@@ -147,12 +152,12 @@ impl WrappedTools {
     /// siblings, read per run, so every call it makes passes the hooks too,
     /// and it neither names nor reaches a hidden one.
     fn wrap(&self, mut tools: Tools) -> Tools {
-        if let Some(allowed) = &self.code {
+        if let Some((allowed, caps)) = &self.code {
             let hidden = self.mods.disabled_tools();
             let mut names = code_tool_names(&tools, allowed);
             names.retain(|name| !hidden.contains(name));
             let callable = ModTools::new(self.base.clone(), self.mods.clone());
-            tools.push(CodeTool::new(names, callable));
+            tools.push(CodeTool::new(names, callable).with_caps(*caps));
         }
         ModTools::wrap(&self.mods, tools)
     }

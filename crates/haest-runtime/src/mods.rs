@@ -9,7 +9,7 @@ use haest_mods::{
 };
 use haest_providers::http::HttpClientRef;
 
-use crate::{RuntimeHooks, world::World};
+use crate::{RuntimeHooks, js_caps::mod_file_caps, world::World};
 
 /// Every mod the settings turn on, mod files read through `fs`, the human's
 /// answers through `gate`.
@@ -48,7 +48,8 @@ pub(crate) async fn mods_for(
         let opts = ModFileOptions::new(&s.config_dir)
             .with_user_mods(s.mods)
             .with_project_mods(s.project_mods)
-            .with_reload(s.mod_reload);
+            .with_reload(s.mod_reload)
+            .with_caps(mod_file_caps(s));
         let env = ModEnv::new(&s.cwd, s.workspace, mod_ui.clone());
         cfg = cfg.with_mod(ModFiles::load(opts, fs, env).await);
     }
@@ -87,7 +88,9 @@ pub(crate) fn config_hooks(
         return None;
     }
     let s = hooks.settings();
-    let mut host = HookHost::new(&s.cwd).with_client(http.clone());
+    let mut host = HookHost::new(&s.cwd)
+        .with_client(http.clone())
+        .with_default_timeout(s.timeouts.hook);
     if let Some(env) = world.child_env_with(passed_env) {
         host = host.with_env(env);
     }

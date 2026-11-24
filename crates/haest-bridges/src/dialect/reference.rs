@@ -127,8 +127,8 @@ const KEYS: &[(&str, &str, &str)] = &[
     ),
     (
         "timeout",
-        "seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes",
-        "{timeout}",
+        "seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes, and `[timeouts]` takes text with its unit",
+        "`[timeouts] hook`, {timeout} s unless set",
     ),
     (
         "on_error",

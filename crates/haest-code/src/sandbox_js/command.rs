@@ -9,6 +9,7 @@ use haest_core::{
 };
 
 use super::{JS_COMMAND, JsEnv, NOT_HERE, js_command, not_here};
+use crate::vm::VmCaps;
 
 /// What the model is told the sandbox can run, beside the shell itself.
 #[cfg(feature = "typescript")]
@@ -18,9 +19,27 @@ const JS_NOTE: &str = "To run a script you wrote, use `js <file.js> [args]`: pla
 
 /// `js` and, for every name in [`NOT_HERE`](crate::NOT_HERE), a command that
 /// points to it, ready for `SandboxWorkspace::with_commands`. Only `js` has a
-/// note for the system prompt; the others stay unadvertised.
+/// note for the system prompt; the others stay unadvertised. A script runs
+/// with [`VmCaps::sandbox`]; [`sandbox_commands_with`] takes other caps.
 pub fn sandbox_commands() -> Vec<ShellCommandRef> {
-    let js = ShellCommandRef::new(JsShellCommand);
+    sandbox_commands_with(VmCaps::sandbox())
+}
+
+/// [`sandbox_commands`] with `js` held to `caps`: its memory, its output,
+/// and the longest a script runs (the shell call's end still cuts it
+/// shorter).
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use haest_code::{VmCaps, sandbox_commands_with};
+///
+/// let patient = VmCaps::sandbox().with_timeout(Duration::from_secs(20 * 60));
+/// let commands = sandbox_commands_with(patient);
+/// assert_eq!(commands[0].name(), "js");
+/// ```
+pub fn sandbox_commands_with(caps: VmCaps) -> Vec<ShellCommandRef> {
+    let js = ShellCommandRef::new(JsShellCommand { caps });
     let pointers = NOT_HERE
         .iter()
         .map(|name| ShellCommandRef::new(NotHere(name)));
@@ -28,8 +47,11 @@ pub fn sandbox_commands() -> Vec<ShellCommandRef> {
 }
 
 /// The sandbox shell's `js <file> [args]` command: [`js_command`] over the
-/// shell call's files, working directory, variables, interrupt and deadline.
-pub(crate) struct JsShellCommand;
+/// shell call's files, working directory, variables, interrupt and
+/// deadline, held to `caps`.
+pub(crate) struct JsShellCommand {
+    caps: VmCaps,
+}
 
 #[async_trait]
 impl ShellCommand for JsShellCommand {
@@ -50,6 +72,7 @@ impl ShellCommand for JsShellCommand {
             stdin,
             cancel: call.cancel,
             ends_at: Some(call.ends_at),
+            caps: self.caps,
         };
         js_command(&call.args, &env).await
     }

@@ -30,7 +30,7 @@ whole config files.
 | Context | [`context`](#context), [`skills`](#skills), [`skill_catalog`](#skill_catalog) |
 | Tools | [`tools`](#tools), [`code`](#code), [`code_tools`](#code_tools), [`agents`](#agents), [`web_search`](#web_search), [`image`](#image), [`image_model`](#image_model), [`image_models`](#image_models), [`mcp`](#mcp), [`deferred_tools`](#deferred_tools) |
 | Workspace, mods and trust | [`workspace`](#workspace), [`env_passthrough`](#env_passthrough), [`env`](#env), [`mods`](#mods), [`project_mods`](#project_mods), [`mod_reload`](#mod_reload), [`hooks`](#hooks), [`approvals`](#approvals), [`trusted_dirs`](#trusted_dirs) |
-| Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`wind_down_at`](#wind_down_at), [`context_window`](#context_window), [`compact_at`](#compact_at) |
+| Caps | [`max_turn_usd`](#max_turn_usd), [`max_turn_tokens`](#max_turn_tokens), [`max_request_tokens`](#max_request_tokens), [`max_turn_steps`](#max_turn_steps), [`max_turn_minutes`](#max_turn_minutes), [`max_repeats`](#max_repeats), [`max_conversation_usd`](#max_conversation_usd), [`max_conversation_tokens`](#max_conversation_tokens), [`wind_down_at`](#wind_down_at), [`context_window`](#context_window), [`compact_at`](#compact_at), [`timeouts`](#timeouts), [`limits`](#limits) |
 | Subagents | [`max_agent_turns`](#max_agent_turns), [`max_agent_depth`](#max_agent_depth), [`max_subagents`](#max_subagents), [`subagent_usd`](#subagent_usd), [`subagent_steps`](#subagent_steps), [`subagent_minutes`](#subagent_minutes), [`subagent_budgets`](#subagent_budgets) |
 | Watching and driving | [`event_ring`](#event_ring), [`stdio`](#stdio), [`control_socket`](#control_socket), [`control_dir`](#control_dir), [`broker_url`](#broker_url), [`broker_access`](#broker_access) |
 | Paths | [`data_dir`](#data_dir), [`config_dir`](#config_dir), [`debug`](#debug) |
@@ -419,7 +419,7 @@ flag          --mod-reload ask
 ### `hooks`
 
 Commands and URLs run at each event of the mods protocol, with no Rust: [[hooks."&lt;event>"]] entries, each a command (run on the host) or a url (POSTed), in haest's JSON or Claude Code's (dialect = "claude").
-The events are the protocol's own names, quoted for their dot: `tool.before`, `tool.after`, `prompt.submit`, `system.prompt`, `model.before`, `model.after`, `turn.end`. An entry takes `command` or `url` (one of them), `dialect` (`haest` or `claude`; `claude` runs a Claude Code hook script as it is, on the events Claude Code has, so never on `model.before` or `model.after`), `matcher` (on `tool.before` and `tool.after` only: a tool's name, or a prefix ending in `*`), `timeout` (seconds, default 60, Claude Code's key as it is: every other time setting that takes a number takes minutes, and the cache's TTLs are the words `5m` and `1h`), `on_error` (`block` or `continue`; default `block` on `tool.before`, else `continue`) and `headers` (a `url`'s, `{ name = "value" }`, `${NAME}` filled in from haest's environment). A command runs on the host (never in the sandbox) in the working dir, with the environment every process haest starts gets (`env_passthrough`, `env`): give one in your own file as an absolute path or under `~/`, since a relative one runs whatever the working dir has there. Every layer's entries bind after the ones before it, in the order written, as one mod after the built-in ones and your mod files. A subagent's tool calls pass through them and its system prompt takes what `system.prompt` adds; `prompt.submit`, `model.before`, `model.after` and `turn.end` are the main conversation's. `haest settings` shows a header by its name only. [hooks.md](hooks.md) has the whole story: every event's input and every answer it takes, in both dialects, and every key.
+The events are the protocol's own names, quoted for their dot: `tool.before`, `tool.after`, `prompt.submit`, `system.prompt`, `model.before`, `model.after`, `turn.end`. An entry takes `command` or `url` (one of them), `dialect` (`haest` or `claude`; `claude` runs a Claude Code hook script as it is, on the events Claude Code has, so never on `model.before` or `model.after`), `matcher` (on `tool.before` and `tool.after` only: a tool's name, or a prefix ending in `*`), `timeout` (seconds, Claude Code's key as it is: every other time setting that takes a number takes minutes, `[timeouts]` takes text with its unit, and the cache's TTLs are the words `5m` and `1h`; default `[timeouts] hook`, a minute), `on_error` (`block` or `continue`; default `block` on `tool.before`, else `continue`) and `headers` (a `url`'s, `{ name = "value" }`, `${NAME}` filled in from haest's environment). A command runs on the host (never in the sandbox) in the working dir, with the environment every process haest starts gets (`env_passthrough`, `env`): give one in your own file as an absolute path or under `~/`, since a relative one runs whatever the working dir has there. Every layer's entries bind after the ones before it, in the order written, as one mod after the built-in ones and your mod files. A subagent's tool calls pass through them and its system prompt takes what `system.prompt` adds; `prompt.submit`, `model.before`, `model.after` and `turn.end` are the main conversation's. `haest settings` shows a header by its name only. [hooks.md](hooks.md) has the whole story: every event's input and every answer it takes, in both dialects, and every key.
 
 - Takes: a table: `[hooks]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{ key = value }`), the flag repeated for more. Each layer merges into the ones before it, key by key
 - Default: none
@@ -618,6 +618,41 @@ Compact the conversation past this many tokens (0 = at 80% of the window only).
 config.toml   compact_at = 300000
 variable      HAEST_COMPACT_AT=300000
 flag          --compact-at 300000
+```
+
+### `timeouts`
+
+How long haest waits before it gives up: on a hook (hook), on a human's Allow/Deny (ask), and on its JavaScript (javascript: code, sandbox, mod_load, mod_call, mod_slice); each is text with its unit, like "30s" or "10m".
+A value is a number and its unit, `ms`, `s`, `m` or `h` (`"500ms"`, `"30s"`, `"1.5h"`), above 0. A number alone is refused: `30` could be seconds or minutes. `hook` (default `"60s"`): a `[[hooks.&lt;event>]]` entry that sets no `timeout` of its own; past it, the hook failed and its `on_error` decides. `ask` (`"10m"`): an Allow/Deny prompt, the approval mod's or a mod's; unanswered, it is a Deny. `javascript.code` (`"10m"`): a Code tool run, wall clock, the tools it calls included; the model may ask for less on a call, never for more. `javascript.sandbox` (`"5m"`): the sandbox `js` command, never past the shell call it runs in. `javascript.mod_load` (`"30s"`): a mod file's default export, as the mod loads. `javascript.mod_call` (`"60s"`): one call into a loaded mod file (a handler, a tool, a command), awaiting included, the time a `haest.ask` waits on the human not; past it that call fails and the mod runs on. `javascript.mod_slice` (`"10s"`): a mod file's code without a pause, what stops a CPU loop in a mod. The turn's caps (`max_turn_minutes`, `subagent_minutes`) hold over all of it.
+
+- Takes: a table: `[timeouts]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{ key = value }`), the flag repeated for more. Each layer merges into the ones before it, key by key
+- Default: every key at the default given above
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   [timeouts]
+              hook = "30s"
+              
+              [timeouts.javascript]
+              code = "20m"
+variable      HAEST_TIMEOUTS='{ hook = "30s", javascript = { code = "20m" } }'
+flag          --timeouts '{ hook = "30s", javascript = { code = "20m" } }'
+```
+
+### `limits`
+
+How much memory each kind of JavaScript run gets (javascript: code_memory, sandbox_memory, mod_memory); each is text with its unit, like "64MiB" or "1GiB".
+A value is a number and its unit, `B`, `KB`, `MB`, `GB` (powers of 1000) or `KiB`, `MiB`, `GiB` (powers of 1024), in any case, 1MiB at least. A number alone is refused. Each is one engine's heap: an allocation past it is an out-of-memory error inside the script. `javascript.code_memory` (default `"64MiB"`): a Code tool run. `javascript.sandbox_memory` (`"64MiB"`): the sandbox `js` command. `javascript.mod_memory` (`"128MiB"`): each mod file, for as long as it is loaded.
+
+- Takes: a table: `[limits]` in a file; in a variable or a flag, its keys as TOML (`key = value` lines, or `{ key = value }`), the flag repeated for more. Each layer merges into the ones before it, key by key
+- Default: every key at the default given above
+- Set in: a config file (yours, or a trusted project's), a profile, its variable, its flag
+
+```text
+config.toml   [limits.javascript]
+              code_memory = "256MiB"
+variable      HAEST_LIMITS='{ javascript = { code_memory = "256MiB" } }'
+flag          --limits '{ javascript = { code_memory = "256MiB" } }'
 ```
 
 ## Subagents

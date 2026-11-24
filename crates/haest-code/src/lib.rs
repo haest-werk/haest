@@ -143,6 +143,7 @@ pub use code::{
 };
 pub use sandbox_js::{
     JS_MAX_OUTPUT, JS_TIMEOUT, JsEnv, NOT_HERE, js_command, run_js, sandbox_commands,
+    sandbox_commands_with,
 };
 pub use vm::{
     MAX_ENGINES, STOP_GRACE, VM_MEMORY_BYTES, VmBeat, VmCaps, VmRun, VmSpec, VmStop, run_in_vm,

@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_code::sandbox_commands;
+use haest_code::{VmCaps, sandbox_commands, sandbox_commands_with};
 use haest_core::workspace::{ExecOptions, Workspace};
 use haest_workspace::{SandboxMounts, SandboxWorkspace};
 
@@ -84,6 +84,29 @@ async fn a_busy_loop_stops_at_the_shell_calls_own_timeout() {
         .await;
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_ne!(r.exit_code, 0);
+}
+
+/// The caps `sandbox_commands_with` takes hold `js` inside a shell call that
+/// would give it longer: the script stops at the caps' timeout and says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn js_stops_at_its_own_caps_before_a_longer_shell_call() {
+    let (_t, dir) = tempdir();
+    let ws = SandboxWorkspace::open(SandboxMounts::new(&dir))
+        .await
+        .unwrap();
+    let quick = VmCaps::sandbox().with_timeout(Duration::from_secs(1));
+    let ws = ws.with_commands(sandbox_commands_with(quick));
+    ws.fs()
+        .write(&dir.join("spin.js"), b"while (true) {}")
+        .await
+        .unwrap();
+    let started = Instant::now();
+    let r = ws
+        .shell("js spin.js", opts(&dir, Duration::from_secs(30)))
+        .await;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(r.exit_code, 1);
+    assert!(r.stderr.contains("ran out its 1s"), "{}", r.stderr);
 }
 
 /// What is piped into `js` reaches the script, the ways a Node script reads

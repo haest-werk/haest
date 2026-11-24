@@ -90,6 +90,8 @@ mod sets;
 mod settings;
 #[cfg(test)]
 mod tests;
+mod timeouts;
+mod units;
 
 pub use cache::{BreakpointTtl, CacheOverride, CacheSettings, CompactBeforeExpire, MinContext};
 pub use caps::CapSettings;
@@ -97,3 +99,4 @@ pub use haest_core::{context::ContextSources, skills::SkillSources, words::WordS
 pub use mod_reload::ModReload;
 pub use sets::BuiltinTools;
 pub use settings::{DEFAULT_MODEL, Settings};
+pub use timeouts::{JsLimits, JsTimeouts, LimitSettings, TimeoutSettings};

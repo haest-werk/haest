@@ -20,7 +20,7 @@ use haest_core::{
 };
 use tokio_util::sync::CancellationToken;
 
-pub use command::sandbox_commands;
+pub use command::{sandbox_commands, sandbox_commands_with};
 pub(crate) use guest::JS_MODULES;
 
 use crate::vm::{VmCaps, VmRun, VmStop, run_in_vm};
@@ -31,8 +31,9 @@ use source::{is_jsx, runnable};
 pub(crate) const JS_COMMAND: &str = "js";
 /// Runtime names that answer with a pointer to `js` instead of pretending.
 pub const NOT_HERE: [&str; 7] = ["bun", "bunx", "node", "npx", "deno", "tsx", "ts-node"];
-/// The longest a script runs (5 minutes). The shell call's own deadline is the
-/// real bound; this caps a script with none, and one with a later one.
+/// The longest a script runs by default (5 minutes): [`VmCaps::sandbox`]'s
+/// timeout. The shell call's own deadline cuts it shorter; this caps a
+/// script with none, and one with a later one.
 pub const JS_TIMEOUT: Duration = Duration::from_secs(300);
 /// The most console output a script may print, in characters, stdout and
 /// stderr together; the rest is dropped and stderr says so.
@@ -41,7 +42,8 @@ pub const JS_MAX_OUTPUT: usize = 1_000_000;
 /// Where a `js` command runs: the sandbox's files and the shell call it is part of.
 ///
 /// [`new`](Self::new) is a script over `fs` in `cwd` with no variables, no
-/// stdin, no interrupt and [`JS_TIMEOUT`]; the `with_*` setters change each.
+/// stdin, no interrupt and [`VmCaps::sandbox`]; the `with_*` setters change
+/// each.
 #[derive(Clone)]
 pub struct JsEnv {
     /// The files the script's `fs` reads and writes: the sandbox's own.
@@ -55,8 +57,10 @@ pub struct JsEnv {
     pub(crate) stdin: Option<String>,
     /// The shell call's interrupt.
     pub(crate) cancel: CancellationToken,
-    /// The running shell call's end; None = [`JS_TIMEOUT`] from now.
+    /// The running shell call's end; None = the caps' timeout from now.
     pub(crate) ends_at: Option<Instant>,
+    /// The script's memory, longest run and output.
+    pub(crate) caps: VmCaps,
 }
 
 impl JsEnv {
@@ -71,7 +75,17 @@ impl JsEnv {
             stdin: None,
             cancel: CancellationToken::new(),
             ends_at: None,
+            caps: VmCaps::sandbox(),
         }
+    }
+
+    /// The script's caps in place of [`VmCaps::sandbox`]: its memory, its
+    /// output, and the longest it runs (`timeout`; the shell call's end
+    /// still cuts it shorter).
+    #[must_use]
+    pub fn with_caps(mut self, caps: VmCaps) -> Self {
+        self.caps = caps;
+        self
     }
 
     /// The shell's exported variables, the script's `process.env`, in place
@@ -96,7 +110,7 @@ impl JsEnv {
         self
     }
 
-    /// The running shell call's end, in place of [`JS_TIMEOUT`] from the
+    /// The running shell call's end, in place of the caps' timeout from the
     /// start (a later one is cut to that).
     #[must_use]
     pub fn with_ends_at(mut self, ends_at: Instant) -> Self {
@@ -113,6 +127,7 @@ impl fmt::Debug for JsEnv {
             .field("env", &self.env)
             .field("stdin", &self.stdin.as_ref().map(String::len))
             .field("ends_at", &self.ends_at)
+            .field("caps", &self.caps)
             .finish_non_exhaustive()
     }
 }
@@ -265,12 +280,12 @@ pub async fn js_command(args: &[impl AsRef<str>], env: &JsEnv) -> ExecResult {
 /// in argv. Nothing is read from `path`; `code` must already be JavaScript.
 ///
 /// The run gets the script API in [`js_command`](js_command#what-a-script-has)'s docs,
-/// [`VM_MEMORY_BYTES`](crate::VM_MEMORY_BYTES) of memory, and until
-/// the env's end ([`JsEnv::with_ends_at`], at most [`JS_TIMEOUT`]). The
-/// result is a CLI's: what it printed, and the exit code it passed to
-/// `process.exit`, else 1 when it threw or was stopped, else 0. An uncaught
-/// error, a stop (the env's interrupt or the deadline) and output past
-/// [`JS_MAX_OUTPUT`] each add a line to stderr.
+/// the env's caps ([`JsEnv::with_caps`], [`VmCaps::sandbox`] unless set),
+/// and until the env's end ([`JsEnv::with_ends_at`], at most the caps'
+/// timeout). The result is a CLI's: what it printed, and the exit code it
+/// passed to `process.exit`, else 1 when it threw or was stopped, else 0.
+/// An uncaught error, a stop (the env's interrupt or the deadline) and
+/// output past the caps' `max_log_chars` each add a line to stderr.
 #[expect(
     clippy::missing_panics_doc,
     reason = "only a poisoned exit-code lock panics, and its one writer cannot panic holding it"
@@ -287,13 +302,12 @@ pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsE
         stdin: env.stdin.clone(),
         exit_code: exit_code.clone(),
     };
-    let left = env.ends_at.map_or(JS_TIMEOUT, |end| {
-        end.saturating_duration_since(Instant::now())
-    });
-    let timeout = left.min(JS_TIMEOUT);
-    let caps = VmCaps::default()
-        .with_timeout(timeout)
-        .with_max_log_chars(JS_MAX_OUTPUT);
+    let longest = env.caps.timeout;
+    let left = env
+        .ends_at
+        .map_or(longest, |end| end.saturating_duration_since(Instant::now()));
+    let timeout = left.min(longest);
+    let caps = env.caps.with_timeout(timeout);
     let filename = path
         .file_name()
         .map_or_else(|| "script.js".into(), |n| n.to_string_lossy().into_owned());
@@ -302,11 +316,11 @@ pub async fn run_js(path: &Path, code: &str, args: &[impl AsRef<str>], env: &JsE
     let exited = *exit_code
         .lock()
         .expect("the script's exit-code lock poisoned");
-    cli_result(run, exited, timeout)
+    cli_result(run, exited, &caps)
 }
 
 /// A run as a CLI result: the script's own exit code wins, then failure = 1.
-fn cli_result(run: VmRun, exit_code: Option<i32>, timeout: Duration) -> ExecResult {
+fn cli_result(run: VmRun, exit_code: Option<i32>, caps: &VmCaps) -> ExecResult {
     let uncaught = match (&run.error, exit_code) {
         (Some(e), None) => format!("✗ Uncaught {e}\n"),
         _ => String::new(),
@@ -314,13 +328,16 @@ fn cli_result(run: VmRun, exit_code: Option<i32>, timeout: Duration) -> ExecResu
     let stopped = match run.stopped {
         Some(VmStop::Timeout) => format!(
             "js: stopped (ran out its {}s)\n",
-            (timeout.as_millis() as f64 / 1000.0).round()
+            (caps.timeout.as_millis() as f64 / 1000.0).round()
         ),
         Some(VmStop::Interrupted) => "js: stopped (interrupted)\n".into(),
         None => String::new(),
     };
     let truncated = if run.logs_truncated {
-        format!("js: output truncated at {JS_MAX_OUTPUT} characters\n")
+        format!(
+            "js: output truncated at {} characters\n",
+            caps.max_log_chars
+        )
     } else {
         String::new()
     };

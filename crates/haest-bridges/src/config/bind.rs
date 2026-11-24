@@ -5,6 +5,7 @@
 use std::{
     fmt,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -12,8 +13,8 @@ use haest_core::{ChildEnv, error::BoxError};
 #[cfg(feature = "http")]
 use haest_http::HttpClientRef;
 use haest_mods::{
-    Binding, Event, Hook, HookDialect, HookEntry, HookSet, HookSettings, ModEvent,
-    ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
+    Binding, DEFAULT_HOOK_TIMEOUT, Event, Hook, HookDialect, HookEntry, HookSet, HookSettings,
+    ModEvent, ModelAfterPayload, ModelBeforePayload, PromptSubmitPayload, SystemPromptPayload,
     ToolAfterPayload, ToolBeforePayload, ToolEvent, TurnEndPayload,
 };
 use serde_json::Value;
@@ -55,20 +56,32 @@ pub struct HookHost {
     env: Option<ChildEnv>,
     #[cfg(feature = "http")]
     client: HttpClientRef,
+    /// An entry's timeout when it sets none.
+    timeout: Duration,
 }
 
 impl HookHost {
     /// Hooks of a conversation in `cwd`: a command runs there, and the
     /// `claude` dialect names it as `cwd`. No process may start until
     /// [`with_env`](Self::with_env); a POST goes through haest-http's
-    /// default client.
+    /// default client; an entry with no `timeout` has
+    /// [`DEFAULT_HOOK_TIMEOUT`].
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
         Self {
             cwd: cwd.into(),
             env: None,
             #[cfg(feature = "http")]
             client: HttpClientRef::default(),
+            timeout: DEFAULT_HOOK_TIMEOUT,
         }
+    }
+
+    /// How long an entry that sets no `timeout` of its own has to answer,
+    /// in place of [`DEFAULT_HOOK_TIMEOUT`]: haest's `[timeouts] hook`.
+    #[must_use]
+    pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// A command may start, with `env` and nothing else of the host's
@@ -96,6 +109,7 @@ impl fmt::Debug for HookHost {
         f.debug_struct("HookHost")
             .field("cwd", &self.cwd)
             .field("env", &self.env)
+            .field("timeout", &self.timeout)
             .finish_non_exhaustive()
     }
 }
@@ -140,33 +154,40 @@ fn bind(
 ) -> Result<HookSet, String> {
     let carried = carried(entry, host)?;
     let named = Named::of(entry.dialect());
+    let t = host.timeout;
     Ok(match event {
         ModEvent::ToolBefore => hooks.on_tool_before(tool_binding::<ToolBeforePayload>(
             carried.speaking(named),
             entry,
+            t,
         )),
         ModEvent::ToolAfter => hooks.on_tool_after(tool_binding::<ToolAfterPayload>(
             carried.speaking(named),
             entry,
+            t,
         )),
         ModEvent::PromptSubmit => hooks.on_prompt_submit(binding::<PromptSubmitPayload>(
             carried.speaking(named),
             entry,
+            t,
         )),
         ModEvent::SystemPrompt => hooks.on_system_prompt(binding::<SystemPromptPayload>(
             carried.speaking(named),
             entry,
+            t,
         )),
         ModEvent::ModelBefore => hooks.on_model_before(binding::<ModelBeforePayload>(
             haest_only::<ModelBeforePayload>(carried, named)?,
             entry,
+            t,
         )),
         ModEvent::ModelAfter => hooks.on_model_after(binding::<ModelAfterPayload>(
             haest_only::<ModelAfterPayload>(carried, named)?,
             entry,
+            t,
         )),
         ModEvent::TurnEnd => {
-            hooks.on_turn_end(binding::<TurnEndPayload>(carried.speaking(named), entry))
+            hooks.on_turn_end(binding::<TurnEndPayload>(carried.speaking(named), entry, t))
         }
         // An event newer than this match: the tests fail until it is here.
         other => return Err(format!("{other} can't be bound from the config yet")),
@@ -235,12 +256,10 @@ fn url_hook(_: &str, _: &HookEntry, _: &HookHost) -> Result<Carried<Haest>, Stri
     Err("an HTTP hook needs haest-bridges' `http` feature".into())
 }
 
-/// `hook` with `entry`'s timeout and `on_error`, else its event's defaults.
-fn binding<E: Event>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
-    let mut binding = Binding::new(hook);
-    if let Some(timeout) = entry.timeout() {
-        binding = binding.with_timeout(timeout);
-    }
+/// `hook` with `entry`'s timeout (else `timeout`, the host's) and
+/// `on_error` (else its event's default).
+fn binding<E: Event>(hook: impl Hook<E>, entry: &HookEntry, timeout: Duration) -> Binding<E> {
+    let mut binding = Binding::new(hook).with_timeout(entry.timeout().unwrap_or(timeout));
     if let Some(on_error) = entry.on_error() {
         binding = binding.with_on_error(on_error);
     }
@@ -248,8 +267,12 @@ fn binding<E: Event>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
 }
 
 /// [`binding`], and the tools `entry`'s matcher picks.
-fn tool_binding<E: ToolEvent>(hook: impl Hook<E>, entry: &HookEntry) -> Binding<E> {
-    let binding = binding(hook, entry);
+fn tool_binding<E: ToolEvent>(
+    hook: impl Hook<E>,
+    entry: &HookEntry,
+    timeout: Duration,
+) -> Binding<E> {
+    let binding = binding(hook, entry, timeout);
     match entry.matcher() {
         Some(pattern) => binding.with_matcher(pattern),
         None => binding,

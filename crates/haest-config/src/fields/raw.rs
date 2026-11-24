@@ -12,7 +12,10 @@ use haest_core::{
     words::UnknownWord,
 };
 use haest_mods::HookSettings;
-use haest_settings::{BuiltinTools, CacheSettings, ContextSources, ModReload, SkillSources};
+use haest_settings::{
+    BuiltinTools, CacheSettings, ContextSources, LimitSettings, ModReload, SkillSources,
+    TimeoutSettings,
+};
 
 use super::{BrokerAccess, ControlSocket, EnvPassthrough};
 use crate::value::{number, parse_bool, split_list};
@@ -53,7 +56,7 @@ macro_rules! table {
         }
     )+};
 }
-table!(CacheSettings);
+table!(CacheSettings, TimeoutSettings, LimitSettings);
 
 /// `hooks`: a table, each layer's entries appended to the ones before
 /// ([`crate::table::merge`]). A layer is read alone first, so a refusal

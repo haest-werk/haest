@@ -8,19 +8,35 @@ use std::{
 };
 
 use haest_core::{ChildEnv, fs::MemFs, workspace::ExecResult};
-use tokio_util::sync::CancellationToken;
 
 use super::{JsEnv, js_command};
+use crate::VmCaps;
+
+/// The env's caps hold the script: its heap (8 MB of text fits the default,
+/// not 4 MiB), and its output, cut at `max_log_chars` with a line saying so.
+#[tokio::test]
+async fn the_envs_caps_hold_the_scripts_memory_and_output() {
+    let fs = with_script("big.js", "console.log('x'.repeat(8 << 20).length)");
+    let roomy = js_command(&["big.js"], &env(&fs)).await;
+    assert_eq!((roomy.stdout.trim(), roomy.exit_code), ("8388608", 0));
+    let small = VmCaps::sandbox().with_memory_bytes(4 << 20);
+    let run = js_command(&["big.js"], &env(&fs).with_caps(small)).await;
+    assert_eq!(run.exit_code, 1, "{}", run.stderr);
+    assert!(run.stderr.contains("Uncaught"), "{}", run.stderr);
+
+    let fs = with_script("loud.js", "console.log('x'.repeat(50))");
+    let short = VmCaps::sandbox().with_max_log_chars(10);
+    let run = js_command(&["loud.js"], &env(&fs).with_caps(short)).await;
+    assert!(run.stdout.len() <= 11, "{:?}", run.stdout);
+    assert!(
+        run.stderr.contains("output truncated at 10 characters"),
+        "{}",
+        run.stderr
+    );
+}
 
 fn env(fs: &Arc<MemFs>) -> JsEnv {
-    JsEnv {
-        fs: fs.clone().into(),
-        cwd: "/p".into(),
-        env: Default::default(),
-        stdin: None,
-        cancel: CancellationToken::new(),
-        ends_at: Some(Instant::now() + Duration::from_secs(20)),
-    }
+    JsEnv::new(fs.clone(), "/p").with_ends_at(Instant::now() + Duration::from_secs(20))
 }
 
 /// A script INTO the workspace, the way the model would write it with Write.

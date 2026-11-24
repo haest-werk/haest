@@ -84,7 +84,7 @@ on_error = "continue"
 | `url` | an `http://` or `https://` URL, POSTed per event: an `HttpHook` |  |
 | `dialect` | `haest` (every event) or `claude` (Claude Code's hook JSON, on the events Claude Code has) | `haest` |
 | `matcher` | on `tool.before` and `tool.after` only: a tool's name (`Bash`) or a prefix ending in `*` (`mcp__github__*`). Claude Code's `Edit\|Write` and `Bash.*` are regular expressions, which haest does not read, and `Edit,Write` is a list: write one entry per tool | every tool |
-| `timeout` | seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes | 60 |
+| `timeout` | seconds (`10`, `2.5`); past them the hook failed. Claude Code's key, as it is: every other time setting that takes a number takes minutes, and `[timeouts]` takes text with its unit | `[timeouts] hook`, 60 s unless set |
 | `on_error` | what a failure or a timeout does: `block` or `continue` | `block` on `tool.before`, else `continue` |
 | `headers` | a `url`'s headers, `{ name = "value" }`; `${NAME}` and `${NAME:-default}` in a value are filled in from haest's environment | none |
 

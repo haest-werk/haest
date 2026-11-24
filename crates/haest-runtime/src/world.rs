@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use haest_code::sandbox_commands;
+use haest_code::sandbox_commands_with;
 use haest_core::{
     ChildEnv, ShutWorkspace, WorkspaceMode, WorkspaceRef,
     error::report,
@@ -18,7 +18,7 @@ use haest_settings::Settings;
 use haest_tools::{InboxRef, JobHub};
 use haest_workspace::{OpenSandboxError, RealFs, RealWorkspace, SandboxMounts, SandboxWorkspace};
 
-use crate::RuntimeHooks;
+use crate::{RuntimeHooks, js_caps::sandbox_caps};
 
 /// Where the agent's files are and whether it may start real processes.
 ///
@@ -223,7 +223,7 @@ pub(crate) async fn workspace_for(
     let ws = ws
         .with_env(passed_env.clone())
         .with_remedies(remedies)
-        .with_commands(sandbox_commands());
+        .with_commands(sandbox_commands_with(sandbox_caps(s)));
     Ok(ws.into())
 }
 

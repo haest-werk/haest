@@ -11,12 +11,21 @@ use serde_json::{Map, Value};
 
 /// The bounds of one engine: a run of [`run_in_vm`](super::run_in_vm) (the
 /// Code tool's, the sandbox `js` command's) or a mod file (haest-bridges'
-/// `JsMod`). A mod file's caps start from [`VmCaps::mod_file`]: 128 MiB,
-/// 30 s to load, 10 s of code without a pause. [`VmCaps::default`] is the
-/// Code tool's when the model sets no timeout: a minute,
-/// [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES) (64 MiB), 100,000 characters
-/// of output. A mod file given caps built on `default()` gets the Code
-/// tool's memory and timeout, not its own.
+/// `JsMod`). Each kind starts from its own:
+///
+/// - [`VmCaps::default`], the Code tool's: ten minutes,
+///   [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES) (64 MiB), 100,000
+///   characters of output.
+/// - [`VmCaps::sandbox`], the `js` command's: five minutes
+///   ([`JS_TIMEOUT`](crate::JS_TIMEOUT)), 64 MiB, a million characters
+///   ([`JS_MAX_OUTPUT`](crate::JS_MAX_OUTPUT)).
+/// - [`VmCaps::mod_file`], a mod file's: 128 MiB, 30 s to load, 10 s of
+///   code without a pause, 60 s for each call.
+///
+/// A mod file given caps built on `default()` gets the Code tool's memory
+/// and timeout, not its own. haest-runtime fills each from haest's
+/// `[timeouts]` and `[limits]` settings; a host that builds its own sets
+/// them here.
 ///
 /// All of haest's JavaScript runs on the same engine, held to this one type;
 /// each field says which runs read it.
@@ -69,7 +78,7 @@ impl Default for VmCaps {
     fn default() -> Self {
         Self {
             memory_bytes: super::VM_MEMORY_BYTES,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_secs(10 * 60),
             slice: Duration::from_secs(10),
             call_timeout: Duration::from_secs(60),
             max_log_chars: 100_000,
@@ -78,6 +87,18 @@ impl Default for VmCaps {
 }
 
 impl VmCaps {
+    /// The sandbox `js` command's caps: [`VM_MEMORY_BYTES`](super::VM_MEMORY_BYTES),
+    /// [`JS_TIMEOUT`](crate::JS_TIMEOUT) at the longest (the shell call's
+    /// end cuts it shorter) and [`JS_MAX_OUTPUT`](crate::JS_MAX_OUTPUT)
+    /// characters of output.
+    pub fn sandbox() -> Self {
+        Self {
+            timeout: crate::JS_TIMEOUT,
+            max_log_chars: crate::JS_MAX_OUTPUT,
+            ..Self::default()
+        }
+    }
+
     /// A mod file's caps: 128 MiB of memory, 30 s for its default export to
     /// return, 10 s of code without a pause, 60 s for each call to settle
     /// (a hook binding's default timeout too).

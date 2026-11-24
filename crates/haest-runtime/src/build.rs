@@ -21,7 +21,9 @@ use haest_providers::{CatalogFacts, ProviderRegistry};
 use haest_tools::DeferredTools;
 
 use crate::{
-    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui, inbox, mods,
+    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui, inbox,
+    js_caps::code_caps,
+    mods,
     parent::RuntimeParent,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
@@ -179,7 +181,7 @@ where
     if session.saved.is_none() {
         create(&hooks.store(), &s.cwd, &*ui).await?;
     }
-    let gate = ApprovalGate::new(prompter);
+    let gate = ApprovalGate::new(prompter).with_timeout(s.timeouts.ask);
     let config_hooks = mods::config_hooks(&hook_settings, &hooks, &world, &passed_env, &http);
     let (mcp, mods) = tokio::join!(
         connect_mcp(&hooks, &world, &passed_env, mcp_servers),
@@ -207,7 +209,7 @@ where
         own,
         mcp.clone(),
         mods.clone(),
-        s.code.then(|| s.code_tools.clone()),
+        s.code.then(|| (s.code_tools.clone(), code_caps(s))),
     ));
     let ledger = Ledger::new(s.conversation_caps(), hooks.clone());
     ledger.set_remedies(hooks.remedies());

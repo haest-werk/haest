@@ -122,6 +122,47 @@ async fn an_entrys_matcher_timeout_and_on_error_are_its_bindings() {
     );
 }
 
+/// An entry with no `timeout` has the host's default (`[timeouts] hook`);
+/// one that sets its own keeps it.
+#[cfg(feature = "shell")]
+#[tokio::test]
+async fn an_entry_without_a_timeout_has_the_hosts_default() {
+    use std::time::Duration;
+
+    use haest_core::{Tools, tool::input};
+
+    let remote = Remote::answering(Via::Shell, "");
+    let quick = host(&remote).with_default_timeout(Duration::from_millis(300));
+    let ran_out = |setting: Value| {
+        let ui = TestUi::new();
+        let mods = bound_mods(setting, &quick, ui.clone());
+        async move {
+            let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
+            tools[0]
+                .execute(input(json!({})).unwrap(), &ctx())
+                .await
+                .unwrap();
+            ui.errors()
+        }
+    };
+    let entry = json!({ "command": "sleep 5", "on_error": "continue" });
+    let errors = ran_out(json!({ "tool.before": [entry] })).await;
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("did not answer within 300ms")),
+        "{errors:?}"
+    );
+    let own = json!({ "command": "sleep 5", "timeout": 0.2, "on_error": "continue" });
+    let errors = ran_out(json!({ "tool.before": [own] })).await;
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("did not answer within 200ms")),
+        "{errors:?}"
+    );
+}
+
 /// A command needs a host that starts processes: one that starts none
 /// binds the rest, and says which it left out.
 #[tokio::test]

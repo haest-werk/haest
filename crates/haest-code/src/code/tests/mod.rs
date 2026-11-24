@@ -224,6 +224,46 @@ async fn a_cpu_loop_is_stopped_at_the_deadline() {
     assert!(started.elapsed() < Duration::from_secs(5));
 }
 
+/// The caps' deadline is the default and the most: the model may ask for
+/// less, never for more, and caps under a second hold too. The description
+/// tells the model both, and the memory.
+#[tokio::test]
+async fn the_caps_deadline_is_the_default_and_the_most_the_model_may_ask_for() {
+    let c = ctx(MemWorkspace::from_files::<&str, &str>([]));
+    let caps = crate::VmCaps::default()
+        .with_timeout(Duration::from_secs(1))
+        .with_memory_bytes(32 << 20);
+    let code = code_over(Tools::new(), &[]).with_caps(caps);
+    assert!(
+        code.description().contains("32 MB, 1s"),
+        "{}",
+        code.description()
+    );
+    let said = code.parameters()["properties"]["timeout"]["description"].to_string();
+    assert!(said.contains("default and max 1000"), "{said}");
+    for asked in [json!({"timeout": 600_000}), json!({})] {
+        let started = Instant::now();
+        let out = run_in(&code, "while (true) {}", asked.clone(), &c).await;
+        assert!(out.is_error, "{asked}");
+        assert!(started.elapsed() < Duration::from_secs(5), "{asked}");
+    }
+    let tiny = crate::VmCaps::default().with_timeout(Duration::from_millis(300));
+    let code = code_over(Tools::new(), &[]).with_caps(tiny);
+    let out = run_in(&code, "while (true) {}", json!({"timeout": 50}), &c).await;
+    assert!(out.is_error);
+    assert_eq!(
+        crate::VmCaps::default().timeout,
+        Duration::from_secs(600),
+        "ten minutes unless set"
+    );
+    let bare = code_over(Tools::new(), &[]);
+    assert!(
+        bare.description().contains("64 MB, 10 min"),
+        "{}",
+        bare.description()
+    );
+}
+
 #[tokio::test]
 async fn the_caller_aborting_stops_a_run_parked_on_a_slow_tool() {
     let slow = probe("mcp__s__slow", true, 10_000);

@@ -14,7 +14,10 @@ use haest_core::{
     wind_down::WindDown,
 };
 
-use crate::{CacheSettings, CapSettings, ContextSources, ModReload, sets::BuiltinTools};
+use crate::{
+    CacheSettings, CapSettings, ContextSources, LimitSettings, ModReload, TimeoutSettings,
+    sets::BuiltinTools,
+};
 
 /// The model a run uses when none is configured: [`Settings::bare`]'s `model_spec`.
 pub const DEFAULT_MODEL: &str = "openrouter:anthropic/claude-sonnet-5.5";
@@ -123,6 +126,13 @@ pub struct Settings {
     pub approvals: bool,
     /// The spend, token, step and time caps.
     pub caps: CapSettings,
+    /// The `[timeouts]` setting: how long a hook, a human's Allow/Deny and
+    /// each kind of JavaScript run (Code, the sandbox `js` command, mod
+    /// files) may take. Bare: the defaults [`TimeoutSettings`] lists.
+    pub timeouts: TimeoutSettings,
+    /// The `[limits]` setting: each JavaScript engine's memory. Bare: the
+    /// defaults [`LimitSettings`] lists.
+    pub limits: LimitSettings,
     /// The share of a cap (a turn's, a subagent's, the conversation's) at
     /// which a run stops starting subagents and the model is told once to
     /// conclude: haest-core's [`WindDown`]. Bare: off.
@@ -189,6 +199,8 @@ impl Settings {
             mod_reload: ModReload::Off,
             approvals: true,
             caps: CapSettings::default(),
+            timeouts: TimeoutSettings::default(),
+            limits: LimitSettings::default(),
             wind_down_at: WindDown::OFF,
             max_agent_turns: 30,
             subagents: SubagentCaps::default(),

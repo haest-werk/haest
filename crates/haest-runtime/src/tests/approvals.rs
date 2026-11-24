@@ -34,6 +34,44 @@ fn rm(command: &str) -> ApprovalRequest {
         .with_key(command)
 }
 
+/// Never answers.
+struct Away;
+
+#[async_trait]
+impl Prompter for Away {
+    async fn prompt(&self, _: &ApprovalRequest) -> ApprovalAnswer {
+        std::future::pending().await
+    }
+}
+
+/// An ask nobody answers is a Deny at `[timeouts] ask`.
+#[tokio::test]
+async fn an_unanswered_ask_is_a_deny_at_the_ask_timeout() {
+    use std::time::{Duration, Instant};
+
+    use haest_settings::{Settings, TimeoutSettings};
+
+    let s = Settings {
+        timeouts: TimeoutSettings {
+            ask: Duration::from_millis(200),
+            ..TimeoutSettings::default()
+        },
+        ..hardcoded()
+    };
+    let inputs = RuntimeInputs::new(s, World::files(MemFs::new())).with_keys(openrouter_key());
+    let rt = build(inputs, Recorded::default(), Away, BuildOptions::default())
+        .await
+        .unwrap();
+    let asks = rt.mods().env().ui().clone();
+    let none = CancellationToken::new();
+    let started = Instant::now();
+    assert_eq!(
+        asks.ask(rm("rm -rf a"), &none).await,
+        ApprovalDecision::Deny
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
 #[tokio::test]
 async fn a_host_takes_an_always_back_in_a_built_conversation() {
     let answers = Answers::default();

@@ -159,6 +159,7 @@ mod error;
 mod hooks;
 mod inbox;
 mod inputs;
+mod js_caps;
 mod mods;
 mod parent;
 mod prompt;
