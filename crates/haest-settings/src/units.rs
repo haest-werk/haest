@@ -181,6 +181,13 @@ pub(crate) fn de_duration<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D
     })
 }
 
+/// [`de_duration`] for a key that is off when absent.
+pub(crate) fn de_some_duration<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Duration>, D::Error> {
+    de_duration(d).map(Some)
+}
+
 /// [`memory`] for serde: `"64MiB"`; a bare number is refused.
 pub(crate) fn de_memory<'de, D: Deserializer<'de>>(d: D) -> Result<usize, D::Error> {
     d.deserialize_any(UnitString {

@@ -156,10 +156,13 @@ where
     let (model, effort) = start_on(&settings, session.saved.as_ref(), &opts);
     let facts = CatalogFacts::new(providers.clone());
     let models = models.unwrap_or_else(|| {
-        let registry = ProviderRegistry::new(keys.clone())
+        let mut registry = ProviderRegistry::new(keys.clone())
             .with_custom(providers)
             .with_http(http.clone())
             .with_headers_timeout(settings.timeouts.model_headers);
+        if let Some(stall) = settings.timeouts.model_stall {
+            registry = registry.with_stall_timeout(stall);
+        }
         match routing {
             Some(routing) => registry.with_routing(routing).into(),
             None => registry.into(),

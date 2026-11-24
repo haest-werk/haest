@@ -88,6 +88,10 @@ mod tests {
         assert_eq!(s.timeouts.mcp_call, haest_mcp::CALL_TIMEOUT);
         assert_eq!(s.timeouts.mcp_connect, haest_mcp::CONNECT_TIMEOUT);
         assert_eq!(s.timeouts.web_fetch, haest_tools::WEB_FETCH_TIMEOUT);
+        assert_eq!(
+            s.timeouts.model_stall, None,
+            "a provider has none by default"
+        );
     }
 
     /// `web_fetch` reaches the net WebFetch is built on.

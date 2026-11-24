@@ -60,13 +60,14 @@ use crate::{
 const BUILTIN: [&str; 4] = ["anthropic", "openai", "openrouter", "paperinstruments"];
 
 /// What every provider a [`ProviderRegistry`] builds shares: the HTTP client,
-/// the retry policy, the headers timeout and OpenRouter's extras. Set and
-/// read on the registry.
+/// the retry policy, the headers and stall timeouts and OpenRouter's extras.
+/// Set and read on the registry.
 #[derive(Debug, Clone)]
 pub(crate) struct Shared {
     http: HttpClientRef,
     retry: RetryPolicy,
     headers_timeout: Duration,
+    stall_timeout: Option<Duration>,
     pub(crate) routing: Option<RoutingScopes>,
     pub(crate) app_title: Option<String>,
     pub(crate) app_url: Option<String>,
@@ -78,6 +79,7 @@ impl Default for Shared {
             http: HttpClientRef::default(),
             retry: RetryPolicy::default(),
             headers_timeout: HEADERS_TIMEOUT,
+            stall_timeout: None,
             routing: None,
             app_title: Some("haest".into()),
             app_url: None,
@@ -260,6 +262,15 @@ impl ProviderRegistry {
         self
     }
 
+    /// This registry's providers ending an answer whose started stream
+    /// sends nothing for `stall` ([`AnthropicProvider::with_stall_timeout`]).
+    /// By default there is none.
+    #[must_use]
+    pub fn with_stall_timeout(mut self, stall: Duration) -> Self {
+        self.shared_mut().stall_timeout = Some(stall);
+        self
+    }
+
     /// OpenRouter provider routing to send
     /// ([`parse_routing`](crate::parse_routing) reads the host's JSON: haest's
     /// `provider_routing` setting). None is sent until this is called; a host
@@ -368,7 +379,8 @@ impl ProviderRegistry {
 
     fn build(&self, name: &str) -> Result<ProviderRef, ModelError> {
         let o = &self.setup.shared;
-        let (http, retry, wait) = (o.http.clone(), o.retry, o.headers_timeout);
+        let (http, retry, wait, stall) =
+            (o.http.clone(), o.retry, o.headers_timeout, o.stall_timeout);
         let (options, from) = self.provider_options(name)?;
         if let Some(url) = options.base_url() {
             check_endpoint_url(url).map_err(|source| ModelError::Unavailable {
@@ -376,22 +388,35 @@ impl ProviderRegistry {
                 source: Box::new(BaseUrlRefused { from, source }),
             })?;
         }
+        // `with` applied when `stall` is set: each dialect is its own type.
+        fn stalled<P>(p: P, stall: Option<Duration>, with: fn(P, Duration) -> P) -> P {
+            match stall {
+                Some(s) => with(p, s),
+                None => p,
+            }
+        }
         Ok(match options {
-            Options::Anthropic(o) => ProviderRef::new(
+            Options::Anthropic(o) => ProviderRef::new(stalled(
                 AnthropicProvider::new(o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
-            ),
-            Options::Compat(o) => ProviderRef::new(
+                stall,
+                AnthropicProvider::with_stall_timeout,
+            )),
+            Options::Compat(o) => ProviderRef::new(stalled(
                 CompatProvider::new(*o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
-            ),
-            Options::Responses(o) => ProviderRef::new(
+                stall,
+                CompatProvider::with_stall_timeout,
+            )),
+            Options::Responses(o) => ProviderRef::new(stalled(
                 ResponsesProvider::new(o, http)
                     .with_retry(retry)
                     .with_headers_timeout(wait),
-            ),
+                stall,
+                ResponsesProvider::with_stall_timeout,
+            )),
         })
     }
 

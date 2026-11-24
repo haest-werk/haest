@@ -114,7 +114,8 @@ macro_rules! endpoint_options {
 
 /// For the provider `$name`, a struct holding its options `$opts` as `opts`
 /// and a [`Sender`](super::Sender) as `sender`: `new`, `with_retry`,
-/// `with_headers_timeout`, `id`, and the [`Provider`](haest_core::Provider)
+/// `with_headers_timeout`, `with_stall_timeout`, `id`, and the
+/// [`Provider`](haest_core::Provider)
 /// impl that forwards to `id` and its own inherent `stream` and
 /// `check_prewarm`.
 macro_rules! sender_provider {
@@ -145,6 +146,17 @@ macro_rules! sender_provider {
             #[must_use]
             pub fn with_headers_timeout(mut self, wait: ::std::time::Duration) -> Self {
                 self.sender.headers_timeout = wait;
+                self
+            }
+
+            /// The same provider ending an answer whose stream, once started,
+            /// sends nothing for `stall`: the message ends as an error and is
+            /// not retried (the text already shown would be sent twice). By
+            /// default there is none, and a silent stream waits for the turn's
+            /// cap or a cancel.
+            #[must_use]
+            pub fn with_stall_timeout(mut self, stall: ::std::time::Duration) -> Self {
+                self.sender.stall_timeout = Some(stall);
                 self
             }
 

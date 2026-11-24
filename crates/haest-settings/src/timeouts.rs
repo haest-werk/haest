@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 
-use crate::units::{de_duration, de_memory, duration_text, memory_text};
+use crate::units::{de_duration, de_memory, de_some_duration, duration_text, memory_text};
 
 /// The `[timeouts]` setting: how long haest waits before it gives up. Every
 /// value is text with its unit (`"500ms"`, `"30s"`, `"10m"`, `"1.5h"`); a
@@ -22,6 +22,7 @@ use crate::units::{de_duration, de_memory, duration_text, memory_text};
 /// bash          = "2m"    # a Bash call that names no timeout
 /// bash_max      = "10m"   # the most a Bash call may ask for; the sandbox shell's ceiling too
 /// model_headers = "10m"   # one try of a model call, until the provider starts answering
+/// model_stall   = "2m"    # a started answer that sends nothing this long ends; unset = off
 /// mcp_connect   = "15s"   # an MCP server's start, and again its tool list
 /// mcp_call      = "10m"   # one call to an MCP server's tool
 /// web_fetch     = "30s"   # one WebFetch call, redirects and body included
@@ -72,6 +73,11 @@ pub struct TimeoutSettings {
     /// not cut. Default ten minutes.
     #[serde(deserialize_with = "de_duration")]
     pub model_headers: Duration,
+    /// How long a model's answer, once it has started streaming, may send
+    /// nothing; past it the answer ends as an error, never retried. None
+    /// (the default): a silent stream waits for the turn's cap or a cancel.
+    #[serde(deserialize_with = "de_some_duration")]
+    pub model_stall: Option<Duration>,
     /// How long an MCP server has to start and answer `initialize`, and
     /// again to list its tools; past it the server did not start. A server
     /// run with `npx` or `uvx` may need longer the first time. Default 15
@@ -99,6 +105,7 @@ impl Default for TimeoutSettings {
             bash: Duration::from_secs(2 * 60),
             bash_max: Duration::from_secs(10 * 60),
             model_headers: Duration::from_secs(10 * 60),
+            model_stall: None,
             mcp_connect: Duration::from_secs(15),
             mcp_call: Duration::from_secs(10 * 60),
             web_fetch: Duration::from_secs(30),
@@ -246,6 +253,11 @@ impl Serialize for TimeoutSettings {
                 ("bash", t(self.bash), t(d.bash)),
                 ("bash_max", t(self.bash_max), t(d.bash_max)),
                 ("model_headers", t(self.model_headers), t(d.model_headers)),
+                (
+                    "model_stall",
+                    self.model_stall.map(t).unwrap_or_default(),
+                    String::new(),
+                ),
                 ("mcp_connect", t(self.mcp_connect), t(d.mcp_connect)),
                 ("mcp_call", t(self.mcp_call), t(d.mcp_call)),
                 ("web_fetch", t(self.web_fetch), t(d.web_fetch)),
@@ -355,6 +367,14 @@ mod tests {
             (t.mcp_connect, t.web_fetch),
             (mins(2), Duration::from_secs(45))
         );
+        // Off unless set; set, it round-trips, and a bare number is refused.
+        assert_eq!(t.model_stall, None);
+        let stall = timeouts("model_stall = \"90s\"").unwrap();
+        assert_eq!(stall.model_stall, Some(Duration::from_secs(90)));
+        let written = toml::to_string(&stall).unwrap();
+        assert_eq!(written.trim(), "model_stall = \"90s\"");
+        assert_eq!(timeouts(&written).unwrap(), stall);
+        assert!(timeouts("model_stall = 90").is_err());
         assert_eq!(timeouts(&toml::to_string(&t).unwrap()).unwrap(), t);
 
         let l = limits("[javascript]\nmod_memory = \"1GiB\"").unwrap();

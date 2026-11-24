@@ -18,7 +18,7 @@ use futures::StreamExt;
 use haest_core::error::report;
 use haest_http::{
     __private::{authority, join_path},
-    HttpClientRef, HttpError, Request, Response, check_endpoint_url,
+    Body, HttpClientRef, HttpError, Request, Response, check_endpoint_url,
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -33,23 +33,28 @@ pub(crate) use shell::{endpoint_options, sender_provider};
 /// allow.
 pub const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// How a provider sends its requests: the HTTP client, the retry policy, and
-/// how long one try waits for its status and headers. Every provider holds
-/// one; `with_retry` and `with_headers_timeout` set it.
+/// How a provider sends its requests: the HTTP client, the retry policy, how
+/// long one try waits for its status and headers, and how long an answer's
+/// stream may go silent. Every provider holds one; `with_retry`,
+/// `with_headers_timeout` and `with_stall_timeout` set it.
 #[derive(Debug, Clone)]
 pub(crate) struct Sender {
     pub(crate) http: HttpClientRef,
     pub(crate) retry: RetryPolicy,
     pub(crate) headers_timeout: Duration,
+    /// None: an answer's stream may go silent for as long as the turn runs.
+    pub(crate) stall_timeout: Option<Duration>,
 }
 
 impl Sender {
-    /// Over `http`, with the default [`RetryPolicy`] and [`HEADERS_TIMEOUT`].
+    /// Over `http`, with the default [`RetryPolicy`] and [`HEADERS_TIMEOUT`],
+    /// and no stall timeout.
     pub(crate) fn new(http: HttpClientRef) -> Self {
         Self {
             http,
             retry: RetryPolicy::default(),
             headers_timeout: HEADERS_TIMEOUT,
+            stall_timeout: None,
         }
     }
 
@@ -79,7 +84,13 @@ impl Sender {
             };
             let retries_left = attempt < retry.max_retries;
             match sent {
-                Ok(resp) if resp.is_success() => return Ok(resp),
+                Ok(mut resp) if resp.is_success() => {
+                    if let Some(stall) = self.stall_timeout {
+                        let body = std::mem::take(&mut resp.body);
+                        resp.body = stall_guarded(body, stall);
+                    }
+                    return Ok(resp);
+                }
                 Ok(resp) if retries_left && should_retry(&resp) => {
                     let delay = retry_after(&resp).unwrap_or_else(|| retry.backoff(attempt));
                     drop(resp);
@@ -103,6 +114,26 @@ impl Sender {
             .await
             .unwrap_or(Err(HttpError::Timeout(wait)))
     }
+}
+
+/// `body`, ended by an [`HttpError::Body`] when no chunk arrives for
+/// `stall`: the answer has started, so the message ends as an error and is
+/// never retried.
+fn stall_guarded(body: Body, stall: Duration) -> Body {
+    Body::from_stream(futures::stream::unfold(
+        Some(body),
+        move |body| async move {
+            let mut body = body?;
+            match tokio::time::timeout(stall, body.next()).await {
+                Ok(Some(chunk)) => Some((chunk, Some(body))),
+                Ok(None) => None,
+                Err(_) => {
+                    let silent = format!("the stream sent nothing for {stall:?}");
+                    Some((Err(HttpError::Body(silent.into())), None))
+                }
+            }
+        },
+    ))
 }
 
 /// Why a request or its stream ended early when its cancel token fired. The

@@ -137,6 +137,34 @@ async fn cancelling_during_a_retry_backoff_ends_as_aborted() {
     assert_eq!(msg.error_message, None);
 }
 
+/// A started answer that goes silent: with a stall timeout it ends as an
+/// error, the text so far kept and nothing retried; without one it waits.
+#[tokio::test]
+async fn a_stall_timeout_ends_a_silent_stream_and_none_is_the_default() {
+    let open = || {
+        FakeReply::sse("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\n")
+            .then(FakeEnd::Hang)
+    };
+    let t = FakeHttp::new([open(), hello()]);
+    let p = provider(&t).with_stall_timeout(Duration::from_millis(20));
+    let (_, msg) = tokio::time::timeout(Duration::from_secs(5), collect(p.stream(request("m"))))
+        .await
+        .expect("the stall timeout ends a silent stream");
+    assert_eq!(msg.stop_reason, StopReason::Error);
+    assert_eq!(msg.text(), "hi");
+    let why = msg.error_message.unwrap_or_default();
+    assert!(why.contains("sent nothing for 20ms"), "{why}");
+    assert_eq!(t.requests().len(), 1, "a started answer is never retried");
+
+    let t = FakeHttp::new([open()]);
+    let waits = tokio::time::timeout(
+        Duration::from_millis(200),
+        collect(provider(&t).stream(request("m"))),
+    )
+    .await;
+    assert!(waits.is_err(), "no stall timeout unless one is set");
+}
+
 #[tokio::test]
 async fn a_cancelled_stream_ends_with_done_even_while_the_body_hangs() {
     // No `[DONE]`: only cancellation ends this body.

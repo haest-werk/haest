@@ -255,6 +255,49 @@ async fn every_dialect_the_registry_builds_waits_only_the_headers_timeout_it_was
     }
 }
 
+/// The registry hands its stall timeout to every dialect it builds.
+#[tokio::test]
+async fn every_dialect_the_registry_builds_ends_a_silent_stream_at_its_stall_timeout() {
+    let opening = [
+        (
+            "anthropic:m",
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n",
+        ),
+        (
+            "openai:m",
+            "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"r\"}}\n\n",
+        ),
+        (
+            "openrouter:m",
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\n",
+        ),
+    ];
+    for (spec, first) in opening {
+        let t = FakeHttp::new([FakeReply::sse(first).then(crate::testing::FakeEnd::Hang)]);
+        let keys = keys(&[
+            ("ANTHROPIC_API_KEY", "k"),
+            ("OPENAI_API_KEY", "k"),
+            ("OPENROUTER_API_KEY", "k"),
+        ]);
+        let reg = ProviderRegistry::new(keys)
+            .with_http(t.clone())
+            .with_retry(RetryPolicy::none())
+            .with_stall_timeout(std::time::Duration::from_millis(20));
+        let r = reg.resolve(spec).unwrap();
+        let (_, msg) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            collect(r.provider().stream(request(r.model()))),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("{spec} waited past its stall timeout"));
+        assert_eq!(
+            msg.stop_reason,
+            haest_core::messages::StopReason::Error,
+            "{spec}"
+        );
+    }
+}
+
 /// The client handed in stays the client whatever is set after it: the
 /// requests go through it, never the shared default.
 #[tokio::test]

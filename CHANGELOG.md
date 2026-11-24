@@ -21,6 +21,7 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   bash          = "2m"    # a Bash call that names no timeout
   bash_max      = "10m"   # the most a Bash call, or a sandbox shell call, runs
   model_headers = "10m"   # one try of a model call, until its headers arrive
+  model_stall   = "2m"    # a started answer that goes silent this long ends (unset: off)
   mcp_connect   = "15s"   # an MCP server's start, and again its tool list
   mcp_call      = "10m"   # one call to an MCP server's tool
   web_fetch     = "30s"   # one WebFetch call
@@ -38,8 +39,11 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   mod_memory     = "128MiB"
   ```
 
-  Every default is what haest did before, but `javascript.code`. A `bash`
-  above `bash_max` raises the ceiling to it. A Rust host sets the same caps
+  Every default is what haest did before, but `javascript.code`.
+  `model_stall` is new and off unless set: a model's stream that stops
+  sending ends as an error instead of waiting for the turn's cap
+  (`with_stall_timeout` on every provider and on `ProviderRegistry`). A
+  `bash` above `bash_max` raises the ceiling to it. A Rust host sets the same caps
   in code: `CodeTool::with_caps`, `sandbox_commands_with` and
   `JsEnv::with_caps` with the new `VmCaps::sandbox()`,
   `ModFileOptions::with_caps`, `HookHost::with_default_timeout`,
