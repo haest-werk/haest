@@ -77,12 +77,14 @@ pub(super) async fn resolve(
 }
 
 /// The nearest `.haest/config.toml`: read into the project layer when its
-/// project is trusted, skipped when not.
+/// project is trusted, skipped when not. `trusted` is `Sync`, as the load
+/// holds it across a read and is a future a host may run on a task of its
+/// own.
 async fn read_project(
     fs: &dyn Fs,
     cwd: &Path,
     home: &Path,
-    trusted: &dyn Fn(&Path) -> bool,
+    trusted: &(dyn Fn(&Path) -> bool + Sync),
     stack: &mut Stack,
 ) -> Result<ProjectFile, ConfigError> {
     let Some(path) = file::find_project_file(fs, cwd, home).await else {

@@ -324,6 +324,7 @@ mod idle;
 mod lifecycle;
 mod lock;
 mod mods;
+mod send;
 #[cfg(feature = "session")]
 mod session;
 mod timeouts;

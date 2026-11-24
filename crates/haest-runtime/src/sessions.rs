@@ -107,6 +107,18 @@ async fn cwd_of(fs: &dyn Fs, e: &Entry) -> Option<String> {
     scan(&bytes, whole).0
 }
 
+/// One listed session: its entry with the cwd and first question its head
+/// holds.
+async fn info(fs: &dyn Fs, e: Entry) -> Option<SessionInfo> {
+    let (cwd, preview) = head_of(fs, &e).await?;
+    Some(SessionInfo {
+        id: e.id,
+        cwd: cwd.into(),
+        modified_ms: e.modified_ms,
+        preview,
+    })
+}
+
 async fn entry(fs: &dyn Fs, dir: &Path, id: &str) -> Option<Entry> {
     let path = session_file(dir, id).ok()?;
     let stat = fs.stat(&path).await.ok()?;
@@ -125,9 +137,15 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
     let Ok(entries) = fs.read_dir(dir).await else {
         return Vec::new();
     };
-    let ids = entries.iter().filter_map(|e| session_id_of(&e.name));
+    // Owned ids: a stream of futures over ids borrowed from `entries` is one
+    // the compiler cannot prove `Send` (rust-lang/rust#100013), and then no
+    // host could list, or resume the latest session, on a task of its own.
+    let ids: Vec<String> = entries
+        .iter()
+        .filter_map(|e| session_id_of(&e.name).map(str::to_string))
+        .collect();
     let mut out: Vec<Entry> = stream::iter(ids)
-        .map(|id| entry(fs, dir, id))
+        .map(|id| async move { entry(fs, dir, &id).await })
         .buffer_unordered(AT_ONCE)
         .filter_map(ready)
         .collect()
@@ -171,15 +189,7 @@ async fn newest_first(fs: &dyn Fs, dir: &Path) -> Vec<Entry> {
 /// ```
 pub async fn list_sessions(fs: &dyn Fs, dir: &Path) -> Vec<SessionInfo> {
     stream::iter(newest_first(fs, dir).await)
-        .map(|e| async move {
-            let (cwd, preview) = head_of(fs, &e).await?;
-            Some(SessionInfo {
-                id: e.id,
-                cwd: cwd.into(),
-                modified_ms: e.modified_ms,
-                preview,
-            })
-        })
+        .map(|e| info(fs, e))
         .buffered(AT_ONCE)
         .filter_map(ready)
         .collect()

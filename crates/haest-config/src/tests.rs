@@ -7,6 +7,7 @@ mod hooks;
 mod loader;
 mod reference;
 mod refused;
+mod send;
 mod table;
 mod typed;
 mod wind_down;
