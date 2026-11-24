@@ -5,7 +5,7 @@ use haest_bridges::{HookHost, ModFileOptions, ModFiles};
 use haest_core::{ChildEnv, fs::FsRef, tool::ToolServices};
 use haest_mods::{
     ApprovalGate, HookSet, HookSettings, ModEnv, ModLine, ModOptions, ModRef, ModUiRef, Mods,
-    SessionView, load_mods,
+    PlanMod, SessionView, load_mods,
 };
 use haest_providers::http::HttpClientRef;
 
@@ -21,7 +21,8 @@ use crate::{RuntimeHooks, caps::mod_file_caps, world::World};
 /// ([`ModFiles`]), after the built-ins; the `hooks` setting's entries
 /// (`config_hooks`, [`config_hooks`]) are one more after them, as the
 /// human's own settings; the host's own mods (`host_mods`) run last,
-/// whatever the settings say. A mod's lines, and a file that does not load,
+/// whatever the settings say. Plan mode is the host's `plan` when it
+/// configured one. A mod's lines, and a file that does not load,
 /// go to the host's [`Ui`](crate::Ui). An approval ask goes through `gate`
 /// ([`ApprovalGate`]) to the host's prompter, which decides how a human
 /// answers; an ask nobody answers is a deny after its timeout. The mods are
@@ -32,6 +33,7 @@ pub(crate) async fn mods_for(
     fs: FsRef,
     gate: &ApprovalGate,
     config_hooks: Option<HookSet>,
+    plan: Option<PlanMod>,
     host_mods: Vec<ModRef>,
 ) -> Mods {
     let s = hooks.settings();
@@ -44,6 +46,9 @@ pub(crate) async fn mods_for(
         other => to.info(other.text()),
     }));
     let mut cfg = ModOptions::new(&s.cwd, s.workspace).with_approvals(s.approvals);
+    if let Some(plan) = plan {
+        cfg = cfg.with_plan(plan);
+    }
     if s.mods || s.project_mods {
         let opts = ModFileOptions::new(&s.config_dir)
             .with_user_mods(s.mods)

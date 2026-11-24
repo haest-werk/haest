@@ -156,6 +156,7 @@
 
 mod build;
 mod caps;
+mod commands;
 mod error;
 mod hooks;
 mod inbox;

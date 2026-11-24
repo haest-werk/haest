@@ -145,6 +145,7 @@ where
         host_mods,
         hook_settings,
         models,
+        plan,
         #[cfg(feature = "prompt")]
         prompt_template,
     } = inputs;
@@ -189,7 +190,7 @@ where
     let config_hooks = mods::config_hooks(&hook_settings, &hooks, &world, &passed_env, &http);
     let (mcp, mods) = tokio::join!(
         connect_mcp(&hooks, &world, &passed_env, mcp_servers),
-        mods::mods_for(&hooks, fs.clone(), &gate, config_hooks, host_mods),
+        mods::mods_for(&hooks, fs.clone(), &gate, config_hooks, plan, host_mods),
     );
 
     let board = task_board(&hooks);

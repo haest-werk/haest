@@ -3,10 +3,7 @@
 //! (`/review src/a.rs`) expands to that skill's body and goes to the model;
 //! anything else starting with `/` is sent as typed.
 
-use haest::{
-    Effort, core::caps::ConversationCap, core::error::report, core::skills::load_skill_body,
-    mods::CommandOutcome,
-};
+use haest::{Effort, core::caps::ConversationCap, core::error::report, mods::CommandOutcome};
 use tokio_util::sync::CancellationToken;
 
 use crate::{changes, term::Runtime};
@@ -44,10 +41,11 @@ pub(crate) async fn resolve(rt: &mut Runtime, line: &str, cancel: &CancellationT
         "apply" => changes::apply(rt).await,
         "help" => help(rt),
         "exit" | "quit" => return Outcome::Exit,
-        _ => match rt.mods().command(name, args).await {
-            CommandOutcome::Unknown => return skill_or_text(rt, name, args, line).await,
+        _ => match rt.command(name, args).await {
+            CommandOutcome::Unknown => return Outcome::Send(line.to_string()),
             CommandOutcome::Prompt(text) => return Outcome::Send(text),
-            // Handled, or an outcome newer than this host: the mod had its say.
+            // Handled, or an outcome newer than this host: the mod or the
+            // skill had its say.
             _ => {}
         },
     }
@@ -66,21 +64,6 @@ fn help(rt: &Runtime) {
     }
     rt.hooks()
         .info(&format!("{HELP}\nFrom mods: {}", mods.join(", ")));
-}
-
-async fn skill_or_text(rt: &Runtime, name: &str, args: &str, line: &str) -> Outcome {
-    let skill = rt.skills().list().into_iter().find(|s| s.name == name);
-    let Some(skill) = skill else {
-        return Outcome::Send(line.to_string());
-    };
-    match load_skill_body(rt.fs().as_ref(), &skill, Some(args)).await {
-        Ok(body) => Outcome::Send(body),
-        Err(e) => {
-            rt.hooks()
-                .error(&format!("Skill {name} could not be read: {e}"));
-            Outcome::Done
-        }
-    }
 }
 
 fn model(rt: &mut Runtime, spec: &str) {

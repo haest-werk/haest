@@ -4,7 +4,7 @@
 
 use haest_core::{ChildEnv, KeySourceRef, ModelResolverRef};
 use haest_mcp::McpServerConfig;
-use haest_mods::{HookSettings, ModRef};
+use haest_mods::{HookSettings, ModRef, PlanMod};
 use haest_providers::{CustomProviders, RoutingScopes, http::HttpClientRef};
 use haest_settings::Settings;
 
@@ -46,6 +46,7 @@ pub struct RuntimeInputs {
     pub(crate) host_mods: Vec<ModRef>,
     pub(crate) hook_settings: HookSettings,
     pub(crate) models: Option<ModelResolverRef>,
+    pub(crate) plan: Option<PlanMod>,
     #[cfg(feature = "prompt")]
     pub(crate) prompt_template: Option<haest_prompt::PromptTemplate>,
 }
@@ -73,6 +74,7 @@ impl RuntimeInputs {
             host_mods: Vec::new(),
             hook_settings: HookSettings::default(),
             models: None,
+            plan: None,
             #[cfg(feature = "prompt")]
             prompt_template: None,
         }
@@ -207,6 +209,28 @@ impl RuntimeInputs {
         self
     }
 
+    /// Plan mode as the host configured it, in place of haest's default
+    /// ([`PlanMod::new`]): a listener that tells the host's plan toggle
+    /// whenever plan mode turns on or off, however it was switched (the
+    /// `/plan` command, a mod), or planning tools of the host's own.
+    ///
+    /// ```
+    /// use haest_core::fs::MemFs;
+    /// use haest_mods::PlanMod;
+    /// use haest_runtime::{RuntimeInputs, World};
+    /// use haest_settings::Settings;
+    ///
+    /// let plan = PlanMod::new().with_listener(|on| eprintln!("plan mode {}", if on { "on" } else { "off" }));
+    /// let inputs = RuntimeInputs::new(Settings::bare("/work", "/home/me"), World::files(MemFs::new()))
+    ///     .with_plan(plan);
+    /// assert!(inputs.plan().is_some());
+    /// ```
+    #[must_use]
+    pub fn with_plan(mut self, plan: PlanMod) -> Self {
+        self.plan = Some(plan);
+        self
+    }
+
     /// The system prompt from `template`, rendered before every model call
     /// (main's and each subagent's) in place of haest's built-in prompt.
     /// The template sees the built-in prompt section by section, the model's
@@ -285,6 +309,12 @@ impl RuntimeInputs {
     /// None = the built-in providers.
     pub fn models(&self) -> Option<&ModelResolverRef> {
         self.models.as_ref()
+    }
+
+    /// Plan mode as the host configured it ([`with_plan`](Self::with_plan));
+    /// None = haest's default.
+    pub fn plan(&self) -> Option<&PlanMod> {
+        self.plan.as_ref()
     }
 }
 
