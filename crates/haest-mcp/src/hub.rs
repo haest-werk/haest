@@ -21,8 +21,9 @@ use start::{Started, admit, close_quietly, start_config};
 /// How long a server may take to start and answer MCP's `initialize`, and
 /// again to list its tools: 15 seconds each. Past it, the server is a failure.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-/// How long one tool call may run: 10 minutes. Past it, the call fails and is
-/// cancelled on the server.
+/// How long one tool call may run unless the hub is told otherwise
+/// ([`McpHub::with_call_timeout`]): 10 minutes. Past it, the call fails and
+/// is cancelled on the server.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How long closing may wait for one server; a server that hangs is left to die alone.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -54,15 +55,29 @@ struct Shared {
 /// error.
 ///
 /// A hub is a cheap handle: clones share the servers and the failures (each
-/// keeps the environment and log it was cloned with, for the servers it
-/// connects). [`close`](McpHub::close) shuts every server down; dropping the
-/// last clone does too, without waiting. The crate docs have a whole example.
-#[derive(Clone, Default)]
+/// keeps the environment, log and call timeout it was cloned with, for the
+/// servers it connects). [`close`](McpHub::close) shuts every server down;
+/// dropping the last clone does too, without waiting. The crate docs have a
+/// whole example.
+#[derive(Clone)]
 pub struct McpHub {
     shared: Arc<Shared>,
     /// What a stdio server's process gets, under its own `env`; nothing else.
     env: ChildEnv,
     log: Option<Log>,
+    /// How long a tool call of a server this hub connects may run.
+    call_timeout: Duration,
+}
+
+impl Default for McpHub {
+    fn default() -> Self {
+        Self {
+            shared: Arc::default(),
+            env: ChildEnv::default(),
+            log: None,
+            call_timeout: CALL_TIMEOUT,
+        }
+    }
 }
 
 impl McpHub {
@@ -94,6 +109,15 @@ impl McpHub {
     #[must_use]
     pub fn with_log(mut self, log: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.log = Some(Arc::new(log));
+        self
+    }
+
+    /// A tool call of a server this hub connects fails after `timeout`, in
+    /// place of [`CALL_TIMEOUT`], and is cancelled on the server. A server
+    /// connected before keeps the timeout it was connected with.
+    #[must_use]
+    pub fn with_call_timeout(mut self, timeout: Duration) -> Self {
+        self.call_timeout = timeout;
         self
     }
 
@@ -139,7 +163,7 @@ impl McpHub {
         let mut servers = self.lock_servers();
         for (cfg, started) in configs.iter().zip(started) {
             if let Some(started) = started {
-                admit(&mut servers, &cfg.name, started);
+                admit(&mut servers, &cfg.name, started, self.call_timeout);
             }
         }
     }
@@ -165,7 +189,7 @@ impl McpHub {
     {
         let res = start::start(transport).await;
         if let Some(started) = self.settle(name, res) {
-            admit(&mut self.lock_servers(), name, started);
+            admit(&mut self.lock_servers(), name, started, self.call_timeout);
         }
     }
 
@@ -244,6 +268,7 @@ impl fmt::Debug for McpHub {
             .field("failures", &self.failures())
             .field("env", &self.env)
             .field("log", &self.log.is_some())
+            .field("call_timeout", &self.call_timeout)
             .finish()
     }
 }

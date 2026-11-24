@@ -21,6 +21,7 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   bash          = "2m"    # a Bash call that names no timeout
   bash_max      = "10m"   # the most a Bash call, or a sandbox shell call, runs
   model_headers = "10m"   # one try of a model call, until its headers arrive
+  mcp_call      = "10m"   # one call to an MCP server's tool
 
   [timeouts.javascript]
   code      = "10m"   # a Code tool run (was a minute)
@@ -41,10 +42,12 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   `JsEnv::with_caps` with the new `VmCaps::sandbox()`,
   `ModFileOptions::with_caps`, `HookHost::with_default_timeout`,
   `ApprovalGate::with_timeout`, `BashOptions::with_max_timeout`,
-  `SandboxWorkspace::with_max_timeout`, and the providers' and
-  `ProviderRegistry`'s `with_headers_timeout`. The defaults are public:
+  `SandboxWorkspace::with_max_timeout`, the providers' and
+  `ProviderRegistry`'s `with_headers_timeout`, and
+  `McpHub::with_call_timeout`. The defaults are public:
   `haest_tools::{BASH_TIMEOUT, BASH_MAX_TIMEOUT}`,
-  `haest_workspace::MAX_SHELL_TIMEOUT`, `haest_providers::HEADERS_TIMEOUT`.
+  `haest_workspace::MAX_SHELL_TIMEOUT`, `haest_providers::HEADERS_TIMEOUT`,
+  `haest_mcp::CALL_TIMEOUT`.
 
 ### Changes
 

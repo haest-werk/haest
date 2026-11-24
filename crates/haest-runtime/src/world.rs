@@ -244,6 +244,7 @@ pub(crate) async fn connect_mcp(
     passed_env: &ChildEnv,
     servers: Vec<McpServerConfig>,
 ) -> McpHub {
+    let hub = McpHub::new().with_call_timeout(hooks.settings().timeouts.mcp_call);
     let Some(child_env) = world.child_env_with(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
@@ -254,9 +255,9 @@ pub(crate) async fn connect_mcp(
                 s.name
             ));
         }
-        return start(hooks, McpHub::new(), http).await;
+        return start(hooks, hub, http).await;
     };
-    start(hooks, McpHub::new().with_env(child_env), servers).await
+    start(hooks, hub.with_env(child_env), servers).await
 }
 
 async fn start(hooks: &RuntimeHooks, hub: McpHub, servers: Vec<McpServerConfig>) -> McpHub {

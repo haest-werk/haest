@@ -95,7 +95,7 @@ async fn a_table_it_does_not_take_is_refused_naming_where_it_was() {
 /// value text with its unit; a number alone is refused, naming where.
 #[tokio::test]
 async fn timeouts_and_limits_merge_by_key_and_refuse_a_number_with_no_unit() {
-    let user = "[timeouts]\nhook = \"30s\"\nbash_max = \"1h\"\nmodel_headers = \"90s\"\n[timeouts.javascript]\ncode = \"20m\"\n[limits.javascript]\nmod_memory = \"1GiB\"";
+    let user = "[timeouts]\nhook = \"30s\"\nbash_max = \"1h\"\nmodel_headers = \"90s\"\nmcp_call = \"20m\"\n[timeouts.javascript]\ncode = \"20m\"\n[limits.javascript]\nmod_memory = \"1GiB\"";
     let r = run(
         "/w",
         &[(USER_FILE, user)],
@@ -109,8 +109,8 @@ async fn timeouts_and_limits_merge_by_key_and_refuse_a_number_with_no_unit() {
     assert_eq!((s.timeouts.hook, s.timeouts.ask), (secs(30), secs(600)));
     let t = &s.timeouts;
     assert_eq!(
-        (t.bash, t.bash_max, t.model_headers),
-        (secs(120), secs(3_600), secs(90))
+        (t.bash, t.bash_max, t.model_headers, t.mcp_call),
+        (secs(120), secs(3_600), secs(90), secs(1_200))
     );
     let js = s.timeouts.javascript;
     assert_eq!(

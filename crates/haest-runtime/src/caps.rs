@@ -2,9 +2,9 @@
 //! caps of each kind of JavaScript run ([`code_caps`], [`sandbox_caps`],
 //! [`mod_file_caps`]) and the Bash tool's timeouts ([`bash_options`]). The
 //! crates never read settings; a Rust host that builds its own sets them in
-//! code, and these are the runtime's. The hook, ask, sandbox-shell and
-//! model-headers timeouts are one setter each, at the place the runtime
-//! builds their object.
+//! code, and these are the runtime's. The hook, ask, sandbox-shell,
+//! model-headers and MCP-call timeouts are one setter each, at the place the
+//! runtime builds their object.
 
 use haest_code::VmCaps;
 use haest_settings::Settings;
@@ -73,6 +73,7 @@ mod tests {
             haest_workspace::MAX_SHELL_TIMEOUT
         );
         assert_eq!(s.timeouts.model_headers, haest_providers::HEADERS_TIMEOUT);
+        assert_eq!(s.timeouts.mcp_call, haest_mcp::CALL_TIMEOUT);
     }
 
     #[test]

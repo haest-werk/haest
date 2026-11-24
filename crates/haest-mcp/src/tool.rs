@@ -1,6 +1,6 @@
 //! One MCP server tool as a haest [`Tool`].
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use async_trait::async_trait;
 use haest_core::tool::{JsonMap, Tool, ToolContext, ToolError, ToolOutput};
@@ -100,8 +100,10 @@ pub(crate) fn mcp_kind(server: &str, tool: &str) -> String {
 /// so.
 ///
 /// A call goes to the server for as long as it is connected, and fails once
-/// the hub has closed. It fails after [`CALL_TIMEOUT`](crate::CALL_TIMEOUT),
-/// and at once when the call's cancel token fires; either way the server is
+/// the hub has closed. It fails after the hub's call timeout
+/// ([`CALL_TIMEOUT`](crate::CALL_TIMEOUT) unless
+/// [`with_call_timeout`](crate::McpHub::with_call_timeout)), and at once when
+/// the call's cancel token fires; either way the server is
 /// told the call was cancelled. A result the server marks `isError` is an
 /// error output the model reads ([`mcp_result_to_output`]); a JSON-RPC error,
 /// or a server that asks for input or answers with a task, is a failed call.
@@ -118,6 +120,8 @@ pub(crate) struct McpTool {
     description: String,
     parameters: Value,
     peer: Peer<RoleClient>,
+    /// How long one call may run.
+    timeout: Duration,
 }
 
 impl McpTool {
@@ -145,7 +149,14 @@ impl McpTool {
             parameters: Value::Object((*t.input_schema).clone()),
             tool: t.name.into_owned(),
             peer,
+            timeout: CALL_TIMEOUT,
         }
+    }
+
+    /// Each call fails after `timeout` in place of [`CALL_TIMEOUT`].
+    pub(crate) fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 }
 
@@ -178,13 +189,13 @@ impl Tool for McpTool {
     async fn execute(&self, input: JsonMap, ctx: &ToolContext) -> Result<ToolOutput, ToolError> {
         let params = CallToolRequestParams::new(self.tool.clone()).with_arguments(input);
         // Dropping the call (cancel, timeout) tells the server with notifications/cancelled.
-        let call = tokio::time::timeout(CALL_TIMEOUT, self.peer.call_tool_once(params));
+        let call = tokio::time::timeout(self.timeout, self.peer.call_tool_once(params));
         let res = tokio::select! {
             r = call => r.map_err(|_elapsed| ToolError::Failed(format!(
                 "MCP {} {} timed out after {}ms",
                 self.server,
                 self.tool,
-                CALL_TIMEOUT.as_millis()
+                self.timeout.as_millis()
             )))?,
             () = ctx.cancel().cancelled() => {
                 return Err(ToolError::Failed("the call was cancelled".into()));

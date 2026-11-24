@@ -83,21 +83,31 @@ async fn a_command_runs_inside_the_shell_call_pipes_and_files_included() {
     assert!(left > Duration::from_secs(9) && left <= Duration::from_secs(11));
 }
 
-/// A call stops at ten minutes whatever its timeout, so a command's deadline
-/// is ten minutes at most: never a sum past what an `Instant` holds.
+/// A call stops at the shell's max whatever its timeout
+/// ([`MAX_SHELL_TIMEOUT`](haest_workspace::MAX_SHELL_TIMEOUT), or
+/// `with_max_timeout`'s), so a command's deadline is that at most: never a
+/// sum past what an `Instant` holds.
 #[tokio::test]
-async fn a_commands_deadline_is_ten_minutes_at_most() {
+async fn a_commands_deadline_is_the_shells_max_at_most() {
     let (_t, dir) = tempdir();
-    let shout = Arc::new(Shout::default());
-    let ws = sandbox(&dir).await.with_command(shout.clone());
-    let mut o = opts(&dir);
-    o.timeout = Duration::MAX;
-    let started = Instant::now();
-    let r = ws.shell("echo hi | shout", o).await;
-    assert_eq!((r.stdout.as_str(), r.exit_code), ("HI\n", 0), "{r:?}");
-    let deadline = shout.deadline.lock().unwrap().unwrap();
-    let left = deadline.duration_since(started);
-    assert!(left > Duration::from_secs(599) && left <= Duration::from_secs(601));
+    for (max, secs) in [(None, 600), (Some(Duration::from_secs(1_200)), 1_200)] {
+        let shout = Arc::new(Shout::default());
+        let ws = sandbox(&dir).await;
+        let ws = match max {
+            Some(max) => ws.with_max_timeout(max),
+            None => ws,
+        };
+        let ws = ws.with_command(shout.clone());
+        let mut o = opts(&dir);
+        o.timeout = Duration::MAX;
+        let started = Instant::now();
+        let r = ws.shell("echo hi | shout", o).await;
+        assert_eq!((r.stdout.as_str(), r.exit_code), ("HI\n", 0), "{r:?}");
+        let deadline = shout.deadline.lock().unwrap().unwrap();
+        let left = deadline.duration_since(started);
+        let (low, high) = (Duration::from_secs(secs - 1), Duration::from_secs(secs + 1));
+        assert!(left > low && left <= high, "{max:?}: {left:?}");
+    }
 }
 
 #[tokio::test]

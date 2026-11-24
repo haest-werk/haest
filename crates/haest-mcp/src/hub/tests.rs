@@ -177,6 +177,27 @@ async fn a_call_that_never_answers_times_out_and_is_cancelled_on_the_server() {
         .expect("the server never heard the call was abandoned");
 }
 
+/// A hub's own call timeout holds every tool of the servers it connects.
+#[tokio::test(start_paused = true)]
+async fn a_hubs_call_timeout_replaces_the_default() {
+    let server = TestServer::default();
+    let (io, _server) = spawn(server.clone());
+    let short = Duration::from_secs(30);
+    let hub = McpHub::new().with_call_timeout(short);
+    hub.connect_transport("srv", io).await;
+    let started = tokio::time::Instant::now();
+    let res = tool(&hub, "hang").execute(JsonMap::new(), &ctx()).await;
+    let elapsed = started.elapsed();
+    assert!(elapsed >= short && elapsed < CALL_TIMEOUT, "{elapsed:?}");
+    match res {
+        Err(ToolError::Failed(why)) => assert!(why.contains("30000ms"), "{why}"),
+        other => panic!("not a timeout: {other:?}"),
+    }
+    tokio::time::timeout(SETTLE, server.cancelled.notified())
+        .await
+        .expect("the server never heard the call was abandoned");
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_server_that_never_answers_is_a_failure_after_the_connect_timeout() {
     let (io, _silent) = tokio::io::duplex(64 * 1024);

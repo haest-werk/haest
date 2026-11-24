@@ -59,7 +59,8 @@
 //! A server that cannot be started, or does not connect or list its tools
 //! within [`CONNECT_TIMEOUT`], is logged and kept in [`McpHub::failures`]. It
 //! is never returned as an error: one broken server never takes the harness
-//! down. A tool call runs for at most [`CALL_TIMEOUT`]; a call that times out
+//! down. A tool call runs for at most [`CALL_TIMEOUT`]
+//! ([`McpHub::with_call_timeout`] sets another); a call that times out
 //! or is cancelled is cancelled on the server too. An HTTP server's URL shows
 //! in a failure, a log line or a failed call without its query, fragment or
 //! userinfo, since a key may ride in one (`?api_key=...`).

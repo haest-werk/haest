@@ -1,7 +1,7 @@
 //! Starting one server: reach it (stdio, HTTP, or a host's own transport),
 //! `initialize`, list its tools, and name them apart from the tools already held.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use haest_core::{ChildEnv, ToolRef};
 use rmcp::{
@@ -25,8 +25,14 @@ pub(super) struct Started {
 
 /// Keep `started` beside `servers`, each of its tools named apart from every
 /// tool already held: two servers or tools that differ only in characters a
-/// provider rejects, or past the 64th, never share a name.
-pub(super) fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
+/// provider rejects, or past the 64th, never share a name. Each call to one
+/// of them fails after `call_timeout`.
+pub(super) fn admit(
+    servers: &mut Vec<Server>,
+    name: &str,
+    started: Started,
+    call_timeout: Duration,
+) {
     let mut taken: HashSet<String> = servers
         .iter()
         .flat_map(|s| s.tools.iter().map(|t| t.name().to_string()))
@@ -38,7 +44,7 @@ pub(super) fn admit(servers: &mut Vec<Server>, name: &str, started: Started) {
         .map(|t| {
             let unique = unique_tool_name(name, &t.name, &taken);
             taken.insert(unique.clone());
-            ToolRef::new(McpTool::new(name, unique, t, peer.clone()))
+            ToolRef::new(McpTool::new(name, unique, t, peer.clone()).with_timeout(call_timeout))
         })
         .collect();
     servers.push(Server {
