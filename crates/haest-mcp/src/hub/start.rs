@@ -10,7 +10,7 @@ use rmcp::{
     transport::IntoTransport,
 };
 
-use super::{CLOSE_TIMEOUT, CONNECT_TIMEOUT, Client, McpStartError, Server};
+use super::{CLOSE_TIMEOUT, Client, McpStartError, Server};
 use crate::{
     config::{McpServerConfig, McpTransport},
     tool::{McpTool, unique_tool_name},
@@ -58,8 +58,9 @@ pub(super) async fn close_quietly(mut client: Client) {
     let _ = client.close_with_timeout(CLOSE_TIMEOUT).await;
 }
 
-/// Initialize, then list the tools; a failure closes what was opened.
-pub(super) async fn start<T, E, A>(transport: T) -> Result<Started, McpStartError>
+/// Initialize, then list the tools, each within `wait`; a failure closes what
+/// was opened.
+pub(super) async fn start<T, E, A>(transport: T, wait: Duration) -> Result<Started, McpStartError>
 where
     T: IntoTransport<RoleClient, E, A>,
     E: std::error::Error + Send + Sync + 'static,
@@ -68,11 +69,11 @@ where
         ClientCapabilities::default(),
         Implementation::new("haest", "1"),
     );
-    let client = tokio::time::timeout(CONNECT_TIMEOUT, info.serve(transport))
+    let client = tokio::time::timeout(wait, info.serve(transport))
         .await
-        .map_err(|_elapsed| McpStartError::InitializeTimedOut(CONNECT_TIMEOUT))?
+        .map_err(|_elapsed| McpStartError::InitializeTimedOut(wait))?
         .map_err(|e| McpStartError::Initialize(e.into()))?;
-    let listed = tokio::time::timeout(CONNECT_TIMEOUT, client.peer().list_all_tools()).await;
+    let listed = tokio::time::timeout(wait, client.peer().list_all_tools()).await;
     let listed = match listed {
         Ok(Ok(tools)) => tools,
         Ok(Err(e)) => {
@@ -81,23 +82,24 @@ where
         }
         Err(_) => {
             close_quietly(client).await;
-            return Err(McpStartError::ListToolsTimedOut(CONNECT_TIMEOUT));
+            return Err(McpStartError::ListToolsTimedOut(wait));
         }
     };
     Ok(Started { client, listed })
 }
 
 /// Reach the server `cfg` names (a stdio one with `handed` as its base
-/// environment), then [`start`] it.
+/// environment), then [`start`] it within `wait`.
 pub(super) async fn start_config(
     cfg: &McpServerConfig,
     handed: &ChildEnv,
+    wait: Duration,
 ) -> Result<Started, McpStartError> {
     match &cfg.transport {
         McpTransport::Stdio(s) => {
             let child = transport::stdio(&s.command, &s.args, handed, &s.env, s.cwd.as_deref())?;
-            start(child).await
+            start(child, wait).await
         }
-        McpTransport::Http(h) => start(transport::http(&h.url, &h.headers)?).await,
+        McpTransport::Http(h) => start(transport::http(&h.url, &h.headers)?, wait).await,
     }
 }

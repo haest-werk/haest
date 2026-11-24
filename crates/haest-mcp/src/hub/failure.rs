@@ -91,13 +91,15 @@ pub enum McpStartError {
     /// or it answered with an error).
     #[error("MCP initialize failed")]
     Initialize(#[source] BoxError),
-    /// `initialize` did not finish within this long ([`CONNECT_TIMEOUT`](super::CONNECT_TIMEOUT)).
+    /// `initialize` did not finish within this long (the hub's connect
+    /// timeout, [`CONNECT_TIMEOUT`](super::CONNECT_TIMEOUT) unless set).
     #[error("MCP initialize timed out after {}ms", .0.as_millis())]
     InitializeTimedOut(Duration),
     /// The server did not list its tools.
     #[error("listing its tools failed")]
     ListTools(#[source] BoxError),
-    /// Listing the tools did not finish within this long ([`CONNECT_TIMEOUT`](super::CONNECT_TIMEOUT)).
+    /// Listing the tools did not finish within this long (the hub's connect
+    /// timeout, [`CONNECT_TIMEOUT`](super::CONNECT_TIMEOUT) unless set).
     #[error("listTools timed out after {}ms", .0.as_millis())]
     ListToolsTimedOut(Duration),
 }

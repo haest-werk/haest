@@ -1,14 +1,14 @@
 //! The `[timeouts]` and `[limits]` settings as what each crate takes: the
 //! caps of each kind of JavaScript run ([`code_caps`], [`sandbox_caps`],
-//! [`mod_file_caps`]) and the Bash tool's timeouts ([`bash_options`]). The
-//! crates never read settings; a Rust host that builds its own sets them in
-//! code, and these are the runtime's. The hook, ask, sandbox-shell,
-//! model-headers and MCP-call timeouts are one setter each, at the place the
+//! [`mod_file_caps`]) and the built-in tools' timeouts ([`builtin_options`]).
+//! The crates never read settings; a Rust host that builds its own sets them
+//! in code, and these are the runtime's. The hook, ask, sandbox-shell,
+//! model-headers and MCP timeouts are one setter each, at the place the
 //! runtime builds their object.
 
 use haest_code::VmCaps;
 use haest_settings::Settings;
-use haest_tools::BashOptions;
+use haest_tools::{BashOptions, BuiltinOptions, JobHub, WebFetchNet};
 
 /// The Bash tool's: `bash` when a call names no timeout, and the most it
 /// may ask for ([`bash_ceiling`](haest_settings::TimeoutSettings::bash_ceiling)).
@@ -16,6 +16,18 @@ pub(crate) fn bash_options(s: &Settings) -> BashOptions {
     BashOptions::default()
         .with_default_timeout(s.timeouts.bash)
         .with_max_timeout(s.timeouts.bash_ceiling())
+}
+
+/// The built-ins' options before the task list and Skill: Bash on
+/// [`bash_options`], leaving background jobs to `jobs` when there is a hub,
+/// and WebFetch on the real network held to `web_fetch`.
+pub(crate) fn builtin_options(s: &Settings, jobs: Option<JobHub>) -> BuiltinOptions {
+    let bash = jobs
+        .into_iter()
+        .fold(bash_options(s), BashOptions::with_jobs);
+    BuiltinOptions::new()
+        .with_bash(bash)
+        .with_web_fetch(WebFetchNet::default().with_timeout(s.timeouts.web_fetch))
 }
 
 /// The Code tool's: `javascript.code` (the default deadline and the most
@@ -74,6 +86,22 @@ mod tests {
         );
         assert_eq!(s.timeouts.model_headers, haest_providers::HEADERS_TIMEOUT);
         assert_eq!(s.timeouts.mcp_call, haest_mcp::CALL_TIMEOUT);
+        assert_eq!(s.timeouts.mcp_connect, haest_mcp::CONNECT_TIMEOUT);
+        assert_eq!(s.timeouts.web_fetch, haest_tools::WEB_FETCH_TIMEOUT);
+    }
+
+    /// `web_fetch` reaches the net WebFetch is built on.
+    #[test]
+    fn web_fetch_is_held_to_its_setting() {
+        let s = Settings {
+            timeouts: TimeoutSettings {
+                web_fetch: Duration::from_secs(45),
+                ..TimeoutSettings::default()
+            },
+            ..Settings::bare("/w", "/h")
+        };
+        let shown = format!("{:?}", builtin_options(&s, None));
+        assert!(shown.contains("timeout: 45s"), "{shown}");
     }
 
     #[test]

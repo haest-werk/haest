@@ -209,6 +209,23 @@ async fn a_server_that_never_answers_is_a_failure_after_the_connect_timeout() {
     assert!(hub.tools().is_empty());
 }
 
+/// A hub's own connect timeout replaces the default, both ways.
+#[tokio::test(start_paused = true)]
+async fn a_hubs_connect_timeout_replaces_the_default() {
+    for wait in [Duration::from_secs(2), Duration::from_secs(90)] {
+        let (io, _silent) = tokio::io::duplex(64 * 1024);
+        let hub = McpHub::new().with_connect_timeout(wait);
+        let started = tokio::time::Instant::now();
+        hub.connect_transport("mute", io).await;
+        assert_eq!(started.elapsed(), wait);
+        let failed = hub.failures();
+        assert!(
+            matches!(failed[0].error(), McpStartError::InitializeTimedOut(w) if *w == wait),
+            "{failed:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn close_shuts_every_server_down_and_its_tools_fail_after() {
     let (hub, server) = connected(TestServer::default()).await;

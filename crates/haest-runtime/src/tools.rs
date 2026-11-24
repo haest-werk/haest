@@ -11,8 +11,8 @@ use haest_mcp::McpHub;
 use haest_mods::{ModTools, Mods};
 use haest_settings::{BuiltinTools, Settings};
 use haest_tools::{
-    AgentRef, BashOptions, BuiltinOptions, FILE_TOOLS, GenerateImageOptions, GenerateImageTool,
-    JobHub, SkillToolOptions, SubagentHub, builtin_tools_where,
+    AgentRef, BuiltinOptions, FILE_TOOLS, GenerateImageOptions, GenerateImageTool,
+    SkillToolOptions, SubagentHub, builtin_tools_where,
 };
 
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
@@ -29,21 +29,18 @@ use haest_tools::{
 /// (`deferred_tools`) so a big server does not ride on every call.
 ///
 /// `picked` is the `tools` setting: only the built-ins it names are made.
-/// The task tools work on `board`, Skill offers what `skills` holds when it is
-/// called, Bash runs on `bash` ([`bash_options`](crate::caps::bash_options))
-/// and leaves background jobs to `jobs` when there is a hub
-/// ([`jobs_for`](crate::world::jobs_for)), and GenerateImage is there when
-/// `image` is ([`image_options`]).
+/// They are built on `base` ([`builtin_options`](crate::caps::builtin_options):
+/// Bash's and WebFetch's timeouts, Bash's jobs hub), the task tools work on
+/// `board`, Skill offers what `skills` holds when it is called, and
+/// GenerateImage is there when `image` is ([`image_options`]).
 pub(crate) fn own_tools(
     picked: &BuiltinTools,
+    base: BuiltinOptions,
     board: TaskBoard,
     skills: Skills,
-    (bash, jobs): (BashOptions, Option<JobHub>),
     image: Option<GenerateImageOptions>,
 ) -> Tools {
-    let bash = jobs.into_iter().fold(bash, BashOptions::with_jobs);
-    let opts = BuiltinOptions::new()
-        .with_bash(bash)
+    let opts = base
         .with_tasks(board)
         .with_skill(SkillToolOptions::new(skills));
     let mut tools = builtin_tools_where(|t| picked.has(t.as_str()), opts)
@@ -231,9 +228,9 @@ mod tests {
         let skills = Skills::new(haest_core::MemFs::new());
         own_tools(
             picked,
+            BuiltinOptions::new(),
             TaskBoard::default(),
             skills,
-            (BashOptions::default(), None),
             None,
         )
     }
@@ -251,8 +248,8 @@ mod tests {
         };
         let bash_only = BuiltinTools::from_words(["bash"]).unwrap();
         let skills = Skills::new(haest_core::MemFs::new());
-        let opts = (crate::caps::bash_options(&s), None);
-        let tools = own_tools(&bash_only, TaskBoard::default(), skills, opts, None);
+        let base = crate::caps::builtin_options(&s, None);
+        let tools = own_tools(&bash_only, base, TaskBoard::default(), skills, None);
         let bash = tools.iter().find(|t| t.name() == "Bash").unwrap();
         assert!(
             bash.description()

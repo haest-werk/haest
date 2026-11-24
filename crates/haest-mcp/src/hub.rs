@@ -19,7 +19,9 @@ pub use failure::{McpFailure, McpStartError};
 use start::{Started, admit, close_quietly, start_config};
 
 /// How long a server may take to start and answer MCP's `initialize`, and
-/// again to list its tools: 15 seconds each. Past it, the server is a failure.
+/// again to list its tools, unless the hub is told otherwise
+/// ([`McpHub::with_connect_timeout`]): 15 seconds each. Past it, the server
+/// is a failure.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long one tool call may run unless the hub is told otherwise
 /// ([`McpHub::with_call_timeout`]): 10 minutes. Past it, the call fails and
@@ -55,7 +57,7 @@ struct Shared {
 /// error.
 ///
 /// A hub is a cheap handle: clones share the servers and the failures (each
-/// keeps the environment, log and call timeout it was cloned with, for the
+/// keeps the environment, log and timeouts it was cloned with, for the
 /// servers it connects). [`close`](McpHub::close) shuts every server down;
 /// dropping the last clone does too, without waiting. The crate docs have a
 /// whole example.
@@ -65,6 +67,9 @@ pub struct McpHub {
     /// What a stdio server's process gets, under its own `env`; nothing else.
     env: ChildEnv,
     log: Option<Log>,
+    /// How long a server this hub connects may take to initialize, and again
+    /// to list its tools.
+    connect_timeout: Duration,
     /// How long a tool call of a server this hub connects may run.
     call_timeout: Duration,
 }
@@ -75,6 +80,7 @@ impl Default for McpHub {
             shared: Arc::default(),
             env: ChildEnv::default(),
             log: None,
+            connect_timeout: CONNECT_TIMEOUT,
             call_timeout: CALL_TIMEOUT,
         }
     }
@@ -109,6 +115,16 @@ impl McpHub {
     #[must_use]
     pub fn with_log(mut self, log: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.log = Some(Arc::new(log));
+        self
+    }
+
+    /// A server this hub connects has `timeout` to answer `initialize`, and
+    /// again to list its tools, in place of [`CONNECT_TIMEOUT`]; past it, it
+    /// is a failure. A server started with `npx` or `uvx` may need longer
+    /// the first time, while the package downloads.
+    #[must_use]
+    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
@@ -156,7 +172,7 @@ impl McpHub {
     /// ```
     pub async fn connect(&self, configs: &[McpServerConfig]) {
         let started = join_all(configs.iter().map(|cfg| async move {
-            let res = start_config(cfg, &self.env).await;
+            let res = start_config(cfg, &self.env, self.connect_timeout).await;
             self.settle(&cfg.name, res)
         }))
         .await;
@@ -187,7 +203,7 @@ impl McpHub {
         T: rmcp::transport::IntoTransport<RoleClient, E, A>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let res = start::start(transport).await;
+        let res = start::start(transport, self.connect_timeout).await;
         if let Some(started) = self.settle(name, res) {
             admit(&mut self.lock_servers(), name, started, self.call_timeout);
         }
@@ -268,6 +284,7 @@ impl fmt::Debug for McpHub {
             .field("failures", &self.failures())
             .field("env", &self.env)
             .field("log", &self.log.is_some())
+            .field("connect_timeout", &self.connect_timeout)
             .field("call_timeout", &self.call_timeout)
             .finish()
     }

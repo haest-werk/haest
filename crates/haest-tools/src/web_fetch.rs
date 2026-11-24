@@ -31,7 +31,9 @@ use get::{capped_body, guarded_get};
 mod get;
 mod http;
 
-const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long one WebFetch call may take, every redirect hop and the body
+/// included, unless its net says otherwise ([`WebFetchNet::with_timeout`]).
+pub const WEB_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 const TEXT_PREFIXES: [&str; 8] = [
     "text/",
     "application/json",
@@ -67,7 +69,8 @@ pub fn markdown_of(html: &str) -> String {
         .unwrap_or_else(|_| html.to_string())
 }
 
-/// WebFetch's two network seams: how names resolve and how a GET is made.
+/// WebFetch's two network seams, how names resolve and how a GET is made,
+/// and how long a fetch may take ([`with_timeout`](Self::with_timeout)).
 ///
 /// Before every request and every redirect hop the net guard checks the URL
 /// ([`assert_public_url`](crate::net_guard::assert_public_url)): an IP-literal
@@ -85,6 +88,8 @@ pub struct WebFetchNet {
     resolve: ResolveRef,
     /// One GET per hop, redirects handed back, never followed.
     http: HttpClientRef,
+    /// How long one call may take.
+    timeout: Duration,
 }
 
 impl WebFetchNet {
@@ -96,7 +101,16 @@ impl WebFetchNet {
         Self {
             http: http::guarded_client(resolve.clone()).into(),
             resolve,
+            timeout: WEB_FETCH_TIMEOUT,
         }
+    }
+
+    /// A WebFetch call gives up after `timeout`, in place of
+    /// [`WEB_FETCH_TIMEOUT`].
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// WebFetch through a client of the host's own, without the check when it
@@ -115,6 +129,7 @@ impl WebFetchNet {
         Self {
             resolve: resolve.into(),
             http: http.into(),
+            timeout: WEB_FETCH_TIMEOUT,
         }
     }
 }
@@ -127,7 +142,9 @@ impl Default for WebFetchNet {
 
 impl fmt::Debug for WebFetchNet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WebFetchNet").finish_non_exhaustive()
+        f.debug_struct("WebFetchNet")
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
     }
 }
 
@@ -169,7 +186,8 @@ async fn to_output(url: &Url, res: Response, ctx: &ToolContext) -> Result<ToolOu
 ///
 /// Input: `url`. One GET with redirects followed by hand (at most 5, each hop
 /// checked by the net guard), a 5 MB cap on the body (refused, never cut) and
-/// a 30 s timeout. HTML comes back as markdown ([`markdown_of`]), other text
+/// a timeout, [`WEB_FETCH_TIMEOUT`] unless the net sets another
+/// ([`WebFetchNet::with_timeout`]). HTML comes back as markdown ([`markdown_of`]), other text
 /// as it is, an image, PDF, audio or video as media; an HTTP error status is
 /// an error result with the body. A refusal, a timeout or an interrupt is a
 /// [`ToolError::Input`] the model reads.
@@ -273,10 +291,11 @@ impl Tool for WebFetchTool {
             let (res, at) = guarded_get(&url, &self.net).await?;
             to_output(&at, res, ctx).await
         };
+        let wait = self.net.timeout;
         tokio::select! {
             _ = ctx.cancel().cancelled() => Err(ToolError::Input("the fetch was interrupted".into())),
-            done = tokio::time::timeout(TIMEOUT, fetch) => done.unwrap_or_else(|_| {
-                Err(ToolError::Input(format!("the fetch timed out after {}s", TIMEOUT.as_secs())))
+            done = tokio::time::timeout(wait, fetch) => done.unwrap_or_else(|_| {
+                Err(ToolError::Input(format!("the fetch timed out after {wait:?}")))
             }),
         }
     }

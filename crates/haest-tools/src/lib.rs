@@ -204,4 +204,4 @@ pub use skill::{SkillTool, SkillToolOptions};
 pub use tasks::task_tools;
 pub use tool_search::DeferredTools;
 pub use turn_gate::{AgentTurnGate, AgentTurnSite};
-pub use web_fetch::{WebFetchNet, WebFetchTool, markdown_of};
+pub use web_fetch::{WEB_FETCH_TIMEOUT, WebFetchNet, WebFetchTool, markdown_of};

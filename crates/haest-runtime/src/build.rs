@@ -22,7 +22,7 @@ use haest_tools::DeferredTools;
 
 use crate::{
     BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
-    caps::{bash_options, code_caps},
+    caps::{builtin_options, code_caps},
     inbox, mods,
     parent::RuntimeParent,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
@@ -201,9 +201,9 @@ where
     };
     let own = own_tools(
         &s.tools,
+        builtin_options(s, jobs.clone()),
         board.clone(),
         found.skills.clone(),
-        (bash_options(s), jobs.clone()),
         image,
     );
     let wrapped = Arc::new(WrappedTools::new(

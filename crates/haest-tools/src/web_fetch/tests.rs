@@ -273,3 +273,34 @@ fn the_canonical_input_is_the_url() {
     let c = WebFetchTool::default().canonical_input(&input(json!({"url": "https://a.test/"})));
     assert_eq!(Value::Object(c), json!({"url": "https://a.test/"}));
 }
+
+/// A server that never answers.
+struct Silent;
+
+#[async_trait]
+impl HttpClient for Silent {
+    async fn send(&self, _req: Request) -> Result<Response, HttpError> {
+        std::future::pending().await
+    }
+}
+
+/// A fetch gives up at its net's timeout: the one it was given, else
+/// WEB_FETCH_TIMEOUT.
+#[tokio::test]
+async fn a_fetch_that_never_answers_times_out_at_the_nets_timeout() {
+    let web = Arc::new(FakeWeb::default());
+    let default = WebFetchNet::unguarded(web.clone(), Silent);
+    let shown = format!("{default:?}");
+    assert!(shown.contains("timeout: 30s"), "{shown}");
+    let short = std::time::Duration::from_millis(50);
+    let ws = TestWorkspace::from_files([("/p/.keep", "")]);
+    let started = std::time::Instant::now();
+    let res = WebFetchTool::new(default.with_timeout(short))
+        .execute(input(json!({"url": "https://slow.test/"})), &ctx(ws))
+        .await;
+    assert!(started.elapsed() >= short);
+    match res {
+        Err(ToolError::Input(why)) => assert_eq!(why, "the fetch timed out after 50ms"),
+        other => panic!("not a timeout: {other:?}"),
+    }
+}

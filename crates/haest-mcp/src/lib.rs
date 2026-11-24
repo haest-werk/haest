@@ -57,7 +57,8 @@
 //! # Failures and time limits
 //!
 //! A server that cannot be started, or does not connect or list its tools
-//! within [`CONNECT_TIMEOUT`], is logged and kept in [`McpHub::failures`]. It
+//! within [`CONNECT_TIMEOUT`] ([`McpHub::with_connect_timeout`] sets
+//! another), is logged and kept in [`McpHub::failures`]. It
 //! is never returned as an error: one broken server never takes the harness
 //! down. A tool call runs for at most [`CALL_TIMEOUT`]
 //! ([`McpHub::with_call_timeout`] sets another); a call that times out

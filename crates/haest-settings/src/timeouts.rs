@@ -22,7 +22,9 @@ use crate::units::{de_duration, de_memory, duration_text, memory_text};
 /// bash          = "2m"    # a Bash call that names no timeout
 /// bash_max      = "10m"   # the most a Bash call may ask for; the sandbox shell's ceiling too
 /// model_headers = "10m"   # one try of a model call, until the provider starts answering
+/// mcp_connect   = "15s"   # an MCP server's start, and again its tool list
 /// mcp_call      = "10m"   # one call to an MCP server's tool
+/// web_fetch     = "30s"   # one WebFetch call, redirects and body included
 ///
 /// [timeouts.javascript]
 /// code      = "10m"    # a Code tool run, the tools it calls included
@@ -70,10 +72,20 @@ pub struct TimeoutSettings {
     /// not cut. Default ten minutes.
     #[serde(deserialize_with = "de_duration")]
     pub model_headers: Duration,
+    /// How long an MCP server has to start and answer `initialize`, and
+    /// again to list its tools; past it the server did not start. A server
+    /// run with `npx` or `uvx` may need longer the first time. Default 15
+    /// seconds.
+    #[serde(deserialize_with = "de_duration")]
+    pub mcp_connect: Duration,
     /// How long one call to an MCP server's tool may run; past it the call
     /// fails and is cancelled on the server. Default ten minutes.
     #[serde(deserialize_with = "de_duration")]
     pub mcp_call: Duration,
+    /// How long one WebFetch call may take, every redirect and the body
+    /// included. Default 30 seconds.
+    #[serde(deserialize_with = "de_duration")]
+    pub web_fetch: Duration,
     /// haest's JavaScript: the Code tool, the sandbox `js` command, mod
     /// files.
     pub javascript: JsTimeouts,
@@ -87,7 +99,9 @@ impl Default for TimeoutSettings {
             bash: Duration::from_secs(2 * 60),
             bash_max: Duration::from_secs(10 * 60),
             model_headers: Duration::from_secs(10 * 60),
+            mcp_connect: Duration::from_secs(15),
             mcp_call: Duration::from_secs(10 * 60),
+            web_fetch: Duration::from_secs(30),
             javascript: JsTimeouts::default(),
         }
     }
@@ -232,7 +246,9 @@ impl Serialize for TimeoutSettings {
                 ("bash", t(self.bash), t(d.bash)),
                 ("bash_max", t(self.bash_max), t(d.bash_max)),
                 ("model_headers", t(self.model_headers), t(d.model_headers)),
+                ("mcp_connect", t(self.mcp_connect), t(d.mcp_connect)),
                 ("mcp_call", t(self.mcp_call), t(d.mcp_call)),
+                ("web_fetch", t(self.web_fetch), t(d.web_fetch)),
             ],
             Some(("javascript", &self.javascript, &d.javascript)),
         )
@@ -327,13 +343,17 @@ mod tests {
             "{written}"
         );
         let t = timeouts(
-            "bash = \"5m\"\nbash_max = \"1h\"\nmodel_headers = \"90s\"\nmcp_call = \"30m\"",
+            "bash = \"5m\"\nbash_max = \"1h\"\nmodel_headers = \"90s\"\nmcp_call = \"30m\"\nmcp_connect = \"2m\"\nweb_fetch = \"45s\"",
         )
         .unwrap();
         let mins = |m: u64| Duration::from_secs(m * 60);
         assert_eq!(
             (t.bash, t.bash_max, t.model_headers, t.mcp_call),
             (mins(5), mins(60), Duration::from_secs(90), mins(30))
+        );
+        assert_eq!(
+            (t.mcp_connect, t.web_fetch),
+            (mins(2), Duration::from_secs(45))
         );
         assert_eq!(timeouts(&toml::to_string(&t).unwrap()).unwrap(), t);
 

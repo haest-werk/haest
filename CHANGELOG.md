@@ -9,8 +9,8 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
 
 ### Settings
 
-- `[timeouts]` and `[limits]`: every wait haest has, and its JavaScript's
-  memory, in one place, each value text with its unit (`"30s"`, `"10m"`,
+- `[timeouts]` and `[limits]`: the waits a user meets, and haest's
+  JavaScript's memory, in one place, each value text with its unit (`"30s"`, `"10m"`,
   `"64MiB"`). A number alone is refused, since `30` could be seconds or
   minutes. New settings keys and `HAEST_TIMEOUTS` / `HAEST_LIMITS`.
 
@@ -21,7 +21,9 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   bash          = "2m"    # a Bash call that names no timeout
   bash_max      = "10m"   # the most a Bash call, or a sandbox shell call, runs
   model_headers = "10m"   # one try of a model call, until its headers arrive
+  mcp_connect   = "15s"   # an MCP server's start, and again its tool list
   mcp_call      = "10m"   # one call to an MCP server's tool
+  web_fetch     = "30s"   # one WebFetch call
 
   [timeouts.javascript]
   code      = "10m"   # a Code tool run (was a minute)
@@ -43,11 +45,12 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   `ModFileOptions::with_caps`, `HookHost::with_default_timeout`,
   `ApprovalGate::with_timeout`, `BashOptions::with_max_timeout`,
   `SandboxWorkspace::with_max_timeout`, the providers' and
-  `ProviderRegistry`'s `with_headers_timeout`, and
-  `McpHub::with_call_timeout`. The defaults are public:
-  `haest_tools::{BASH_TIMEOUT, BASH_MAX_TIMEOUT}`,
+  `ProviderRegistry`'s `with_headers_timeout`,
+  `McpHub::with_connect_timeout` and `with_call_timeout`, and
+  `WebFetchNet::with_timeout`. The defaults are public:
+  `haest_tools::{BASH_TIMEOUT, BASH_MAX_TIMEOUT, WEB_FETCH_TIMEOUT}`,
   `haest_workspace::MAX_SHELL_TIMEOUT`, `haest_providers::HEADERS_TIMEOUT`,
-  `haest_mcp::CALL_TIMEOUT`.
+  `haest_mcp::{CONNECT_TIMEOUT, CALL_TIMEOUT}`.
 
 ### Changes
 

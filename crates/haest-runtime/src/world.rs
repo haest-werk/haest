@@ -244,7 +244,10 @@ pub(crate) async fn connect_mcp(
     passed_env: &ChildEnv,
     servers: Vec<McpServerConfig>,
 ) -> McpHub {
-    let hub = McpHub::new().with_call_timeout(hooks.settings().timeouts.mcp_call);
+    let t = &hooks.settings().timeouts;
+    let hub = McpHub::new()
+        .with_connect_timeout(t.mcp_connect)
+        .with_call_timeout(t.mcp_call);
     let Some(child_env) = world.child_env_with(passed_env) else {
         let (stdio, http): (Vec<_>, Vec<_>) = servers
             .into_iter()
