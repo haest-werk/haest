@@ -62,7 +62,7 @@ fn ext_of(media_type: &str) -> &'static str {
     match media_type {
         "image/jpeg" => "jpg",
         "image/webp" => "webp",
-        // Not in the TS haest's table, which saved a GIF reply under a .png name.
+        // Named, or a GIF reply would be saved under a .png name.
         "image/gif" => "gif",
         _ => "png",
     }

@@ -1,4 +1,4 @@
-//! Ported from sandbox-js.test.ts: `js <file>` over a workspace [`Fs`] (here a
+//! `js <file>` over a workspace [`Fs`] (here a
 //! [`MemFs`], standing in for the sandbox's overlay), the way a sandbox shell
 //! builtin calls it.
 

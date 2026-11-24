@@ -11,7 +11,6 @@
 //!
 //! Spend: returned as the output's `cost_usd`, which the loop adds to the turn
 //! and charges to the ledger, so the turn total and the caps both count it.
-//! Ported from the TS haest's `tools/image.ts`.
 //!
 //! PLUG POINT: [`GenerateImageOptions::with_http`] (any
 //! [`HttpClient`](haest_http::HttpClient)) and the API key are the host's;

@@ -40,7 +40,7 @@ fn seqs(r: &Replay<Ev>) -> Vec<u64> {
     r.frames.iter().map(|f| f.seq).collect()
 }
 
-/// replay-buffer.test.ts: frames strictly after the seq asked for.
+/// A replay is the frames strictly after the seq asked for.
 #[test]
 fn since_gives_the_frames_strictly_after_the_seq() {
     let ring = ring_of(10, &notes(3));
@@ -48,8 +48,7 @@ fn since_gives_the_frames_strictly_after_the_seq() {
     assert_eq!((seqs(&r), r.gap), (vec![2, 3], false));
 }
 
-/// replay-buffer.test.ts and agent-events.test.ts: past the capacity the
-/// oldest go, and a replay into them says so.
+/// Past the capacity the oldest go, and a replay into them says so.
 #[test]
 fn an_eviction_is_a_gap_for_a_peer_before_it() {
     let ring = ring_of(2, &notes(4));

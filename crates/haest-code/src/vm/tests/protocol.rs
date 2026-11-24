@@ -1,4 +1,4 @@
-//! The thread protocol (code-vm-run.test.ts `createWorkerHandler`): haest's side
+//! The thread protocol: haest's side
 //! of [`crate::vm::thread`] driven by hand -- calls out, answers and a stop in.
 
 use std::{

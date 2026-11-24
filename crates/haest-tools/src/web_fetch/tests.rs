@@ -1,4 +1,4 @@
-//! Ported from tools/web-fetch.test.ts (WebFetch), over a fake web: no network.
+//! WebFetch over a fake web: no network.
 
 use std::{
     collections::HashMap,

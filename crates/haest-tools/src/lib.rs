@@ -131,8 +131,6 @@
 //! # }
 //! ```
 //!
-//! Ported from the TS haest's `tools/*.ts`.
-//!
 //! [`Tool`]: haest_core::tool::Tool
 //! [`ToolContext`]: haest_core::tool::ToolContext
 //! [`Workspace`]: haest_core::workspace::Workspace

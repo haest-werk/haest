@@ -1,4 +1,4 @@
-//! Ported from code-vm.test.ts: the engine on its thread, stopping, heartbeats,
+//! The engine on its thread, stopping, heartbeats,
 //! the run cap. One run's behaviour is in [`run`], the thread protocol in [`protocol`].
 
 mod protocol;

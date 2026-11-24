@@ -5,7 +5,7 @@
 //! the host counts the turns in a row with no human message between them. From
 //! half the cap each turn's input carries a nudge with the count; at the cap
 //! further messages are HELD -- kept, never dropped -- and ride in with the
-//! human's next message. Ported from the TS haest's `host/agent-turns.ts`.
+//! human's next message.
 //!
 //! The host runs what reaches its [`crate::Inbox`] through [`AgentTurnGate::agent_turn`],
 //! and the human's own messages through [`AgentTurnGate::human`].

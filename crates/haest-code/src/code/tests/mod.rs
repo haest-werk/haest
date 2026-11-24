@@ -1,4 +1,4 @@
-//! Ported from code.test.ts: which tools Code may call, and what a run does with them.
+//! Which tools Code may call, and what a run does with them.
 //! The output format, promises, inner-call rows and see() are in [`output`].
 
 mod output;

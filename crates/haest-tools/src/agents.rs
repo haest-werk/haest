@@ -1,7 +1,6 @@
 //! SUBAGENTS: Agent / SendMessage / StopAgent, and the hub that runs them.
-//! Ported from the TS haest's `tools/agent-tools.ts`, `host/agent-hub.ts` and
-//! `host/agent-run.ts`. The crate docs ("Subagents") say how they work;
-//! [`AgentDirectory`] is the plug point.
+//! The crate docs ("Subagents") say how they work; [`AgentDirectory`] is the
+//! plug point.
 
 mod budget;
 mod events;

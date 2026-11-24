@@ -16,9 +16,9 @@ fn the_walk_starts_below_the_segments_with_no_glob_syntax() {
     assert_eq!(static_prefix("{a,b}/c"), (String::new(), "{a,b}/c".into()));
 }
 
-/// The cases the TS haest's matcher (Bun's glob) was probed with.
+/// Bun's glob language, case by case.
 #[test]
-fn matching_follows_the_ts_haest_glob_language() {
+fn matching_follows_buns_glob_language() {
     let cases = [
         ("*.ts", ".a.ts", true),
         ("*.ts", "a.ts", true),

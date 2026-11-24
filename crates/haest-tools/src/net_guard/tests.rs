@@ -1,4 +1,4 @@
-//! Ported from tools/web-fetch.test.ts (net guard).
+//! The net guard: which addresses WebFetch may reach.
 
 use std::{
     net::IpAddr,

@@ -1,6 +1,6 @@
 //! Running turns: the session runs them (haest-session's driver over the
-//! runtime). What reaches main's inbox while a turn runs is steered into it
-//! (TS `turns.ts`); what is left runs as the next turn, through the gate
+//! runtime). What reaches main's inbox while a turn runs is steered into it;
+//! what is left runs as the next turn, through the gate
 //! (`inbox.rs`); the session file is flushed after every turn. Here: Ctrl+C,
 //! print mode's wait for background work, and the exit code.
 

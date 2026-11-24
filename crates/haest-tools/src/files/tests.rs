@@ -1,4 +1,4 @@
-//! Ported from tools/tools.test.ts (Write + Edit).
+//! Write and Edit.
 
 use std::{path::PathBuf, sync::Arc};
 

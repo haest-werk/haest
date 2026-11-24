@@ -4,7 +4,7 @@
 //! or `{type: 'boolean'}` meaning "takes it". Every refusal names the model and
 //! lists what it takes, so the model fixes the call and tries again.
 //! [`check_image_settings`] is the check; [`describe_model`] the one-line
-//! summary. Ported from the TS haest's `tools/image-settings.ts`.
+//! summary.
 
 mod values;
 

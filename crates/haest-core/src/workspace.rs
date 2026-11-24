@@ -216,8 +216,7 @@ crate::word_enum! {
 }
 
 crate::word_enum! {
-    /// Why a change was not applied. The words are the TS haest's (`ApplyFailure`
-    /// in `overlay-apply.ts`).
+    /// Why a change was not applied, as a word a host can match on.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     #[non_exhaustive]
     pub enum ApplyFailureCode ("apply failure") {

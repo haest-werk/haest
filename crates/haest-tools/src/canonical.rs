@@ -1,7 +1,6 @@
 //! Reading a call's input. [`pick`]: the canonical input shape a host's
 //! transcript renders, built from the raw input by renaming keys. A key the
-//! call did not send stays absent (the TS haest's `undefined`, which JSON
-//! drops), never `null`.
+//! call did not send stays absent, never `null`.
 
 use haest_core::tool::JsonMap;
 

@@ -1,6 +1,5 @@
-//! Ported from core/background-jobs.test.ts, over the real workspace (real
-//! processes, a real process group), plus what the Rust hub adds: any workspace
-//! runs a job, and dropping the hub kills what runs.
+//! Background jobs over the real workspace (real processes, a real process
+//! group); any workspace runs a job, and dropping the hub kills what runs.
 
 mod panics;
 mod set_events;

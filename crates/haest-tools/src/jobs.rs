@@ -1,14 +1,13 @@
 //! BACKGROUND SHELL JOBS: a command the model starts and does not wait for (a dev
-//! server, a long build, a test watcher). Ported from the TS haest's
-//! `core/background-jobs.ts`, plus the host-neutral half of `host/jobs.ts`.
+//! server, a long build, a test watcher).
 //!
 //! A job runs through the conversation's workspace
 //! ([`Workspace::shell_streaming`](haest_core::Workspace::shell_streaming)), so it works over ANY haest workspace: the
 //! real one streams a detached process group's output as it comes, and killing
 //! the job (KillShell, or the hub's last clone being dropped) takes down everything it
 //! spawned; a workspace that cannot stream hands the output over when the job
-//! ends. Whether a conversation offers jobs at all is the host's call (the TS
-//! haest offers none in the sandbox).
+//! ends. Whether a conversation offers jobs at all is the host's call
+//! (haest-runtime offers none in the sandbox).
 //!
 //! Output is kept in a rolling buffer the model reads with BashOutput ("what is
 //! new since I last looked"); it also streams to [`JobEvents::on_output`] for

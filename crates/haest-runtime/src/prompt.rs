@@ -55,8 +55,7 @@ fn claude_dir(s: &Settings) -> PathBuf {
 /// fresh (an edited AGENTS.md takes effect on the next call), the tool names
 /// are the list this call advertises; skills are the list found at start or at
 /// the last /skills, in the prompt only with `skill_catalog`. Main and every
-/// subagent build it the same way, each naming its OWN model and tools (TS
-/// `runtime.ts systemPrompt`).
+/// subagent build it the same way, each naming its OWN model and tools.
 ///
 /// Wrap it in an [`AgentPrompt`] to give an agent its prompt.
 pub(crate) struct RuntimePrompt {

@@ -1,5 +1,5 @@
-//! Ported from tools/image-settings.test.ts. Shapes as the Image API's
-//! `/images/models` published them on 2026-11-05.
+//! An image model's settings checked against its list. Shapes as the Image
+//! API's `/images/models` published them on 2026-11-05.
 
 use serde_json::{Value, json};
 

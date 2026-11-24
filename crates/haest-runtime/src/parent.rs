@@ -1,5 +1,5 @@
-//! Subagents: the library's `SubagentHub` over this conversation (TS
-//! `host/agent-hub.ts`). A subagent gets the conversation's deps, the
+//! Subagents: the library's `SubagentHub` over this conversation. A
+//! subagent gets the conversation's deps, the
 //! mod-wrapped base tools (Code included) behind its own deferral, the system
 //! prompt for ITS model and tools plus what the mods append, and runs on the
 //! conversation's current model and effort unless the call names one. Its life

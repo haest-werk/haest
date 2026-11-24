@@ -1,5 +1,5 @@
-//! Ported from code.test.ts: promises, the output (Claude Code REPL format), inner
-//! calls as transcript rows, and see().
+//! Code's promises, its output (Claude Code REPL format), inner calls as
+//! transcript rows, and see().
 
 use std::sync::Arc;
 

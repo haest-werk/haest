@@ -2,8 +2,8 @@
 //! each with the settings it takes. Read on the first GenerateImage call and
 //! kept an hour; a failed refresh keeps serving the last good copy, and with
 //! none at all the call goes ahead unchecked (no settings to check against).
-//! Ported from the TS haest's `tools/image-catalog.ts`; the copy is held by the
-//! tool's options (shared by their clones), not by the process.
+//! The copy is held by the tool's options (shared by their clones), not by
+//! the process.
 
 use std::{
     collections::HashMap,

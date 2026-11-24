@@ -1,5 +1,5 @@
-//! Ported from tools/image.test.ts. The Image API is a fake HTTP client; the
-//! workspace is in memory. Runs through `run_call`, as the loop does, so a
+//! GenerateImage. The Image API is a fake HTTP client; the workspace is in
+//! memory. Runs through `run_call`, as the loop does, so a
 //! refusal is an error result.
 
 mod overwrite;

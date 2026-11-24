@@ -1,4 +1,4 @@
-//! Ported from tools/tools.test.ts (Read), plus the intercept plug point.
+//! Read, and its intercept plug point.
 
 use std::sync::Arc;
 

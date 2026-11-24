@@ -1,6 +1,5 @@
-//! `xan`: CSV verbs in the sandbox shell, after medialab's xan (the TS
-//! just-bash shell haest's hosts used before had it, and models know it):
-//! headers, count, head, select, filter, sort, groupby, agg, stats, frequency.
+//! `xan`: CSV verbs in the sandbox shell, after medialab's xan (models know
+//! it): headers, count, head, select, filter, sort, groupby, agg, stats, frequency.
 //! The command line is `cli.rs`, reading and writing CSV `table.rs`, the verbs
 //! that compute `verbs.rs`; the expressions are the part of moonblade those
 //! need (`expr/`); the selections are xan's (`select.rs`). Every sandbox has it

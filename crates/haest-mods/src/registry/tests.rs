@@ -17,7 +17,7 @@ use crate::{
     testing::*,
 };
 
-/// The TS test's mod: refuse `bad`, add `!` to anything else, shout the output.
+/// A mod that refuses `bad`, adds `!` to anything else, and shouts the output.
 struct Rewriter;
 
 #[async_trait]
@@ -71,7 +71,7 @@ async fn tool_before_can_refuse_or_rewrite_a_call_and_tool_after_can_rewrite_its
     assert_eq!(echo.ran().len(), 1, "the refused call never ran");
 }
 
-/// The TS test's second mod: a prompt rule, a house rule, a tool and a command.
+/// A mod with a prompt rule, a house rule, a tool and a command.
 struct HouseRules(ToolRef);
 
 #[async_trait]

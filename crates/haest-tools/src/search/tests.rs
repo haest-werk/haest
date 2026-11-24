@@ -1,4 +1,4 @@
-//! Ported from tools/tools.test.ts (Grep; Glob in `glob.rs`). Grep runs against
+//! Grep (Glob is in `glob.rs`). Grep runs against
 //! the REAL rg when it is installed and the sandbox's rg (`sandbox.rs`): the argv
 //! must be one both accept. The exit-code and output handling is pinned with a
 //! scripted workspace.
@@ -55,7 +55,7 @@ impl Workspace for HostRun {
     }
 }
 
-/// The TS fixture on disk: src/a.ts has the needle, src/b.md does not, node_modules has one too.
+/// A project on disk: src/a.ts has the needle, src/b.md does not, node_modules has one too.
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let put = |rel: &str, text: &str| {

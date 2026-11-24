@@ -1,4 +1,4 @@
-//! Glob, ported from tools/tools.test.ts: walks the workspace Fs, newest first, capped.
+//! Glob: walks the workspace Fs, newest first, capped.
 
 use std::time::Duration;
 

@@ -2,7 +2,7 @@
 //! checked by the tool; this sends it and reads the answer
 //! (`data[0].b64_json`, `usage.cost`). A refusal comes back verbatim, with the
 //! provider's own words when it gave them: the model tunes its next call from
-//! it. Ported from the TS haest's `tools/image-request.ts`.
+//! it.
 //!
 //! The tool's two exchanges (`GET /images/models`, `POST /images`) go through
 //! the [`HttpClient`] its options hold

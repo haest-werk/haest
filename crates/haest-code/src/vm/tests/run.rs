@@ -1,4 +1,4 @@
-//! One run's behaviour (code-vm-run.test.ts `runEngine`): the same code the
+//! One run's behaviour: the same code the
 //! engine thread runs, driven through [`super::run`] on a private pool.
 
 use std::{

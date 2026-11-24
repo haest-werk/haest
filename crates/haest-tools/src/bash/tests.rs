@@ -1,4 +1,4 @@
-//! Ported from tools/tools.test.ts (Bash). The workspace is scripted: killing a
+//! Bash. The workspace is scripted: killing a
 //! command at its timeout and sharing one file system with the tools are the
 //! WORKSPACE's job, and haest-workspace's tests defend them. These defend what
 //! Bash asks of the workspace and what it makes of the answer.

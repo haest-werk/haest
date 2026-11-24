@@ -1,8 +1,7 @@
 //! A card file: its frontmatter keys IN ORDER, and its body. Read with haest's
 //! flat frontmatter reader (haest-core's `frontmatter`); written the way the
-//! board's own card store writes (ported from remote-claude's
-//! `project-card-file.ts` + `frontmatter.ts`), so a card both write is the same
-//! bytes either way.
+//! board's own card store writes, so a card both write is the same bytes
+//! either way.
 //!
 //! EVERY KEY SURVIVES A WRITE. A key nobody here knows is written back as it
 //! was read; a block the flat subset cannot represent (a nested mapping, a

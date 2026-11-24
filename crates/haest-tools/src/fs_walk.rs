@@ -4,8 +4,8 @@
 //! through the workspace, so the sandbox's in-memory files are found exactly
 //! like real ones.
 //!
-//! The pattern language is the TS haest's (Bun's glob), as
-//! [`GlobTool`](crate::GlobTool) states it.
+//! The pattern language is Bun's glob, as [`GlobTool`](crate::GlobTool)
+//! states it.
 
 use std::{
     path::{Path, PathBuf},

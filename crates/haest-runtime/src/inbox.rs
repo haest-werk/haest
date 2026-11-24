@@ -41,8 +41,8 @@ impl Inbox for InboxSender {
 /// turn the human did not start passes ([`Runtime::inbox`](crate::Runtime::inbox)).
 ///
 /// It holds the turns the human did not start: a background job that exited,
-/// a subagent's message for main, a background subagent's answer. As the TS
-/// haest's `host/turns.ts`, for a terminal:
+/// a subagent's message for main, a background subagent's answer. For a
+/// terminal:
 ///   - while a turn runs, what arrives is steered into it (read at its next step);
 ///   - what that turn left unread, and what arrived after it, run as the NEXT
 ///     turn -- one at a time, never two at once -- through the ping-pong gate

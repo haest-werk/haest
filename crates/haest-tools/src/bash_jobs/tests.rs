@@ -1,5 +1,5 @@
-//! BashOutput / KillShell / Bash's background switch, and the conversation half
-//! ported from host/jobs.test.ts: a background job's exit wakes the model.
+//! BashOutput / KillShell / Bash's background switch, and the conversation
+//! half: a background job's exit wakes the model.
 
 use std::time::Duration;
 

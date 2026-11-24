@@ -20,7 +20,7 @@ const GLOB_LIMIT: usize = 200;
 /// node_modules and .git are skipped; a cancelled call returns what it found
 /// so far.
 ///
-/// The pattern language is the TS haest's (Bun's glob): `*` stops at `/`,
+/// The pattern language is Bun's glob: `*` stops at `/`,
 /// `**` crosses directories, `?`, `[...]`, `{a,b}`, dot files match, case
 /// matters, and a leading `!` negates the whole pattern.
 #[derive(Debug, Default, Clone)]

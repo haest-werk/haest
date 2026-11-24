@@ -19,8 +19,8 @@ async fn a_workspace_that_cannot_stream_hands_the_output_over_when_it_ends() {
     assert!(r.stdout.is_empty() && r.stderr.is_empty());
 }
 
-/// The TS haest's `ApplyResult`: a failed change is the change's own keys
-/// plus `code` and `reason`.
+/// An apply result as JSON: a failed change is the change's own keys plus
+/// `code` and `reason`.
 #[test]
 fn an_apply_report_has_the_ts_haests_wire_shape() {
     let change = Change::new("/l", ChangeKind::Added);

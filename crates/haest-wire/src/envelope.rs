@@ -216,7 +216,7 @@ mod tests {
     use super::*;
     use crate::Outbound;
 
-    /// Port of framer.test.ts: stamps the envelope and counts up.
+    /// The framer stamps the envelope and counts up.
     #[test]
     fn a_framer_stamps_the_envelope_and_counts_up() {
         static T: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(100);
