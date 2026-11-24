@@ -1,11 +1,22 @@
-//! The `[timeouts.javascript]` and `[limits.javascript]` settings as the
-//! caps each kind of JavaScript run takes: [`code_caps`], [`sandbox_caps`],
-//! [`mod_file_caps`]. haest-code and haest-bridges never read settings; a
-//! Rust host that builds its own sets their caps in code, and these are the
-//! runtime's.
+//! The `[timeouts]` and `[limits]` settings as what each crate takes: the
+//! caps of each kind of JavaScript run ([`code_caps`], [`sandbox_caps`],
+//! [`mod_file_caps`]) and the Bash tool's timeouts ([`bash_options`]). The
+//! crates never read settings; a Rust host that builds its own sets them in
+//! code, and these are the runtime's. The hook, ask, sandbox-shell and
+//! model-headers timeouts are one setter each, at the place the runtime
+//! builds their object.
 
 use haest_code::VmCaps;
 use haest_settings::Settings;
+use haest_tools::BashOptions;
+
+/// The Bash tool's: `bash` when a call names no timeout, and the most it
+/// may ask for ([`bash_ceiling`](haest_settings::TimeoutSettings::bash_ceiling)).
+pub(crate) fn bash_options(s: &Settings) -> BashOptions {
+    BashOptions::default()
+        .with_default_timeout(s.timeouts.bash)
+        .with_max_timeout(s.timeouts.bash_ceiling())
+}
 
 /// The Code tool's: `javascript.code` (the default deadline and the most
 /// the model may ask for) and `code_memory`.
@@ -55,6 +66,13 @@ mod tests {
         assert_eq!(s.timeouts.hook, DEFAULT_HOOK_TIMEOUT);
         assert_eq!(s.timeouts.ask, ASK_TIMEOUT);
         assert_eq!(s.limits.javascript.code_memory, haest_code::VM_MEMORY_BYTES);
+        assert_eq!(s.timeouts.bash, haest_tools::BASH_TIMEOUT);
+        assert_eq!(s.timeouts.bash_max, haest_tools::BASH_MAX_TIMEOUT);
+        assert_eq!(
+            s.timeouts.bash_ceiling(),
+            haest_workspace::MAX_SHELL_TIMEOUT
+        );
+        assert_eq!(s.timeouts.model_headers, haest_providers::HEADERS_TIMEOUT);
     }
 
     #[test]

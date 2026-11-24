@@ -179,7 +179,7 @@ pub use agents::{
     SpawnOutcome, Spend, SubagentBudget, SubagentEvent, SubagentHub, SubagentParent,
     SubagentParentRef, SubagentTypes, agent_tools, subagent_note,
 };
-pub use bash::{BashOptions, BashTool};
+pub use bash::{BASH_MAX_TIMEOUT, BASH_TIMEOUT, BashOptions, BashTool};
 pub use bash_jobs::job_tools;
 pub use builtins::{
     BuiltinOptions, BuiltinTool, MissingOption, ParseBuiltinToolError, builtin_tools,

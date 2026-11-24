@@ -23,11 +23,18 @@ use crate::{
 };
 
 const MIN_TIMEOUT: Duration = Duration::from_secs(1);
-const MAX_TIMEOUT: Duration = Duration::from_secs(600);
+/// A Bash call's timeout when it names none, unless
+/// [`BashOptions::with_default_timeout`] sets another: two minutes.
+pub const BASH_TIMEOUT: Duration = Duration::from_secs(120);
+/// The most a Bash call may ask for, unless
+/// [`BashOptions::with_max_timeout`] sets another: ten minutes.
+pub const BASH_MAX_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// What a host sets on the Bash tool.
 ///
-/// The default: a 120 s timeout, no background jobs.
+/// The default: a [`BASH_TIMEOUT`] timeout, [`BASH_MAX_TIMEOUT`] at most, no
+/// background jobs. haest-runtime sets both from haest's `[timeouts] bash`
+/// and `bash_max`.
 ///
 /// ```
 /// use std::time::Duration;
@@ -45,23 +52,34 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(600);
 #[derive(Debug, Clone)]
 pub struct BashOptions {
     default_timeout: Duration,
+    max_timeout: Duration,
     jobs: Option<JobHub>,
 }
 
 impl Default for BashOptions {
     fn default() -> Self {
         Self {
-            default_timeout: Duration::from_secs(120),
+            default_timeout: BASH_TIMEOUT,
+            max_timeout: BASH_MAX_TIMEOUT,
             jobs: None,
         }
     }
 }
 
 impl BashOptions {
-    /// The timeout when a call names none (clamped to 1 s..600 s).
+    /// The timeout when a call names none (clamped to 1 s..the max timeout).
     #[must_use]
     pub fn with_default_timeout(mut self, timeout: Duration) -> Self {
         self.default_timeout = timeout;
+        self
+    }
+
+    /// The most a call may ask for, in place of [`BASH_MAX_TIMEOUT`] (1 s at
+    /// least). A sandbox workspace has a ceiling of its own: raise it to
+    /// match (haest-workspace's `SandboxWorkspace::with_max_timeout`).
+    #[must_use]
+    pub fn with_max_timeout(mut self, timeout: Duration) -> Self {
+        self.max_timeout = timeout;
         self
     }
 
@@ -85,7 +103,8 @@ impl BashOptions {
 /// in the context's `cwd`.
 ///
 /// Input: `command`, and optional `description` and `timeout` (ms, clamped to
-/// 1 s..600 s; default 120 s, or [`BashOptions::with_default_timeout`]'s). With a job hub it
+/// 1 s..[`BASH_MAX_TIMEOUT`] or [`BashOptions::with_max_timeout`]'s; default
+/// [`BASH_TIMEOUT`], or [`BashOptions::with_default_timeout`]'s). With a job hub it
 /// also takes `run_in_background`, which starts a [`JobHub`] job and returns
 /// at once with its id.
 ///
@@ -118,23 +137,26 @@ impl BashOptions {
 #[derive(Debug, Clone)]
 pub struct BashTool {
     default_timeout: Duration,
+    max_timeout: Duration,
     jobs: Option<JobHub>,
 }
 
 impl BashTool {
-    /// Bash with `opts`; the default timeout is clamped to 1 s..600 s.
+    /// Bash with `opts`; the default timeout is clamped to 1 s..the max.
     pub fn new(opts: BashOptions) -> Self {
+        let max_timeout = opts.max_timeout.max(MIN_TIMEOUT);
         Self {
-            default_timeout: opts.default_timeout.clamp(MIN_TIMEOUT, MAX_TIMEOUT),
+            default_timeout: opts.default_timeout.clamp(MIN_TIMEOUT, max_timeout),
+            max_timeout,
             jobs: opts.jobs,
         }
     }
 
-    /// The call's timeout: its own (in ms) or the default, always within 1s..600s.
+    /// The call's timeout: its own (in ms) or the default, always within 1 s..the max.
     fn timeout(&self, input: &JsonMap) -> Result<Duration, ToolError> {
         let asked =
             opt_count(input, "timeout")?.map_or(self.default_timeout, Duration::from_millis);
-        Ok(asked.clamp(MIN_TIMEOUT, MAX_TIMEOUT))
+        Ok(asked.clamp(MIN_TIMEOUT, self.max_timeout))
     }
 }
 
@@ -230,19 +252,20 @@ impl Tool for BashTool {
         format!(
             "Run a bash command in the working directory and return combined stdout+stderr and the exit code. Each call is a fresh shell (cd does not persist). Default timeout {}s, max {}s.{background} Prefer Read/Grep/Glob for reading and searching files.",
             self.default_timeout.as_secs(),
-            MAX_TIMEOUT.as_secs()
+            self.max_timeout.as_secs()
         )
     }
     fn prompt_guide(&self) -> Option<String> {
         Some("Use Bash for builds, tests, git and anything else.".into())
     }
     fn parameters(&self) -> Value {
+        let most = self.max_timeout.as_millis();
         let mut p = json!({
             "type": "object",
             "properties": {
                 "command": {"type": "string", "description": "The command to run"},
                 "description": {"type": "string", "description": "Short description of what the command does"},
-                "timeout": {"type": "number", "description": format!("Timeout in milliseconds (max {})", MAX_TIMEOUT.as_millis())}
+                "timeout": {"type": "number", "description": format!("Timeout in milliseconds (max {most})")}
             },
             "required": ["command"]
         });

@@ -247,6 +247,7 @@ pub use routing::{
     ProjectRouting, ProviderRouting, RoutingOverride, RoutingPriority, RoutingRule, RoutingScopes,
     parse_routing,
 };
+pub use send::HEADERS_TIMEOUT;
 
 /// A tool result's text as every dialect sends it: never empty.
 pub(crate) fn result_text(msg: &haest_core::messages::ToolResultMessage) -> &str {

@@ -155,11 +155,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod build;
+mod caps;
 mod error;
 mod hooks;
 mod inbox;
 mod inputs;
-mod js_caps;
 mod mods;
 mod parent;
 mod prompt;

@@ -21,9 +21,9 @@ use haest_providers::{CatalogFacts, ProviderRegistry};
 use haest_tools::DeferredTools;
 
 use crate::{
-    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui, inbox,
-    js_caps::code_caps,
-    mods,
+    BuildError, BuildOptions, Runtime, RuntimeHooks, RuntimeInputs, Ui,
+    caps::{bash_options, code_caps},
+    inbox, mods,
     parent::RuntimeParent,
     prompt::{AgentPrompt, RuntimePrompt, skill_options},
     store::{create, open_session, record_given, record_start, restore, start_on},
@@ -158,7 +158,8 @@ where
     let models = models.unwrap_or_else(|| {
         let registry = ProviderRegistry::new(keys.clone())
             .with_custom(providers)
-            .with_http(http.clone());
+            .with_http(http.clone())
+            .with_headers_timeout(settings.timeouts.model_headers);
         match routing {
             Some(routing) => registry.with_routing(routing).into(),
             None => registry.into(),
@@ -202,7 +203,7 @@ where
         &s.tools,
         board.clone(),
         found.skills.clone(),
-        jobs.clone(),
+        (bash_options(s), jobs.clone()),
         image,
     );
     let wrapped = Arc::new(WrappedTools::new(

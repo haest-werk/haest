@@ -1,6 +1,7 @@
 //! [`TimeoutSettings`], the `[timeouts]` setting, and [`LimitSettings`],
-//! `[limits]`: how long haest waits on a hook, on the human and on its
-//! JavaScript, and how much memory that JavaScript gets.
+//! `[limits]`: how long haest waits on a hook, on the human, on a shell
+//! command, on a model and on its JavaScript, and how much memory that
+//! JavaScript gets.
 
 use std::time::Duration;
 
@@ -16,8 +17,11 @@ use crate::units::{de_duration, de_memory, duration_text, memory_text};
 ///
 /// ```toml
 /// [timeouts]
-/// hook = "60s"         # every [[hooks.<event>]] entry; an entry's own `timeout` wins
-/// ask  = "10m"         # a human's Allow/Deny prompt; unanswered, it is a Deny
+/// hook          = "60s"   # every [[hooks.<event>]] entry; an entry's own `timeout` wins
+/// ask           = "10m"   # a human's Allow/Deny prompt; unanswered, it is a Deny
+/// bash          = "2m"    # a Bash call that names no timeout
+/// bash_max      = "10m"   # the most a Bash call may ask for; the sandbox shell's ceiling too
+/// model_headers = "10m"   # one try of a model call, until the provider starts answering
 ///
 /// [timeouts.javascript]
 /// code      = "10m"    # a Code tool run, the tools it calls included
@@ -50,6 +54,21 @@ pub struct TimeoutSettings {
     /// a mod's `ask`); unanswered, it is a Deny. Default ten minutes.
     #[serde(deserialize_with = "de_duration")]
     pub ask: Duration,
+    /// A Bash call's timeout when it names none; past it the command is
+    /// killed. Default two minutes.
+    #[serde(deserialize_with = "de_duration")]
+    pub bash: Duration,
+    /// The most a Bash call may ask for, and the longest the sandbox shell
+    /// runs one call; never below `bash` ([`bash_ceiling`](Self::bash_ceiling)).
+    /// Default ten minutes.
+    #[serde(deserialize_with = "de_duration")]
+    pub bash_max: Duration,
+    /// How long one try of a model call waits for the provider to start
+    /// answering (its status and headers); past it the try fails and is
+    /// retried as a dropped connection is. A stream that has started is
+    /// not cut. Default ten minutes.
+    #[serde(deserialize_with = "de_duration")]
+    pub model_headers: Duration,
     /// haest's JavaScript: the Code tool, the sandbox `js` command, mod
     /// files.
     pub javascript: JsTimeouts,
@@ -60,8 +79,29 @@ impl Default for TimeoutSettings {
         Self {
             hook: Duration::from_secs(60),
             ask: Duration::from_secs(10 * 60),
+            bash: Duration::from_secs(2 * 60),
+            bash_max: Duration::from_secs(10 * 60),
+            model_headers: Duration::from_secs(10 * 60),
             javascript: JsTimeouts::default(),
         }
+    }
+}
+
+impl TimeoutSettings {
+    /// The most a Bash call may take: `bash_max`, or `bash` when that is
+    /// longer, so `bash = "20m"` alone is never cut to ten minutes.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_settings::TimeoutSettings;
+    ///
+    /// let long = TimeoutSettings { bash: Duration::from_secs(1_200), ..TimeoutSettings::default() };
+    /// assert_eq!(long.bash_ceiling(), Duration::from_secs(1_200));
+    /// assert_eq!(TimeoutSettings::default().bash_ceiling(), Duration::from_secs(600));
+    /// ```
+    pub fn bash_ceiling(&self) -> Duration {
+        self.bash_max.max(self.bash)
     }
 }
 
@@ -183,6 +223,9 @@ impl Serialize for TimeoutSettings {
             &[
                 ("hook", t(self.hook), t(d.hook)),
                 ("ask", t(self.ask), t(d.ask)),
+                ("bash", t(self.bash), t(d.bash)),
+                ("bash_max", t(self.bash_max), t(d.bash_max)),
+                ("model_headers", t(self.model_headers), t(d.model_headers)),
             ],
             Some(("javascript", &self.javascript, &d.javascript)),
         )
@@ -276,6 +319,13 @@ mod tests {
             !written.contains("ask") && written.contains("\"90m\""),
             "{written}"
         );
+        let t = timeouts("bash = \"5m\"\nbash_max = \"1h\"\nmodel_headers = \"90s\"").unwrap();
+        let mins = |m: u64| Duration::from_secs(m * 60);
+        assert_eq!(
+            (t.bash, t.bash_max, t.model_headers),
+            (mins(5), mins(60), Duration::from_secs(90))
+        );
+        assert_eq!(timeouts(&toml::to_string(&t).unwrap()).unwrap(), t);
 
         let l = limits("[javascript]\nmod_memory = \"1GiB\"").unwrap();
         assert_eq!(l.javascript.mod_memory, 1 << 30);

@@ -18,9 +18,13 @@ use haest_core::{
 use super::commands::HostCommand;
 use crate::MAX_OUTPUT_BYTES;
 
-/// The per-call timeout is the caller's, at most this: it bounds a runaway
-/// construct, and keeps a deadline an `Instant` can hold.
-const HARD_DEADLINE: Duration = Duration::from_secs(600);
+/// The longest one call runs by default, whatever its caller asks
+/// ([`SandboxWorkspace::with_max_timeout`](crate::SandboxWorkspace::with_max_timeout)
+/// sets another): it bounds a runaway construct.
+pub const MAX_SHELL_TIMEOUT: Duration = Duration::from_secs(600);
+/// The most [`MAX_SHELL_TIMEOUT`]'s replacement may be: a year keeps every
+/// deadline one an `Instant` holds.
+pub(crate) const LONGEST_SHELL_TIMEOUT: Duration = Duration::from_secs(365 * 24 * 3600);
 /// Loop and command budgets per call, generous enough for real scripts.
 const MAX_COMMANDS: usize = 100_000;
 const MAX_LOOP_ITERATIONS: usize = 100_000;
@@ -31,12 +35,14 @@ const EXIT_TIMEOUT: i32 = 124;
 const EXIT_INTERRUPTED: i32 = 130;
 
 /// What a sandbox runs one call over: the shell's file system, the same files
-/// as haest sees them, the host's extra commands and the variables it passes.
+/// as haest sees them, the host's extra commands, the variables it passes and
+/// the longest a call runs.
 pub(crate) struct Shell<'a> {
     pub fs: Arc<dyn FileSystem>,
     pub haest_fs: &'a FsRef,
     pub commands: &'a [ShellCommandRef],
     pub env: &'a ChildEnv,
+    pub max_timeout: Duration,
 }
 
 fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
@@ -59,7 +65,7 @@ fn shell(world: &Shell<'_>, opts: &ExecOptions, ends_at: Instant) -> Bash {
         .username(world.env.get("USER").unwrap_or(USER))
         .limits(
             ExecutionLimits::new()
-                .timeout(HARD_DEADLINE)
+                .timeout(world.max_timeout)
                 .max_commands(MAX_COMMANDS)
                 .max_loop_iterations(MAX_LOOP_ITERATIONS)
                 .max_stdout_bytes(MAX_OUTPUT_BYTES)
@@ -89,9 +95,9 @@ pub(crate) async fn exec(
     positional: &[String],
     opts: ExecOptions,
 ) -> ExecResult {
-    // The shell stops at HARD_DEADLINE whatever the caller asked, and a longer
-    // timeout (`Duration::MAX` for "none") would overflow an `Instant`.
-    let timeout = opts.timeout.min(HARD_DEADLINE);
+    // The shell stops at its max timeout whatever the caller asked, and a
+    // longer timeout (`Duration::MAX` for "none") would overflow an `Instant`.
+    let timeout = opts.timeout.min(world.max_timeout);
     let started = Instant::now();
     let mut bash = shell(&world, &opts, started + timeout);
     // A CPU-bound script never yields to the select below, so the deadline and

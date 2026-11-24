@@ -19,16 +19,17 @@ mod mounts;
 mod workspace;
 mod xan;
 
-use std::{fmt, sync::Arc};
+use std::{fmt, sync::Arc, time::Duration};
 
 use haest_core::{
     ChildEnv, fs::FsRef, remedy::Remedies, shell_command::ShellCommandRef, workspace::ChangeSetRef,
 };
 
+pub use exec::MAX_SHELL_TIMEOUT;
 pub use mounts::{OpenSandboxError, SandboxMounts};
 
 use crate::bridge::{BashkitFsOverHaest, HaestFsOverBashkit};
-use exec::Shell;
+use exec::{LONGEST_SHELL_TIMEOUT, Shell};
 
 /// The commands every sandbox has beyond bashkit's builtins (`xan`). A host's
 /// command of the same name replaces one.
@@ -145,6 +146,8 @@ pub struct SandboxWorkspace {
     /// The variables the host passes the shell.
     env: ChildEnv,
     changes: Option<ChangeSetRef>,
+    /// The longest one call runs, whatever its caller asks.
+    max_timeout: Duration,
 }
 
 impl SandboxWorkspace {
@@ -211,7 +214,31 @@ impl SandboxWorkspace {
             commands: own_commands(),
             env: ChildEnv::default(),
             changes,
+            max_timeout: MAX_SHELL_TIMEOUT,
         }
+    }
+
+    /// The longest one shell call runs, whatever its caller asks, in place of
+    /// [`MAX_SHELL_TIMEOUT`] (ten minutes): haest's `[timeouts] bash_max`.
+    /// Past a year is a year, so every deadline stays one an `Instant` holds.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use haest_core::{MemFs, workspace::{ExecOptions, Workspace}};
+    /// use haest_workspace::SandboxWorkspace;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let ws = SandboxWorkspace::over(MemFs::new()).with_max_timeout(Duration::from_millis(200));
+    /// let r = ws.shell("while true; do :; done", ExecOptions::new("/", Duration::from_secs(60))).await;
+    /// assert!(r.timed_out);
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn with_max_timeout(mut self, timeout: Duration) -> Self {
+        self.max_timeout = timeout.min(LONGEST_SHELL_TIMEOUT);
+        self
     }
 
     /// Variables every command in the shell sees, over the shell's own
@@ -275,6 +302,7 @@ impl SandboxWorkspace {
             haest_fs: &self.fs,
             commands: &self.commands,
             env: &self.env,
+            max_timeout: self.max_timeout,
         }
     }
 }

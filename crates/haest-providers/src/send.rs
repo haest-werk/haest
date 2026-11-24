@@ -27,10 +27,11 @@ use crate::retry::{RetryPolicy, retry_after, should_retry};
 
 pub(crate) use shell::{endpoint_options, sender_provider};
 
-/// How long one try waits for its status and headers unless a provider is
-/// told otherwise (`with_headers_timeout`): ten minutes, as long as the SDKs
+/// How long one try of a model call waits for its status and headers unless
+/// a provider or the registry is told otherwise (`with_headers_timeout`;
+/// haest's `[timeouts] model_headers`): ten minutes, as long as the SDKs
 /// allow.
-pub(crate) const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
+pub const HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// How a provider sends its requests: the HTTP client, the retry policy, and
 /// how long one try waits for its status and headers. Every provider holds

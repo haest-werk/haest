@@ -90,8 +90,39 @@ async fn the_timeout_is_clamped_and_the_default_is_the_hosts() {
     tool.execute(input(json!({"command": "d"})), &ctx(ws.clone()))
         .await
         .unwrap();
+    // A host's max holds the model's ask, and the description says it.
+    let patient = BashTool::new(
+        BashOptions::default()
+            .with_default_timeout(Duration::from_secs(300))
+            .with_max_timeout(Duration::from_secs(1_800)),
+    );
+    for asked in [
+        json!({"command": "e", "timeout": 99_999_999}),
+        json!({"command": "f"}),
+    ] {
+        patient
+            .execute(input(asked), &ctx(ws.clone()))
+            .await
+            .unwrap();
+    }
+    assert!(
+        patient
+            .description()
+            .contains("Default timeout 300s, max 1800s"),
+        "{}",
+        patient.description()
+    );
+    // A default past the max is cut to it.
+    BashTool::new(
+        BashOptions::default()
+            .with_default_timeout(Duration::from_secs(900))
+            .with_max_timeout(Duration::from_secs(60)),
+    )
+    .execute(input(json!({"command": "g"})), &ctx(ws.clone()))
+    .await
+    .unwrap();
     let timeouts: Vec<_> = ws.calls().iter().map(|c| c.timeout.as_secs()).collect();
-    assert_eq!(timeouts, [1, 600, 120, 30]);
+    assert_eq!(timeouts, [1, 600, 120, 30, 1_800, 300, 60]);
     assert!(matches!(
         bash(&ws, json!({"command": "e", "timeout": "soon"})).await,
         Err(ToolError::Input(_))

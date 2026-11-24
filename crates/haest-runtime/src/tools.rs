@@ -18,31 +18,30 @@ use haest_tools::{
 /// Everything but MCP: the built-ins, task tools, Skill (over the host's Fs:
 /// a user skill lives outside any sandbox mount) and GenerateImage.
 ///
-/// The first part of the tools a conversation offers, composed as the TS
-/// haest does (`host/runtime.ts`), each only when its setting turns it on: the built-ins
-/// `tools` names (Bash with background jobs in the real workspace), the task
-/// list, Skill, GenerateImage (`image`), and every connected MCP server's tools
-/// (`mcp`); the Code tool over them (`code`); all of it inside the mods'
-/// `tool.before` / `tool.after` hooks -- [`WrappedTools`], the list every
-/// subagent starts from. Main's list ([`MainTools`]) adds main's agent tools
-/// (`agents`), NOT mod-wrapped; the build defers the MCP schemas behind
-/// ToolSearch (`deferred_tools`) so a big server does not ride on every call.
+/// The first part of the tools a conversation offers, each only when its
+/// setting turns it on: the built-ins `tools` names (Bash with background
+/// jobs in the real workspace), the task list, Skill, GenerateImage
+/// (`image`), and every connected MCP server's tools (`mcp`); the Code tool
+/// over them (`code`); all of it inside the mods' `tool.before` /
+/// `tool.after` hooks -- [`WrappedTools`], the list every subagent starts
+/// from. Main's list ([`MainTools`]) adds main's agent tools (`agents`), NOT
+/// mod-wrapped; the build defers the MCP schemas behind ToolSearch
+/// (`deferred_tools`) so a big server does not ride on every call.
 ///
 /// `picked` is the `tools` setting: only the built-ins it names are made.
 /// The task tools work on `board`, Skill offers what `skills` holds when it is
-/// called, Bash leaves background jobs to `jobs` when there is a hub
+/// called, Bash runs on `bash` ([`bash_options`](crate::caps::bash_options))
+/// and leaves background jobs to `jobs` when there is a hub
 /// ([`jobs_for`](crate::world::jobs_for)), and GenerateImage is there when
 /// `image` is ([`image_options`]).
 pub(crate) fn own_tools(
     picked: &BuiltinTools,
     board: TaskBoard,
     skills: Skills,
-    jobs: Option<JobHub>,
+    (bash, jobs): (BashOptions, Option<JobHub>),
     image: Option<GenerateImageOptions>,
 ) -> Tools {
-    let bash = jobs
-        .into_iter()
-        .fold(BashOptions::default(), BashOptions::with_jobs);
+    let bash = jobs.into_iter().fold(bash, BashOptions::with_jobs);
     let opts = BuiltinOptions::new()
         .with_bash(bash)
         .with_tasks(board)
@@ -114,7 +113,7 @@ impl ToolSource for BaseTools {
     }
 }
 
-/// Every tool but the agent tools, inside the mods' hooks (TS `baseTools()`).
+/// Every tool but the agent tools, inside the mods' hooks.
 ///
 /// A [`ToolSource`]: the conversation's own tools, then every connected MCP
 /// server's tools as they are at each call, then the Code tool when `code` is
@@ -173,7 +172,7 @@ impl ToolSource for WrappedTools {
     }
 }
 
-/// Main's list (TS `tools()`): the wrapped tools and main's agent tools
+/// Main's list: the wrapped tools and main's agent tools
 /// (none when `agents` is off). The build puts it behind haest-tools'
 /// `DeferredTools`, which defers as the `deferred_tools` setting says.
 pub(crate) struct MainTools {
@@ -230,7 +229,37 @@ mod tests {
     /// The own tools `picked` names, with no jobs and no image.
     fn build(picked: &BuiltinTools) -> Tools {
         let skills = Skills::new(haest_core::MemFs::new());
-        own_tools(picked, TaskBoard::default(), skills, None, None)
+        own_tools(
+            picked,
+            TaskBoard::default(),
+            skills,
+            (BashOptions::default(), None),
+            None,
+        )
+    }
+
+    /// The `[timeouts]` Bash settings reach the tool the model sees.
+    #[test]
+    fn bash_says_the_configured_timeouts() {
+        let s = Settings {
+            timeouts: haest_settings::TimeoutSettings {
+                bash: std::time::Duration::from_secs(300),
+                bash_max: std::time::Duration::from_secs(1_800),
+                ..Default::default()
+            },
+            ..crate::testkit::settings()
+        };
+        let bash_only = BuiltinTools::from_words(["bash"]).unwrap();
+        let skills = Skills::new(haest_core::MemFs::new());
+        let opts = (crate::caps::bash_options(&s), None);
+        let tools = own_tools(&bash_only, TaskBoard::default(), skills, opts, None);
+        let bash = tools.iter().find(|t| t.name() == "Bash").unwrap();
+        assert!(
+            bash.description()
+                .contains("Default timeout 300s, max 1800s"),
+            "{}",
+            bash.description()
+        );
     }
 
     #[test]

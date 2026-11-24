@@ -9,7 +9,7 @@ use haest_mods::{
 };
 use haest_providers::http::HttpClientRef;
 
-use crate::{RuntimeHooks, js_caps::mod_file_caps, world::World};
+use crate::{RuntimeHooks, caps::mod_file_caps, world::World};
 
 /// Every mod the settings turn on, mod files read through `fs`, the human's
 /// answers through `gate`.
