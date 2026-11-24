@@ -120,6 +120,25 @@ async fn the_ask_shows_the_whole_command_however_long() {
     assert_eq!(ui.asks()[0].input_preview, command);
 }
 
+/// The ask names the tool call it holds up, so a prompter shows it on that
+/// call; a call run outside the loop has no id, and the ask names none.
+#[tokio::test]
+async fn the_ask_names_the_call_it_holds_up() {
+    let ui = TestUi::answering([ApprovalDecision::Deny, ApprovalDecision::Deny]);
+    let mods = Mods::new(env(ui.clone(), WorkspaceMode::Real), [ApprovalMod::new()]);
+    let tools = wrapped(mods, Tools::from_iter([Probe::new("Bash")]));
+
+    let in_the_loop = ctx().with_tool_call_id("call-7");
+    let _ = tools[0]
+        .execute(bash_call("rm -rf build"), &in_the_loop)
+        .await;
+    let _ = tools[0].execute(bash_call("rm -rf build"), &ctx()).await;
+
+    let asks = ui.asks();
+    assert_eq!(asks[0].tool_use_id.as_deref(), Some("call-7"));
+    assert_eq!(asks[1].tool_use_id, None);
+}
+
 #[tokio::test]
 async fn the_sandbox_never_asks() {
     let ui = TestUi::new();

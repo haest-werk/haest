@@ -263,12 +263,16 @@ impl Mod for ApprovalMod {
             return Ok(Before::Pass);
         };
         // The human approves what runs, all of it: a cut could hide a tail.
-        let req = ApprovalRequest::new(
+        let mut req = ApprovalRequest::new(
             call.name.clone(),
             format!("haest wants to run a command that {why}"),
         )
         .with_input_preview(command.clone())
         .with_key(command);
+        // The call it holds up, so a prompter shows the ask on that call.
+        if let Some(id) = ctx.tool_call_id() {
+            req = req.with_tool_use_id(id);
+        }
         Ok(match haest.ask(req, ctx.cancel()).await {
             ApprovalDecision::Allow => Before::Pass,
             ApprovalDecision::Deny => Before::Deny(format!(
