@@ -578,7 +578,7 @@ fn no_session(store: &Store, cx: &App) -> impl IntoElement {
             "No haest is running with a control socket",
             vec![
                 "Start one with its control socket on:".into(),
-                "haest --control-socket command".into(),
+                "haest --profile claude --control-socket command".into(),
                 format!("Watching {}", store.dir.display()),
             ],
         ),

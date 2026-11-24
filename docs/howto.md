@@ -255,11 +255,13 @@ not supported yet).
 
 ```sh
 cargo install haest-cli haest-gui                      # `haest` and `haest-gui`
-haest --control-socket command --approvals -w real     # one terminal
+haest --profile claude --control-socket command        # one terminal
 haest-gui                                              # another
 ```
 
-`command` lets the window send input, interrupt, switch the model and effort, and answer
+`--profile claude` gives the model its tools and subagents in the real workspace: without a
+profile or `tools`, haest offers none, and the window has no tool calls or approval asks to
+show. `command` lets the window send input, interrupt, switch the model and effort, and answer
 approvals; `watch` only shows. An approval ask goes to the terminal and to the window at once:
 the first answer counts, and the other side stops asking. From a checkout of haest, the window
 builds through its own manifest (it is not in the workspace, so GPUI never builds with haest):

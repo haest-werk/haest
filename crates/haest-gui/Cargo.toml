@@ -1,8 +1,8 @@
 [package]
 name = "haest-gui"
 description = "Experimental: a native window onto the haest sessions running on this machine, over their control sockets: the stream, a turn timeline, the subagent tree and one approval queue"
-# Its own version: experimental, 0.1.0 beside haest 0.7.0 (PLAN.md D45).
-version = "0.1.0"
+# Its own version: experimental, 0.1.x beside haest 0.7.0 (PLAN.md D45).
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"

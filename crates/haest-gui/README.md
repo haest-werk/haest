@@ -48,6 +48,11 @@ socket is off unless you turn it on: `watch` lets haest-gui read the
 conversation; `command` also lets it send input, interrupt, change the model
 and effort, and answer approvals.
 
+haest offers the model no tools unless a profile or the `tools` setting says
+which, so a bare `haest` only talks: no tool cards, no subagents, no approval
+asks. The commands below use the built-in `claude` profile, which turns on
+the file, shell and web tools and subagents, in the real workspace.
+
 ### From crates.io
 
 ```sh
@@ -57,7 +62,7 @@ cargo install haest-cli haest-gui     # puts `haest` and `haest-gui` on your PAT
 Then, in one terminal:
 
 ```sh
-haest --control-socket command        # or HAEST_CONTROL_SOCKET=command
+haest --profile claude --control-socket command   # or HAEST_CONTROL_SOCKET=command
 ```
 
 and in another:
@@ -72,7 +77,7 @@ haest-gui is not a member of haest's workspace (GPUI stays out of every haest
 build), so it is built through its own manifest. From the repository root:
 
 ```sh
-cargo run --release --bin haest -- --control-socket command                 # one terminal
+cargo run --release --bin haest -- --profile claude --control-socket command  # one terminal
 cargo run --release --manifest-path crates/haest-gui/Cargo.toml             # another
 ```
 
@@ -83,8 +88,8 @@ cargo run --release --manifest-path crates/haest-gui/Cargo.toml             # an
   `--control-dir DIR`. `haest-gui --help` lists the flags.
 - **Approvals**: a haest with a `command` socket asks each approval at its own
   terminal and in haest-gui at once. The first answer counts, and the other
-  side stops asking. The approvals mod asks only in the real workspace:
-  `haest --control-socket command --approvals -w real`. With a `watch` socket
+  side stops asking. The approvals mod asks only in the real workspace, which
+  the `claude` profile picks (without it: `-w real`). With a `watch` socket
   haest-gui shows the asks read-only and says to answer them at the terminal.
 - **Input sent to a haest that sits at its own idle prompt waits** until
   someone presses Enter in that terminal (haest's own rule for input from

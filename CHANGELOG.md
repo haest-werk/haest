@@ -6,6 +6,16 @@ versioned on its own, is not in the workspace. Wire formats change only where an
 entry says so: the session file, `--json` NDJSON, `providers.json`,
 `.mcp.json`, the settings keys and the `HAEST_*` variables.
 
+## haest-gui 0.1.1 (2026-11-24)
+
+### Fixes
+
+- haest-gui's way to start a haest (its README, its empty window, docs/howto.md)
+  now names the profile: `haest --profile claude --control-socket command`. The
+  plain `haest --control-socket command` it gave runs a haest with no tools
+  (`tools` is empty unless a profile or the setting names some), so the window
+  had no tool calls, subagents or approval asks to show.
+
 ## 0.7.0 (2026-11-24)
 
 haest-issues 0.6.0 goes with it: nothing in it changed, and its haest-core
