@@ -85,6 +85,11 @@
   event keeps its JSON shape (camelCase keys, same tags): a session written by
   an older haest resumes in a newer one. A change to it is a breaking change,
   named in the CHANGELOG.
+- **The CHANGELOG moves with the code.** A commit that changes what a host,
+  a user or a mod author sees adds its entry under `## Unreleased` in the
+  same commit (Added, Breaking changes, Fixes), naming the crate and the
+  item. A release renames that heading to the version and date. Test-only
+  and internal changes need none.
 - **Tests defend behaviour.** A test fails only when behaviour changed: never
   assert wording, formatting or source text.
 - **Files stay small.** About 300 lines per `.rs` file, tests included in a
