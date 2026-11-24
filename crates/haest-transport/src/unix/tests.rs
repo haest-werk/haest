@@ -453,4 +453,5 @@ async fn closing_the_conversation_ends_the_transport_and_removes_its_files() {
 }
 
 mod panics;
+mod relative_dirs;
 mod stream_ids;

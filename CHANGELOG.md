@@ -38,6 +38,14 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
 - The approval mod's ask names the call it holds up:
   `ApprovalRequest::tool_use_id` is the call's id. It was always None, so a
   host could not show an ask on its call.
+- haest-transport: `running_sessions` and `connect_session` found nothing in
+  a control dir spelled other than the way haest wrote it, relative to the
+  working directory included (`haest ctl list --control-dir ctl`): a
+  discovery file's socket had to equal the path beside the file as the
+  reader spelled it. The socket beside the file is now matched by its
+  directory on disk, and dialed as the reader spells it; a haest given a
+  relative control dir writes its socket's absolute path in the discovery
+  file.
 - A host can run a build, a session listing or a config load on a task of
   its own (`tokio::spawn`): the futures of `haest_runtime::build` (a resume
   of the latest session), `haest_runtime::list_sessions` and

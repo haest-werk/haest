@@ -12,7 +12,7 @@
 use std::{
     fs,
     io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -147,12 +147,15 @@ impl UnixSocket {
         let mut files = Files(vec![socket.clone()]);
         fs::set_permissions(&socket, fs::Permissions::from_mode(0o600))
             .map_err(|e| at("make private", &socket, e))?;
+        // Bound as the host named it (a relative path may fit a socket
+        // address where its absolute one would not); the discovery file
+        // says where it is from any directory.
         let discovery = SocketDiscovery {
             sid: meta.sid,
             pid: meta.pid,
             started_ms: meta.started_ms,
             access: grant.access,
-            socket,
+            socket: std::path::absolute(&socket).unwrap_or(socket),
         };
         files.0.push(file.clone());
         write_private(&file, &discovery)?;
@@ -263,18 +266,20 @@ impl RunningSession {
 /// the one beside its discovery file (`<stream id>.sock`), and the
 /// connection refused or the socket gone. Any other failure (too many open
 /// files) skips the entry and keeps its files, and a discovery file naming
-/// some other path is skipped and kept.
+/// some other path is skipped and kept. `dir` may be relative to the working
+/// directory: the socket is dialed beside the file as `dir` spells it.
 pub async fn running_sessions(dir: &Path) -> Vec<RunningSession> {
     let mut found = Vec::new();
     for (file, discovery) in discoveries(dir) {
-        match UnixStream::connect(&discovery.socket).await {
+        let socket = file.with_extension("sock");
+        match UnixStream::connect(&socket).await {
             Err(e) => {
                 let dead = matches!(
                     e.kind(),
                     std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
                 );
                 if dead {
-                    let _ = fs::remove_file(&discovery.socket);
+                    let _ = fs::remove_file(&socket);
                     let _ = fs::remove_file(&file);
                 }
             }
@@ -333,9 +338,26 @@ fn discoveries(dir: &Path) -> Vec<(PathBuf, SocketDiscovery)> {
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
         .filter_map(|p| {
             let discovery: SocketDiscovery = serde_json::from_slice(&fs::read(&p).ok()?).ok()?;
-            (discovery.socket == p.with_extension("sock")).then_some((p, discovery))
+            beside(&p, &discovery.socket).then_some((p, discovery))
         })
         .collect()
+}
+
+/// `socket` is the one beside the discovery file `file` (`<stream id>.sock`
+/// in its directory): the same path, or the same name in the same directory
+/// however each path spells it (one relative to the working directory, the
+/// other absolute). The directories are compared on disk, device and inode.
+fn beside(file: &Path, socket: &Path) -> bool {
+    let own = file.with_extension("sock");
+    if own == socket {
+        return true;
+    }
+    let dir_of = |path: &Path| {
+        let parent = path.parent().filter(|d| !d.as_os_str().is_empty());
+        let meta = fs::metadata(parent.unwrap_or(Path::new("."))).ok()?;
+        Some((meta.dev(), meta.ino()))
+    };
+    own.file_name() == socket.file_name() && dir_of(&own).is_some_and(|d| dir_of(socket) == Some(d))
 }
 
 /// `dir`, there and the user's own (0700).
