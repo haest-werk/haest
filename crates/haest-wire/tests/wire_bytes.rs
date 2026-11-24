@@ -4,8 +4,8 @@
 //! is, and each line must read back as the value that wrote it.
 
 use haest_wire::{
-    Access, Answer, Control, Envelope, Framer, Inbound, Level, Origin, Outbound, Path, Request,
-    Snapshot, State, UnknownWord, decode,
+    Access, Answer, Answerer, Control, Envelope, Framer, Inbound, Level, Origin, Outbound, Path,
+    Request, Snapshot, State, UnknownWord, decode,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -93,7 +93,10 @@ fn every_outbound_frame_is_the_line_it_was() {
             level: Level::Error,
             text: "e".into(),
         },
-        Outbound::Ask { text: "a".into() },
+        Outbound::Ask {
+            text: "a".into(),
+            approval: None,
+        },
         Outbound::Status(Snapshot {
             state: State::Running,
             session: "x".into(),
@@ -108,6 +111,7 @@ fn every_outbound_frame_is_the_line_it_was() {
         Outbound::ApprovalAsk {
             ask: 3,
             tool_name: "Bash".into(),
+            tool_call_id: None,
             description: "d".into(),
             preview: "p".into(),
             key: Some("k".into()),
@@ -183,6 +187,48 @@ fn every_outbound_frame_is_the_line_it_was() {
     );
 }
 
+/// What the approval asks gained once a conversation at a terminal also
+/// puts them to its peers: the call an ask holds up, the terminal question
+/// that is its other side, and who answered. Each is a field or a frame of
+/// its own, so a reader of the lines above reads these as before.
+#[test]
+fn the_approval_frames_added_since_are_the_lines_they_are() {
+    let frames = [
+        Outbound::ApprovalAsk {
+            ask: 3,
+            tool_name: "Bash".into(),
+            tool_call_id: Some("call-1".into()),
+            description: "d".into(),
+            preview: "p".into(),
+            key: None,
+        },
+        Outbound::Ask {
+            text: "a".into(),
+            approval: Some(3),
+        },
+        Outbound::ApprovalAnswered {
+            ask: 3,
+            answer: Answer::Deny,
+            by: Answerer::Terminal,
+        },
+        Outbound::ApprovalAnswered {
+            ask: 4,
+            answer: Answer::Always,
+            by: Answerer::Peer,
+        },
+    ];
+    let lines = [
+        r#"{"v":1,"sid":"s1","seq":1,"ts":1000,"path":["main"],"type":"approval_ask","ask":3,"toolName":"Bash","toolCallId":"call-1","description":"d","preview":"p"}"#,
+        r#"{"v":1,"sid":"s1","seq":2,"ts":1000,"path":["main"],"type":"ask","text":"a","approval":3}"#,
+        r#"{"v":1,"sid":"s1","seq":3,"ts":1000,"path":["main"],"type":"approval_answered","ask":3,"answer":"deny","by":"terminal"}"#,
+        r#"{"v":1,"sid":"s1","seq":4,"ts":1000,"path":["main"],"type":"approval_answered","ask":4,"answer":"always","by":"peer"}"#,
+    ];
+    let mut framer = Framer::new("s1").with_clock(|| 1000);
+    for (frame, line) in frames.into_iter().zip(lines) {
+        pinned(&framer.stamp(Path::main(), frame), line);
+    }
+}
+
 /// Each word is the JSON string it was, and its text both ways.
 fn word<T>(value: T, word: &str)
 where
@@ -213,6 +259,8 @@ fn every_word_is_the_word_it_was() {
     word(Level::Info, "info");
     word(Level::Warning, "warning");
     word(Level::Error, "error");
+    word(Answerer::Terminal, "terminal");
+    word(Answerer::Peer, "peer");
 }
 
 /// A word a type does not know is refused the same way as text and as JSON.

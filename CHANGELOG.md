@@ -32,6 +32,31 @@ entry says so: the session file, `--json` NDJSON, `providers.json`,
   listener) in place of the default one.
 - `Runtime::command`: a `/name args` line as the conversation runs it, a
   mod's command, else a skill's; the REPL and print mode go through it.
+- A haest at a terminal with a `command` control socket (or a broker link
+  with `command` access) puts each approval ask to those peers too, as an
+  `approval_ask` frame, as a `--stdio` run did. The first answer wins,
+  typed at the terminal or sent by a peer, and the other side stops
+  asking: a peer's answer ends the terminal's question (it says another
+  program answered), and the terminal's is said on the stream. A terminal
+  that cannot ask still refuses at once; a `watch` socket changes nothing.
+- haest-wire, additive (the version stays 1, every line a reader read before
+  is as it was): `approval_answered` (`ask`, `answer`, `by`: `terminal` or
+  `peer`, the new word type `Answerer`) for every answered ask, so a peer
+  drops an ask answered elsewhere at once; `approval_ask` names the call it
+  holds up (`toolCallId`, from `ApprovalRequest::tool_use_id`); `ask` names
+  the approval ask a terminal question is the other side of (`approval`).
+  Every ask now ends in exactly one `approval_answered` or
+  `approval_withdrawn`.
+- haest-session: `SessionPrompter::open` and `OpenAsk`, for a host that also
+  asks the human itself: it puts the ask to the peers, and takes the first
+  answer, a peer's (`peer_answer`) or its own (`answered_at_terminal`).
+
+### Breaking changes
+
+- haest-wire's `Outbound::Ask` and `Outbound::ApprovalAsk` gain a field each,
+  `approval` and `tool_call_id` (both optional, left out of the line when
+  None): a struct literal names them (`approval: None`), and a pattern
+  without `..` does too. The wire's lines are unchanged.
 
 ### Fixes
 

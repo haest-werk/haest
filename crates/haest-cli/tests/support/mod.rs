@@ -83,6 +83,48 @@ impl Drop for Home {
     }
 }
 
+/// A control dir short enough for a socket path (a temp dir's own path can
+/// be most of the 104 bytes one may have); gone at the end.
+pub(crate) struct ControlDir(pub PathBuf);
+
+impl ControlDir {
+    pub(crate) fn new(name: &str) -> Self {
+        let dir = PathBuf::from(format!("/tmp/hc-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        Self(dir)
+    }
+
+    pub(crate) fn flag(&self) -> String {
+        format!("--control-dir={}", self.0.display())
+    }
+
+    /// The one session's id, once its discovery file is there.
+    pub(crate) fn sid(&self) -> String {
+        for _ in 0..500 {
+            let found = std::fs::read_dir(&self.0).ok().and_then(|entries| {
+                entries
+                    .filter_map(|e| e.ok()?.path().file_name()?.to_str().map(String::from))
+                    .find_map(|n| n.strip_suffix(".json").map(String::from))
+            });
+            if let Some(sid) = found {
+                return sid;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("no discovery file in {}", self.0.display());
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        std::fs::read_dir(&self.0).map_or(true, |mut d| d.next().is_none())
+    }
+}
+
+impl Drop for ControlDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// The variable the `local` provider's key is read from, with a value.
 pub(crate) const LOCAL_KEY: (&str, &str) = ("LOCAL_KEY", "k");
 

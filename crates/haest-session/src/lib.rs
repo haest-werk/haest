@@ -20,7 +20,9 @@
 //!   [`Frame`]s: the wire's envelope around a [`Body`], the conversation's
 //!   events or the wire's own frames.
 //! - [`SessionPrompter`] (feature `approvals`): approval asks answered by a
-//!   peer, for a conversation with no terminal.
+//!   peer, for a conversation with no terminal; with one, [`OpenAsk`] puts
+//!   each ask to the peers and the terminal at once, and the first answer
+//!   wins.
 //!
 //! Through the facade this crate is `haest::session` (feature `session`, not
 //! default). Nothing here reads a file, a variable or a socket: a transport
@@ -31,7 +33,8 @@
 //! 1. Make the [`Hub`] first, with the stream's id: whatever the build says
 //!    (a notice through the host's UI) is already in the stream.
 //! 2. Build the conversation, its prompter a [`SessionPrompter`] over the hub
-//!    when nobody sits at a terminal.
+//!    when nobody sits at a terminal (or one that races its own question
+//!    against [`SessionPrompter::open`] when someone does).
 //! 3. [`start`] the session over it; subscribe the host's own display, attach
 //!    transports.
 //! 4. Drive it through the handle; [`SessionHandle::close`] at the end stops
@@ -122,7 +125,7 @@ pub use handle::{Hold, PendingTurn, SessionHandle, start};
 pub use hub::{Hub, HubOptions};
 #[cfg(feature = "approvals")]
 #[cfg_attr(docsrs, doc(cfg(feature = "approvals")))]
-pub use prompter::SessionPrompter;
+pub use prompter::{OpenAsk, SessionPrompter};
 pub use subscription::Subscription;
 
 /// A boxed future borrowing for `'a`: what a [`SessionHandle::with`] closure returns.

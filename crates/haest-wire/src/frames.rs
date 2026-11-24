@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::words::word_enum;
+use crate::{Answer, words::word_enum};
 
 word_enum! {
     /// What a peer may do: watch the stream, or also send turns, control verbs
@@ -45,6 +45,19 @@ word_enum! {
         Warning = "warning",
         /// Something failed.
         Error = "error",
+    }
+}
+
+word_enum! {
+    /// Who answered an approval ask ([`Outbound::ApprovalAnswered`]). More
+    /// may come: a `match` has a `_` arm.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[non_exhaustive]
+    pub enum Answerer ("answerer") {
+        /// The human at the conversation's own terminal.
+        Terminal = "terminal",
+        /// A peer with `command` access (`approval_answer`).
+        Peer = "peer",
     }
 }
 
@@ -147,7 +160,7 @@ impl std::fmt::Debug for Token {
 /// The frames the wire adds beside the conversation's events. Tagged by
 /// `type` (`snake_case`), fields `camelCase`, as the events are.
 ///
-/// The first seven are stream frames; [`Hello`](Self::Hello),
+/// The first eight are stream frames; [`Hello`](Self::Hello),
 /// [`Gap`](Self::Gap) and [`Reply`](Self::Reply) belong to one connection
 /// (the [crate docs](crate) say what that means for their `seq`). A new frame
 /// type is additive on the wire, so a `match` has a `_` arm.
@@ -170,17 +183,29 @@ pub enum Outbound {
     Ask {
         /// The question.
         text: String,
+        /// The approval ask this question is the terminal's side of (a
+        /// conversation at a terminal also puts its approval asks to its
+        /// peers): that ask's `approval_answered` or `approval_withdrawn`
+        /// ends this question too. None: a question only the terminal asks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approval: Option<u64>,
     },
     /// The conversation's state changed: a turn started or ended, the model,
     /// effort or session changed, a turn was queued.
     Status(Snapshot),
     /// A tool call waits for approval; a peer with `command` access answers
-    /// it with `approval_answer`.
+    /// it with `approval_answer`. A conversation at a terminal asks there
+    /// too ([`Ask`](Self::Ask) with this `approval`): the first answer wins,
+    /// and [`ApprovalAnswered`](Self::ApprovalAnswered) says whose it was.
     ApprovalAsk {
         /// The ask's number, for the answer.
         ask: u64,
         /// The tool that asks.
         tool_name: String,
+        /// The tool call the ask holds up (its `tool_call_start` id), when
+        /// the ask names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<String>,
         /// What the call would do.
         description: String,
         /// Its input for display: a shell command whole (it is what runs).
@@ -195,6 +220,16 @@ pub enum Outbound {
     ApprovalWithdrawn {
         /// The ask's number.
         ask: u64,
+    },
+    /// The ask is answered: the call goes on (or is refused) as `answer`
+    /// says. A later answer is refused.
+    ApprovalAnswered {
+        /// The ask's number.
+        ask: u64,
+        /// The answer that counts: the first one given.
+        answer: Answer,
+        /// Who gave it.
+        by: Answerer,
     },
     /// A subagent's turn is about to run; its path holds its id.
     SubagentStarted {

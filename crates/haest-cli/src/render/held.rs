@@ -27,7 +27,7 @@ pub(super) struct Question {
 /// What `frame`, an `ask`, asks.
 fn asks(frame: &Frame) -> &str {
     match &frame.body {
-        Body::Wire(Outbound::Ask { text }) => text,
+        Body::Wire(Outbound::Ask { text, .. }) => text,
         // Only an ask is a question (`TermUi::ask` makes it).
         _ => "",
     }
@@ -251,7 +251,8 @@ impl<O: Write, E: Write> Renderer<O, E> {
     pub(super) fn ask(&mut self, question: &str) {
         if self.json {
             let text = question.to_string();
-            return self.json_line(haest::wire::Outbound::Ask { text });
+            let approval = None;
+            return self.json_line(haest::wire::Outbound::Ask { text, approval });
         }
         self.note(YELLOW, question);
     }

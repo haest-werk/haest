@@ -5,7 +5,9 @@
 //! reader at a time: asks from main and from subagents take turns, and one
 //! raised while the REPL prompt is open waits for it (announced above the
 //! prompt). Driven over stdio, the parent answers them instead
-//! ([`CliPrompter::Session`]).
+//! ([`CliPrompter::Session`]); at a terminal with peers that may answer (a
+//! `command` control socket or broker link), both are asked and the first
+//! answer wins ([`CliPrompter::Shared`]).
 
 mod question;
 
@@ -15,7 +17,7 @@ use async_trait::async_trait;
 use haest::{
     mods::{ApprovalAnswer, ApprovalRequest, Prompter},
     runtime::Ui,
-    session::SessionPrompter,
+    session::{OpenAsk, SessionPrompter},
 };
 
 use self::question::question;
@@ -45,9 +47,11 @@ fn answer(line: Option<&str>) -> ApprovalAnswer {
     }
 }
 
-#[async_trait]
-impl Prompter for TermPrompter {
-    async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
+impl TermPrompter {
+    /// Asks `req` on the terminal. `approval`: the number the same ask has
+    /// on the session's stream, when peers are asked too (the question's
+    /// frame names it, so a peer knows the two are one ask).
+    async fn ask(&self, req: &ApprovalRequest, approval: Option<u64>) -> ApprovalAnswer {
         if let Err(why) = self.interactive {
             self.ui.refused(&format!(
                 "Denied {}: {} -- approval needed and {why} (--approvals=false turns approvals off).",
@@ -72,7 +76,7 @@ impl Prompter for TermPrompter {
         };
         // Nothing else reaches the screen until it is answered, or given up
         // (the read dropped: the guard lets go then too).
-        let mut answering = self.ui.ask(&question(req));
+        let mut answering = self.ui.ask(&question(req), approval);
         // Only what is typed once the question is on the screen answers it.
         if !answering.drawn().await {
             return ApprovalAnswer::Deny;
@@ -80,6 +84,13 @@ impl Prompter for TermPrompter {
         let line = ask::read_answer().await;
         answering.answered(line.as_deref());
         answer(line.as_deref())
+    }
+}
+
+#[async_trait]
+impl Prompter for TermPrompter {
+    async fn prompt(&self, req: &ApprovalRequest) -> ApprovalAnswer {
+        self.ask(req, None).await
     }
 
     fn auto_approved(&self, req: &ApprovalRequest) {
@@ -90,11 +101,29 @@ impl Prompter for TermPrompter {
     }
 }
 
-/// Who answers approval asks: the human at the terminal, or the parent that
-/// drives haest over stdio (each ask an `approval_ask` frame).
+/// Who answers approval asks: the human at the terminal, the parent that
+/// drives haest over stdio (each ask an `approval_ask` frame), or both.
 pub(crate) enum CliPrompter {
     Term(TermPrompter),
     Session(SessionPrompter),
+    /// At a terminal whose peers may answer too (a `command` control socket
+    /// or broker link): each ask goes to both, and the first answer wins
+    /// ([`first_answer`]).
+    Shared(TermPrompter, SessionPrompter),
+}
+
+/// The first answer to `open`, a peer's or `terminal`'s, which asks the same
+/// on the terminal. The other side's question is withdrawn: a peer's answer
+/// drops the terminal's read (it stops waiting, and the line it showed
+/// ends); the terminal's answer is said on the stream, so peers drop theirs.
+async fn first_answer(
+    mut open: OpenAsk,
+    terminal: impl Future<Output = ApprovalAnswer>,
+) -> ApprovalAnswer {
+    tokio::select! {
+        answer = open.peer_answer() => answer,
+        answer = terminal => open.answered_at_terminal(answer),
+    }
 }
 
 #[async_trait]
@@ -104,12 +133,18 @@ impl Prompter for CliPrompter {
         match self {
             Self::Term(p) => p.prompt(req).await,
             Self::Session(p) => p.prompt(req).await,
+            Self::Shared(term, peers) => {
+                let open = peers.open(req);
+                let approval = open.ask();
+                first_answer(open, term.ask(req, Some(approval))).await
+            }
         }
     }
 
     fn auto_approved(&self, req: &ApprovalRequest) {
         match self {
-            Self::Term(p) => p.auto_approved(req),
+            // The terminal's line goes into the stream the peers read.
+            Self::Term(p) | Self::Shared(p, _) => p.auto_approved(req),
             Self::Session(p) => p.auto_approved(req),
         }
     }

@@ -790,7 +790,7 @@ flag          --stdio
 ### `control_socket`
 
 A Unix socket another program on this machine reaches the conversation through (haest ctl): off, watch (its stream, a snapshot, the history) or command (turns, interrupts, changes and approval answers too).
-The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. Never from a project's file: a repository cannot open a socket into your conversation.
+The socket goes in `control_dir`, named after the conversation's stream id and readable by you only (the dir 0700, the socket 0600), with a discovery file beside it that `haest ctl list` reads; both go when haest exits. What arrives over a command socket is another program's input: it counts against `max_agent_turns`, and at an open prompt it waits for Enter. At a terminal, a command socket's programs are asked each approval too: the first answer counts, theirs or the one typed at the terminal, and the other side stops asking. Never from a project's file: a repository cannot open a socket into your conversation.
 
 - Takes: one of `off`, `watch`, `command`
 - Default: `off`

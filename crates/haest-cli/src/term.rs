@@ -89,11 +89,13 @@ impl TermUi {
     /// `ask.rs`): it goes into the stream, and once the terminal draws it,
     /// everything else the stream carries waits until the guard says it was
     /// answered (or drops, an ask given up), so the question stays the last
-    /// thing on the screen while the human reads it.
-    pub(crate) fn ask(&self, question: &str) -> Answering<'_> {
+    /// thing on the screen while the human reads it. `approval`: the
+    /// approval ask peers were given for the same question.
+    pub(crate) fn ask(&self, question: &str, approval: Option<u64>) -> Answering<'_> {
         let (tell, drawn) = oneshot::channel();
         let ask = Outbound::Ask {
             text: question.to_string(),
+            approval,
         };
         // Under the terminal's lock: the renderer knows which frame is the
         // question before it can draw that frame.

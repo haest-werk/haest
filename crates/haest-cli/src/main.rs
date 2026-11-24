@@ -289,6 +289,13 @@ fn broker_link(
     }
 }
 
+/// A peer may answer approval asks: the control socket or the broker link
+/// gives `command` access. A run at a terminal then asks both.
+fn peers_answer(control: ControlSocket, (url, access, _): &BrokerLink) -> bool {
+    let broker = url.as_deref().is_some_and(|u| !u.trim().is_empty());
+    matches!(control, ControlSocket::Command) || (broker && matches!(access, BrokerAccess::Command))
+}
+
 /// `1 background job`, `2 background jobs`.
 fn count(n: usize, noun: &str) -> String {
     format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
@@ -427,7 +434,13 @@ async fn main() -> ExitCode {
     let prompter = if stdio {
         CliPrompter::Session(SessionPrompter::new(hub.clone()))
     } else {
-        CliPrompter::Term(TermPrompter::new(ui.clone(), ask::interactive(args.json)))
+        let interactive = ask::interactive(args.json);
+        let term = TermPrompter::new(ui.clone(), interactive);
+        if interactive.is_ok() && peers_answer(control.0, &broker) {
+            CliPrompter::Shared(term, SessionPrompter::new(hub.clone()))
+        } else {
+            CliPrompter::Term(term)
+        }
     };
     let opts = cli.build_options();
     let inputs = haest::runtime_inputs(loaded);

@@ -7,7 +7,7 @@ use std::{
 };
 
 use haest_core::LoopEvent;
-use haest_wire::{Answer, Framer, Level, Outbound, Path, Ring};
+use haest_wire::{Answer, Answerer, Framer, Level, Outbound, Path, Ring};
 use tokio::sync::{broadcast, oneshot};
 
 use crate::{Body, Frame, SessionError, Subscription};
@@ -89,6 +89,7 @@ struct Asks {
 #[cfg(feature = "approvals")]
 pub(crate) struct AskInfo {
     pub tool_name: String,
+    pub tool_call_id: Option<String>,
     pub description: String,
     pub preview: String,
     pub key: Option<String>,
@@ -234,6 +235,7 @@ impl Hub {
         let frame = Outbound::ApprovalAsk {
             ask,
             tool_name: info.tool_name,
+            tool_call_id: info.tool_call_id,
             description: info.description,
             preview: info.preview,
             key: info.key,
@@ -252,7 +254,22 @@ impl Hub {
         }
     }
 
-    /// A peer's answer to the ask `ask`.
+    /// The ask was answered on the conversation's own side (`by`, the
+    /// terminal), not by a peer: a peer's answer now is refused, and the
+    /// stream says who answered. False, and nothing published, when it no
+    /// longer waits (a peer answered first, or it was withdrawn).
+    #[cfg(feature = "approvals")]
+    pub(crate) fn answered(&self, ask: u64, answer: Answer, by: Answerer) -> bool {
+        let waiting = self.lock().asks.waiting.remove(&ask);
+        if waiting.is_some() {
+            self.publish(Path::main(), Outbound::ApprovalAnswered { ask, answer, by });
+        }
+        waiting.is_some()
+    }
+
+    /// A peer's answer to the ask `ask`. The first answer wins: the stream
+    /// says it was a peer's (`approval_answered`), and a later one, from a
+    /// peer or the terminal, is refused.
     ///
     /// # Errors
     ///
@@ -260,10 +277,18 @@ impl Hub {
     /// withdrawn, or never asked).
     pub fn answer(&self, ask: u64, answer: Answer) -> Result<(), SessionError> {
         let waiting = self.lock().asks.waiting.remove(&ask);
-        match waiting.map(|tx| tx.send(answer)) {
-            Some(Ok(())) => Ok(()),
-            _ => Err(SessionError::NoSuchAsk { ask }),
+        let Some(prompt) = waiting else {
+            return Err(SessionError::NoSuchAsk { ask });
+        };
+        if prompt.send(answer).is_err() {
+            // Its prompt was given up on and is about to withdraw it; it is
+            // no longer listed, so the stream is told here.
+            self.publish(Path::main(), Outbound::ApprovalWithdrawn { ask });
+            return Err(SessionError::NoSuchAsk { ask });
         }
+        let by = Answerer::Peer;
+        self.publish(Path::main(), Outbound::ApprovalAnswered { ask, answer, by });
+        Ok(())
     }
 }
 

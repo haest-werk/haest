@@ -1,4 +1,6 @@
 mod idle;
+#[cfg(feature = "approvals")]
+mod open_ask;
 mod support;
 
 use std::{

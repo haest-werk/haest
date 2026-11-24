@@ -6,7 +6,7 @@ use std::io::Write;
 use haest::{
     LoopEvent,
     session::{Body, Frame},
-    wire::{Outbound, State, encode_line},
+    wire::{Answer, Answerer, Outbound, State, encode_line},
 };
 
 use super::{DIM, Level, Renderer};
@@ -49,7 +49,15 @@ impl<O: Write, E: Write> Renderer<O, E> {
     fn wire(&mut self, seq: u64, frame: &Outbound, subagent: Option<&str>) {
         match (frame, subagent) {
             (Outbound::Notice { level, text }, _) => self.notice(*level, text),
-            (Outbound::Ask { text }, _) => self.asked(seq, text),
+            // A watcher read the approval ask's line: the terminal's
+            // question on the same ask says it again.
+            (
+                Outbound::Ask {
+                    approval: Some(_), ..
+                },
+                _,
+            ) if self.watching => {}
+            (Outbound::Ask { text, .. }, _) => self.asked(seq, text),
             (Outbound::Status(now), None) => {
                 // Only another program queues input while the prompt is
                 // open (the human's own line waits for it to close).
@@ -66,7 +74,9 @@ impl<O: Write, E: Write> Renderer<O, E> {
                     self.usage(&usage, now.usd);
                 }
             }
-            // A watcher's view of an ask another peer answers.
+            // A watcher's view of an ask another peer answers. At the
+            // conversation's own terminal the ask is its own question,
+            // drawn as one, and given up with it.
             (
                 Outbound::ApprovalAsk {
                     ask,
@@ -75,12 +85,15 @@ impl<O: Write, E: Write> Renderer<O, E> {
                     ..
                 },
                 _,
-            ) => self.notice(
+            ) if self.watching => self.notice(
                 Level::Warning,
                 &format!("{tool_name} asks for approval: {description} (ask {ask})"),
             ),
-            (Outbound::ApprovalWithdrawn { ask }, _) => {
+            (Outbound::ApprovalWithdrawn { ask }, _) if self.watching => {
                 self.note(DIM, &format!("(approval ask {ask} withdrawn)"));
+            }
+            (Outbound::ApprovalAnswered { ask, answer, by }, _) => {
+                self.approval_answered(*ask, *answer, *by);
             }
             (
                 Outbound::SubagentStarted {
@@ -106,6 +119,30 @@ impl<O: Write, E: Write> Renderer<O, E> {
             }
             _ => {}
         }
+    }
+
+    /// Approval ask `ask` was answered `answer` by `by`. A watcher reads
+    /// who answered; at the conversation's own terminal only a peer's
+    /// answer is news (the human typed their own): it is why the question
+    /// above ended.
+    fn approval_answered(&mut self, ask: u64, answer: Answer, by: Answerer) {
+        if self.watching {
+            let who = match by {
+                Answerer::Terminal => "at its terminal",
+                _ => "by another program",
+            };
+            let line = format!("(approval ask {ask} answered {who}: {answer})");
+            return self.note(DIM, &line);
+        }
+        if by == Answerer::Terminal {
+            return;
+        }
+        let text = match answer {
+            Answer::Allow => "Another program allowed it.",
+            Answer::Always => "Another program allowed it, and the same from now on.",
+            _ => "Another program denied it.",
+        };
+        self.notice(Level::Info, text);
     }
 }
 
@@ -148,26 +185,83 @@ mod tests {
         assert!(err.is_empty() && out.is_empty());
     }
 
+    fn approval_ask(ask: u64) -> Outbound {
+        Outbound::ApprovalAsk {
+            ask,
+            tool_name: "Bash".into(),
+            tool_call_id: Some("call-1".into()),
+            description: "delete the build dir".into(),
+            preview: "rm -rf build".into(),
+            key: None,
+        }
+    }
+
+    fn answered(ask: u64, answer: Answer, by: Answerer) -> Outbound {
+        Outbound::ApprovalAnswered { ask, answer, by }
+    }
+
     #[test]
-    fn an_approval_ask_and_its_withdrawal_are_lines_for_a_watcher() {
+    fn an_approval_ask_and_its_ending_are_lines_for_a_watcher() {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         {
-            let mut r = Renderer::new(&mut out, &mut err, false, false);
-            let ask = Outbound::ApprovalAsk {
-                ask: 3,
-                tool_name: "Bash".into(),
-                description: "delete the build dir".into(),
-                preview: "rm -rf build".into(),
-                key: None,
+            let mut r = Renderer::new(&mut out, &mut err, false, false).watching();
+            r.frame(&wire_frame(1, approval_ask(3)));
+            // The terminal's own question on the same ask: said already.
+            let twin = Outbound::Ask {
+                text: "Allow Bash? [y]es / [a]lways / [N]o: ".into(),
+                approval: Some(3),
             };
-            r.frame(&wire_frame(1, ask));
-            r.frame(&wire_frame(2, Outbound::ApprovalWithdrawn { ask: 3 }));
+            r.frame(&wire_frame(2, twin));
+            r.frame(&wire_frame(3, Outbound::ApprovalWithdrawn { ask: 3 }));
+            r.frame(&wire_frame(4, approval_ask(4)));
+            r.frame(&wire_frame(
+                5,
+                answered(4, Answer::Deny, Answerer::Terminal),
+            ));
+            r.frame(&wire_frame(6, approval_ask(5)));
+            r.frame(&wire_frame(7, answered(5, Answer::Allow, Answerer::Peer)));
         }
         let err = String::from_utf8(err).unwrap();
         assert!(
             err.contains("Bash asks for approval: delete the build dir"),
             "{err}"
         );
+        assert!(!err.contains("[y]es"), "the question twice: {err}");
         assert!(err.contains("withdrawn"), "{err}");
+        assert!(
+            err.contains("ask 4 answered at its terminal: deny"),
+            "{err}"
+        );
+        assert!(
+            err.contains("ask 5 answered by another program: allow"),
+            "{err}"
+        );
+    }
+
+    /// At the conversation's own terminal an approval ask is the terminal's
+    /// own question: its frames add no line, except a peer's answer, which
+    /// says why the question ended.
+    #[test]
+    fn at_its_own_terminal_only_a_peers_answer_is_a_line() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        {
+            let mut r = Renderer::new(&mut out, &mut err, false, false);
+            r.frame(&wire_frame(1, approval_ask(3)));
+            r.frame(&wire_frame(2, Outbound::ApprovalWithdrawn { ask: 3 }));
+            r.frame(&wire_frame(3, approval_ask(4)));
+            r.frame(&wire_frame(
+                4,
+                answered(4, Answer::Deny, Answerer::Terminal),
+            ));
+        }
+        assert!(err.is_empty(), "{}", String::from_utf8_lossy(&err));
+        {
+            let mut r = Renderer::new(&mut out, &mut err, false, false);
+            r.frame(&wire_frame(1, approval_ask(5)));
+            r.frame(&wire_frame(2, answered(5, Answer::Deny, Answerer::Peer)));
+        }
+        let err = String::from_utf8(err).unwrap();
+        assert!(err.contains("Another program denied it."), "{err}");
+        assert!(out.is_empty());
     }
 }

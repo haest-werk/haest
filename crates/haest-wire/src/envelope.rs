@@ -102,7 +102,7 @@ impl<'de> Deserialize<'de> for Path {
 /// use haest_wire::{Envelope, Framer, Outbound, Path};
 ///
 /// let mut framer = Framer::new("s1").with_clock(|| 1000);
-/// let frame = framer.stamp(Path::main(), Outbound::Ask { text: "Allow?".into() });
+/// let frame = framer.stamp(Path::main(), Outbound::Ask { text: "Allow?".into(), approval: None });
 /// let line = serde_json::to_string(&frame)?;
 /// assert_eq!(line, r#"{"v":1,"sid":"s1","seq":1,"ts":1000,"path":["main"],"type":"ask","text":"Allow?"}"#);
 ///
@@ -153,7 +153,7 @@ impl<B> Envelope<B> {
 /// use haest_wire::{Framer, Outbound, Path};
 ///
 /// let mut framer = Framer::new("s1").starting_after(41);
-/// let frame = framer.stamp(Path::main(), Outbound::Ask { text: "?".into() });
+/// let frame = framer.stamp(Path::main(), Outbound::Ask { text: "?".into(), approval: None });
 /// assert_eq!((frame.seq, framer.seq()), (42, 42));
 /// ```
 #[derive(Debug, Clone)]
@@ -222,12 +222,24 @@ mod tests {
         static T: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(100);
         let tick = || T.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         let mut f = Framer::new("sess_1").with_clock(tick);
-        let a = f.stamp(Path::main(), Outbound::Ask { text: "hi".into() });
+        let a = f.stamp(
+            Path::main(),
+            Outbound::Ask {
+                text: "hi".into(),
+                approval: None,
+            },
+        );
         assert_eq!(
             (a.v, a.sid.as_str(), a.seq, a.ts),
             (WIRE_V, "sess_1", 1, 101)
         );
-        let b = f.stamp(Path::subagent("x"), Outbound::Ask { text: "yo".into() });
+        let b = f.stamp(
+            Path::subagent("x"),
+            Outbound::Ask {
+                text: "yo".into(),
+                approval: None,
+            },
+        );
         assert_eq!((b.seq, f.seq()), (2, 2));
         assert_eq!(b.path, Path::subagent("x"));
     }

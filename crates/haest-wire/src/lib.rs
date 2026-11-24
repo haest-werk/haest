@@ -42,7 +42,8 @@
 //!   `turn_end` (haest-core's `LoopEvent`; a subagent's carry its path);
 //! - [`Outbound::Notice`], [`Outbound::Ask`], [`Outbound::Status`],
 //!   [`Outbound::ApprovalAsk`], [`Outbound::ApprovalWithdrawn`],
-//!   [`Outbound::SubagentStarted`], [`Outbound::SubagentStopped`].
+//!   [`Outbound::ApprovalAnswered`], [`Outbound::SubagentStarted`],
+//!   [`Outbound::SubagentStopped`].
 //!
 //! ## Connection frames
 //!
@@ -142,7 +143,7 @@ mod lines;
 mod ring;
 
 pub use envelope::{Envelope, Framer, Path, WIRE_V, now_ms};
-pub use frames::{Access, Level, Origin, Outbound, Snapshot, State, Token};
+pub use frames::{Access, Answerer, Level, Origin, Outbound, Snapshot, State, Token};
 pub use inbound::{Answer, Control, DecodeError, Inbound, Request, decode, decode_value};
 pub use lines::{LineDecoder, LineTooLong, encode_line};
 pub use ring::{Classify, FrameKind, Replay, Ring};

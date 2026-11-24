@@ -8,8 +8,8 @@ use crate::render::{
 
 /// Frame `seq` of the stream: the question `text`.
 fn ask_frame(seq: u64, text: &str) -> haest::session::Frame {
-    let text = text.into();
-    wire_frame(seq, Outbound::Ask { text })
+    let (text, approval) = (text.into(), None);
+    wire_frame(seq, Outbound::Ask { text, approval })
 }
 
 /// Frame `seq` of the stream: a line for the human.
